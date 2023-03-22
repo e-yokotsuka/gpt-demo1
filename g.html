@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ゴキブリデモ</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .gokiburi {
+            position: absolute;
+            width: 50px;
+            height: auto;
+            transition: transform 0.2s;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        const gokiburiImages = [
+            'gokiburi1.png',
+            'gokiburi2.png',
+            'gokiburi3.png'
+        ];
+
+        function createGokiburi() {
+            const gokiburi = document.createElement('img');
+            gokiburi.src = gokiburiImages[Math.floor(Math.random() * gokiburiImages.length)];
+            gokiburi.classList.add('gokiburi');
+            gokiburi.style.left = Math.random() * (window.innerWidth - 50) + 'px';
+            gokiburi.style.top = Math.random() * (window.innerHeight - 50) + 'px';
+
+            document.body.appendChild(gokiburi);
+
+            setTimeout(() => {
+                moveGokiburi(gokiburi);
+            }, Math.random() * 2000);
+        }
+
+        function moveGokiburi(gokiburi) {
+            gokiburi.style.left = Math.random() * (window.innerWidth - 50) + 'px';
+            gokiburi.style.top = Math.random() * (window.innerHeight - 50) + 'px';
+            gokiburi.style.transform = `rotate(${Math.random() * 360}deg)`;
+
+            setTimeout(() => {
+                moveGokiburi(gokiburi);
+            }, Math.random() * 2000);
+        }
+
+        for (let i = 0; i < 50; i++) {
+            createGokiburi();
+        }
+    </script>
+</body>
+</html>
