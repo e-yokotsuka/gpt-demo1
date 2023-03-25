@@ -5,49 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
-      margin: 0;
+      margin: 40;
       overflow: hidden;
     }
-    canvas {
-      display: block;
+    .main {
+      width: 100%;
+      text-align: center;
+      font-size: x-large;
     }
   </style>
 </head>
 <body>
-  <canvas id="matrix"></canvas>
-  <script>
-    const canvas = document.getElementById('matrix');
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    const fontSize = 16;
-    const columns = canvas.width / fontSize;
-    const drops = [];
-
-    for (let i = 0; i < columns; i++) {
-      drops[i] = 1;
-    }
-
-    function draw() {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#0f0';
-      ctx.font = fontSize + 'px monospace';
-
-      for (let i = 0; i < drops.length; i++) {
-        const text = characters.charAt(Math.floor(Math.random() * characters.length));
-        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-
-        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
-          drops[i] = 0;
-        }
-
-        drops[i]++;
-      }
-    }
-
-    setInterval(draw, 33);
-  </script>
-</body>
+  <div class="main">
+  <a href="./matrix.html" target="_blank" >Matrix</a><br />
+  <a href="./snow.html" target="_blank" >Snow</a><br />
+  <a href="./g.html" target="_blank" >g</a><br />
+  <a href="./mandelbrot-ol.html" target="_blank" >Mandelbrot OpenLayers </a><br />
+  <a href="./mandelbrot-slow.html" target="_blank" >Mandelbrot Part.1 (Slow)</a><br />
+  <a href="./mandelbrot-slow2.html" target="_blank" >Mandelbrot Part.2 (Slow)</a><br />
+  <div>
+  </body>
 </html>

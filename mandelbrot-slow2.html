@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>永遠にズームするマンデルブロットフラクタル</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+</head>
+<body>
+    <script>
+        let minVal = -0.5;
+        let maxVal = 0.5;
+        let offsetX = 0;
+        let offsetY = 0;
+        let zoom = 1;
+
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+            pixelDensity(1);
+        }
+
+        function draw() {
+            loadPixels();
+
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height; y++) {
+                    let a = map(x, 0, width, minVal + offsetX, maxVal + offsetX);
+                    let b = map(y, 0, height, minVal + offsetY, maxVal + offsetY);
+
+                    let ca = a;
+                    let cb = b;
+
+                    let n = 0;
+                    let z = 0;
+
+                    while (n < 100) {
+                        let aa = a * a - b * b;
+                        let bb = 2 * a * b;
+
+                        a = aa + ca;
+                        b = bb + cb;
+
+                        if (abs(a + b) > 16) {
+                            break;
+                        }
+
+                        n++;
+                    }
+
+                    let brightness = map(n, 0, 100, 0, 1);
+                    brightness = map(sqrt(brightness), 0, 1, 0, 255);
+
+                    let pix = (x + y * width) * 4;
+                    pixels[pix + 0] = brightness;
+                    pixels[pix + 1] = brightness;
+                    pixels[pix + 2] = brightness;
+                    pixels[pix + 3] = 255;
+                }
+            }
+
+            updatePixels();
+
+            offsetX += 0.01;
+            offsetY += 0.01;
+            zoom += 0.005;
+
+            minVal /= 1 + zoom * 0.001;
+            maxVal /= 1 + zoom * 0.001;
+        }
+    </script>
+</body>
+</html>
