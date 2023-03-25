@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>跳ねる玉デモ</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.2.3/pixi.min.js"></script>
+    <script>
+        const app = new PIXI.Application({
+            width: window.innerWidth,
+            height: window.innerHeight,
+            backgroundColor: 0x000000
+        });
+        document.body.appendChild(app.view);
+
+        class Ball {
+            constructor() {
+                this.graphics = new PIXI.Graphics();
+                app.stage.addChild(this.graphics);
+
+                this.radius = Math.random() * 30 + 10;
+                this.x = Math.random() * (app.screen.width - this.radius * 2) + this.radius;
+                this.y = Math.random() * (app.screen.height - this.radius * 2) + this.radius;
+                this.vx = Math.random() * 4 - 2;
+                this.vy = Math.random() * 4 - 2;
+                this.color = Math.random() * 0xFFFFFF;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x - this.radius < 0 || this.x + this.radius > app.screen.width) {
+                    this.vx = -this.vx;
+                }
+
+                if (this.y - this.radius < 0 || this.y + this.radius > app.screen.height) {
+                    this.vy = -this.vy;
+                }
+            }
+
+            draw() {
+                this.graphics.clear();
+                this.graphics.beginFill(this.color);
+                this.graphics.drawCircle(this.x, this.y, this.radius);
+                this.graphics.endFill();
+            }
+        }
+
+        const balls = [];
+        for (let i = 0; i < 50; i++) {
+            balls.push(new Ball());
+        }
+
+        app.ticker.add(() => {
+            for (const ball of balls) {
+                ball.update();
+                ball.draw();
+            }
+        });
+    </script>
+</body>
+</html>
