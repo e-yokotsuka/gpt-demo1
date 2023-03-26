@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lorenz Attractor Demo</title>
+  <style>
+    canvas {
+      border: 1px solid black;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="lorenz-attractor" width="800" height="600"></canvas>
+  <script>
+    const canvas = document.getElementById('lorenz-attractor');
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+
+    const dt = 0.01;
+    const sigma = 10;
+    const rho = 28;
+    const beta = 8 / 3;
+    const scaleFactor = 10;
+
+    let x = 1;
+    let y = 1;
+    let z = 1;
+
+    function lorenzAttractor(x, y, z) {
+      const dx = sigma * (y - x);
+      const dy = x * (rho - z) - y;
+      const dz = x * y - beta * z;
+
+      x += dx * dt;
+      y += dy * dt;
+      z += dz * dt;
+
+      return { x, y, z };
+    }
+
+    function drawPoint(x, y) {
+      ctx.fillRect(x, y, 1, 1);
+    }
+
+    function drawLorenzAttractor() {
+      const { x: newX, y: newY, z: newZ } = lorenzAttractor(x, y, z);
+      x = newX;
+      y = newY;
+      z = newZ;
+
+      const screenX = width / 2 + x * scaleFactor;
+      const screenY = height / 2 + z * scaleFactor;
+
+      drawPoint(screenX, screenY);
+    }
+
+    function animate() {
+      for (let i = 0; i < 10; i++) {
+        drawLorenzAttractor();
+      }
+      requestAnimationFrame(animate);
+    }
+
+    ctx.fillStyle = 'black';
+    animate();
+  </script>
+</body>
+
+</html>
