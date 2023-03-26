@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カオス曲線デモ</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <script>
+        const canvasWidth = window.innerWidth;
+        const canvasHeight = window.innerHeight;
+        const maxIterations = 10000;
+        let currentIteration = 0;
+
+        function setup() {
+            createCanvas(canvasWidth, canvasHeight);
+            background(0);
+            strokeWeight(1);
+        }
+
+        function draw() {
+            if (currentIteration < maxIterations) {
+                for (let i = 0; i < 100; i++) {
+                    const x = random(canvasWidth);
+                    const y = random(canvasHeight);
+                    const nextX = sin(y * random(1, 5)) * canvasWidth / 2 + canvasWidth / 2;
+                    const nextY = cos(x * random(1, 5)) * canvasHeight / 2 + canvasHeight / 2;
+
+                    stroke(random(255), random(255), random(255), 20);
+                    line(x, y, nextX, nextY);
+                }
+
+                currentIteration++;
+            }
+        }
+    </script>
+</body>
+</html>
