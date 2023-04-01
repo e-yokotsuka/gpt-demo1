@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ステレオグラムデモ</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const patternSize = 120;
+        const patternRepeat = 4;
+
+        function generatePattern() {
+            const patternCanvas = document.createElement("canvas");
+            patternCanvas.width = patternSize;
+            patternCanvas.height = canvas.height;
+            const patternCtx = patternCanvas.getContext("2d");
+
+            for (let y = 0; y < patternCanvas.height; y++) {
+                for (let x = 0; x < patternCanvas.width; x++) {
+                    const color = Math.random() > 0.5 ? 0 : 255;
+                    patternCtx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+                    patternCtx.fillRect(x, y, 1, 1);
+                }
+            }
+
+            return patternCanvas;
+        }
+
+        function drawStereogram() {
+            const pattern = generatePattern();
+
+            for (let i = 0; i < patternRepeat; i++) {
+                ctx.drawImage(pattern, i * patternSize, 0);
+            }
+        }
+
+        drawStereogram();
+    </script>
+</body>
+</html>

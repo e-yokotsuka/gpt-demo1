@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daisy Bell Music Demo</title>
+</head>
+<body>
+    <h1>Click anywhere to play "Daisy Bell"</h1>
+    <script>
+        const notes = [
+            { pitch: 76, duration: 150 },
+            { pitch: 76, duration: 150 },
+            { pitch: 79, duration: 300 },
+            { pitch: 76, duration: 300 },
+            { pitch: 81, duration: 300 },
+            { pitch: 80, duration: 600 },
+            { pitch: 76, duration: 150 },
+            { pitch: 76, duration: 150 },
+            { pitch: 79, duration: 300 },
+            { pitch: 76, duration: 300 },
+            { pitch: 83, duration: 300 },
+            { pitch: 81, duration: 600 },
+            { pitch: 76, duration: 150 },
+            { pitch: 76, duration: 150 },
+            { pitch: 88, duration: 300 },
+            { pitch: 84, duration: 300 },
+            { pitch: 81, duration: 300 },
+            { pitch: 80, duration: 300 },
+            { pitch: 79, duration: 300 },
+            { pitch: 76, duration: 300 },
+            { pitch: 81, duration: 300 },
+            { pitch: 80, duration: 300 },
+            { pitch: 79, duration: 300 },
+            { pitch: 76, duration: 300 },
+            { pitch: 78, duration: 300 },
+            { pitch: 78, duration: 150 },
+            { pitch: 76, duration: 150 },
+            { pitch: 76, duration: 600 },
+        ];
+
+        let audioContext;
+
+        function playNote(note) {
+            const oscillator = audioContext.createOscillator();
+            oscillator.type = "sine";
+            oscillator.frequency.value = 440 * Math.pow(2, (note.pitch - 69) / 12);
+
+            const gainNode = audioContext.createGain();
+            gainNode.gain.value = 0.5;
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + note.duration / 1000);
+        }
+
+        function playDaisyBell() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            let time = audioContext.currentTime;
+            for (const note of notes) {
+                playNoteAtTime(note, time);
+                time += note.duration / 1000;
+            }
+        }
+
+        function playNoteAtTime(note, time) {
+            const oscillator = audioContext.createOscillator();
+            oscillator.type = "sine";
+            oscillator.frequency.value = 440 * Math.pow(2, (note.pitch - 69) / 12);
+
+            const gainNode = audioContext.createGain();
+            gainNode.gain.setValueAtTime(0.5, time);
+            gainNode.gain.setValueAtTime(0, time + note.duration / 1000);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.start(time);
+            oscillator.stop(time + note.duration / 1000);
+        }
+
+        function playDaisyBell() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            let time = audioContext.currentTime;
+            for (const note of notes) {
+                playNoteAtTime(note, time);
+                time += note.duration / 1000;
+            }
+        }
+
+        document.addEventListener("click", playDaisyBell);
+    </script>
+</body>
+</html>
