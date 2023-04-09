@@ -11,7 +11,8 @@ const numCols = 10;
 
 let gameBoard = [];
 let currentPiece;
-
+let elapsedTime = 0;
+const moveInterval = 1000; // 1000 milliseconds = 1 second
 class Tetromino {
     constructor(shape, color) {
         this.shape = shape;
@@ -190,9 +191,11 @@ currentPiece = createPiece();
 const graphics = new PIXI.Graphics();
 app.stage.addChild(graphics);
 
-app.ticker.add(() => {
-    if (app.ticker.lastTime % 1000 < app.ticker.deltaTime % 1000) {
+app.ticker.add((delta) => {
+    elapsedTime += delta * app.ticker.deltaMS;
+    if (elapsedTime >= moveInterval) {
         moveDown(currentPiece);
+        elapsedTime = 0;
     }
     drawGameBoard(graphics);
     drawPiece(graphics, currentPiece);
