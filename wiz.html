@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Wizardry Dungeon</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/5.3.3/pixi.min.js"></script>
+    <script>
+      const mapData = [
+        [1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+      ];
+
+      const TILE_SIZE = 32;
+      const WIDTH = mapData[0].length * TILE_SIZE;
+      const HEIGHT = mapData.length * TILE_SIZE;
+
+      const app = new PIXI.Application({
+        width: WIDTH,
+        height: HEIGHT,
+      });
+
+      document.body.appendChild(app.view);
+
+      const dungeon = new PIXI.Container();
+      app.stage.addChild(dungeon);
+
+      // ダンジョンの生成
+      for (let y = 0; y < mapData.length; y++) {
+        for (let x = 0; x < mapData[y].length; x++) {
+          const tile = new PIXI.Graphics();
+          tile.lineStyle(1, 0xffffff);
+          tile.drawRect(0, 0, TILE_SIZE, TILE_SIZE);
+          tile.x = x * TILE_SIZE;
+          tile.y = y * TILE_SIZE;
+          dungeon.addChild(tile);
+        }
+      }
+
+      // プレイヤーの描画
+      const player = new PIXI.Graphics();
+      player.beginFill(0xff0000);
+      player.drawRect(0, 0, TILE_SIZE, TILE_SIZE);
+      player.endFill();
+      player.x = TILE_SIZE;
+      player.y = TILE_SIZE;
+      dungeon.addChild(player);
+
+      // キーボード入力の処理
+      const keyboard = {};
+      document.addEventListener("keydown", (e) => {
+        keyboard[e.key] = true;
+      });
+
+      document.addEventListener("keyup", (e) => {
+        keyboard[e.key] = false;
+      });
+
+      // プレイヤーの移動処理
+      function update() {
+        if (keyboard["ArrowLeft"] && player.x > 0) {
+          player.x -= TILE_SIZE;
+        }
+
+        if (keyboard["ArrowRight"] && player.x < WIDTH - TILE_SIZE) {
+          player.x += TILE_SIZE;
+        }
+
+        if (keyboard["ArrowUp"] && player.y > 0) {
+          player.y -= TILE_SIZE;
+        }
+
+        if (keyboard["ArrowDown"] && player.y < HEIGHT - TILE_SIZE) {
+          player.y += TILE_SIZE;
+        }
+      }
+
+      app.ticker.add(update);
+    </script>
+  </body>
+</html>
