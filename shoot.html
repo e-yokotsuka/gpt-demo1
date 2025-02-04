@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>横スクロールシューティングゲーム</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    canvas { display: block; background: #000; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <script>
+    // 初期設定
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const groundHeight = 50; // 地面の高さ
+
+    // プレイヤークラス
+    class Player {
+      constructor() {
+        this.width = 40;
+        this.height = 20;
+        this.x = 50;
+        this.y = canvas.height/2 - this.height/2;
+        this.speed = 5;
+        this.alive = true;
+      }
+      update() {
+        if(keys['ArrowUp'])    this.y -= this.speed;
+        if(keys['ArrowDown'])  this.y += this.speed;
+        if(keys['ArrowLeft'])  this.x -= this.speed;
+        if(keys['ArrowRight']) this.x += this.speed;
+        // 地面衝突
+        if(this.y + this.height > canvas.height - groundHeight) {
+          this.alive = false;
+        }
+      }
+      draw() {
+        ctx.fillStyle = 'lime';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+      }
+    }
+
+    // 通常弾クラス
+    class Bullet {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 5;
+        this.speed = 7;
+      }
+      update() {
+        this.x += this.speed;
+      }
+      draw() {
+        ctx.fillStyle = 'yellow';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+
+    // ボムクラス
+    class Bomb {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 8;
+        this.speed = 4;
+      }
+      update() {
+        this.x += this.speed;
+      }
+      draw() {
+        ctx.fillStyle = 'orange';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+
+    // 敵タイプの定義（後から追加しやすい仕様）
+    const enemyTypes = {
+      type1: { // サイン波で動く
+        speed: 2,
+        points: 100,
+        update: function(enemy) {
+          enemy.x -= this.speed;
+          enemy.y += Math.sin(enemy.counter * 0.05) * 2;
+          enemy.counter++;
+        }
+      },
+      type2: { // ゆっくり上下移動
+        speed: 3,
+        points: 200,
+        update: function(enemy) {
+          enemy.x -= this.speed;
+          enemy.y += (enemy.direction || 1) * 1;
+          if(enemy.y < 50 || enemy.y > canvas.height - groundHeight - enemy.height) {
+            enemy.direction = - (enemy.direction || 1);
+          }
+        }
+      },
+      type3: { // ランダムな上下動
+        speed: 4,
+        points: 300,
+        update: function(enemy) {
+          enemy.x -= this.speed;
+          enemy.y += (Math.random() - 0.5) * 4;
+        }
+      }
+    };
+
+    // 敵クラス
+    class Enemy {
+      constructor(type) {
+        this.type = type;
+        this.width = 30;
+        this.height = 30;
+        this.x = canvas.width;
+        this.y = Math.random() * (canvas.height - groundHeight - this.height);
+        this.counter = 0; // パターン用
+        this.direction = 1; // type2用
+        this.points = enemyTypes[type].points;
+      }
+      update() {
+        enemyTypes[this.type].update(this);
+      }
+      draw() {
+        if(this.type === 'type1') ctx.fillStyle = 'red';
+        else if(this.type === 'type2') ctx.fillStyle = 'blue';
+        else if(this.type === 'type3') ctx.fillStyle = 'purple';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+      }
+    }
+
+    // 背景レイヤークラス（３重スクロール）
+    class BackgroundLayer {
+      constructor(speed, color) {
+        this.speed = speed;
+        this.color = color;
+        this.x = 0;
+      }
+      update() {
+        this.x -= this.speed;
+        if(this.x <= -canvas.width) this.x = 0;
+      }
+      draw() {
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, 0, canvas.width, canvas.height - groundHeight);
+        ctx.fillRect(this.x + canvas.width, 0, canvas.width, canvas.height - groundHeight);
+      }
+    }
+    const bgLayers = [
+      new BackgroundLayer(0.5, '#222'),
+      new BackgroundLayer(1, '#444'),
+      new BackgroundLayer(2, '#666')
+    ];
+
+    // キー管理
+    const keys = {};
+    window.addEventListener('keydown', e => { keys[e.key] = true; });
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+    // ゲームオブジェクト
+    const player = new Player();
+    const bullets = [];
+    const bombs = [];
+    const enemies = [];
+    let score = 0;
+    let enemySpawnCounter = 0;
+    let bulletCooldown = 0;
+    let bombCooldown = 0;
+
+    // ゲームループ
+    function gameLoop() {
+      if(!player.alive) {
+        alert('ゲームオーバー！ スコア: ' + score);
+        return;
+      }
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // 更新処理
+    function update() {
+      // 背景更新
+      bgLayers.forEach(layer => layer.update());
+      player.update();
+
+      // 通常弾発射（スペースキー）
+      if(keys[' ']) {
+        if(bulletCooldown <= 0) {
+          bullets.push(new Bullet(player.x + player.width, player.y + player.height/2));
+          bulletCooldown = 10;
+        }
+      }
+      // ボム発射（Zキー）
+      if(keys['z'] || keys['Z']) {
+        if(bombCooldown <= 0) {
+          bombs.push(new Bomb(player.x + player.width, player.y + player.height/2));
+          bombCooldown = 50;
+        }
+      }
+      if(bulletCooldown > 0) bulletCooldown--;
+      if(bombCooldown > 0) bombCooldown--;
+
+      // 弾の更新
+      bullets.forEach((b, i) => {
+        b.update();
+        if(b.x > canvas.width) bullets.splice(i, 1);
+      });
+      // ボムの更新
+      bombs.forEach((b, i) => {
+        b.update();
+        if(b.x > canvas.width) bombs.splice(i, 1);
+      });
+      
+      // 敵スポーン（約1秒毎）
+      enemySpawnCounter++;
+      if(enemySpawnCounter > 60) {
+        enemySpawnCounter = 0;
+        const types = Object.keys(enemyTypes);
+        const type = types[Math.floor(Math.random() * types.length)];
+        enemies.push(new Enemy(type));
+      }
+      enemies.forEach((enemy, i) => {
+        enemy.update();
+        if(enemy.x + enemy.width < 0) enemies.splice(i, 1);
+      });
+      
+      // 弾と敵の衝突判定
+      bullets.forEach((bullet, bi) => {
+        enemies.forEach((enemy, ei) => {
+          if(bullet.x > enemy.x && bullet.x < enemy.x + enemy.width &&
+             bullet.y > enemy.y && bullet.y < enemy.y + enemy.height) {
+               score += enemy.points;
+               enemies.splice(ei, 1);
+               bullets.splice(bi, 1);
+          }
+        });
+      });
+      
+      // ボムは範囲内の敵を一括削除（爆風は簡易実装）
+      bombs.forEach((bomb, bi) => {
+        enemies.forEach((enemy, ei) => {
+          const dx = bomb.x - (enemy.x + enemy.width/2);
+          const dy = bomb.y - (enemy.y + enemy.height/2);
+          if(Math.sqrt(dx*dx + dy*dy) < 50) {
+            score += enemy.points;
+            enemies.splice(ei, 1);
+          }
+        });
+        bombs.splice(bi, 1);
+      });
+    }
+
+    // 描画処理
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      bgLayers.forEach(layer => layer.draw());
+      // 地面描画
+      ctx.fillStyle = '#885522';
+      ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
+      player.draw();
+      bullets.forEach(b => b.draw());
+      bombs.forEach(b => b.draw());
+      enemies.forEach(e => e.draw());
+      // スコア描画
+      ctx.fillStyle = 'white';
+      ctx.font = '20px Arial';      
+      ctx.fillText('Use the Spase Key to shoot, and the Arrow keys to move.', 10, 30);
+      ctx.fillText('Score: ' + score, 10, 60);
+    }
+
+    // ゲーム開始
+    gameLoop();
+  </script>
+</body>
+</html>
