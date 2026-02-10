@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Codex Matrix Drift</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			background: radial-gradient(circle at top, rgba(34, 197, 94, 0.2), transparent 45%),
+				linear-gradient(180deg, #020608, #08131a 55%, #071018);
+			color: #d1fae5;
+			font-family: "Share Tech Mono", monospace;
+			height: 100vh;
+			overflow: hidden;
+		}
+		canvas { display: block; width: 100vw; height: 100vh; }
+		.ui {
+			position: fixed;
+			top: 16px;
+			left: 16px;
+			background: rgba(2, 8, 10, 0.7);
+			padding: 10px 14px;
+			border-radius: 10px;
+			border: 1px solid rgba(16, 185, 129, 0.4);
+			box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+			letter-spacing: 0.08em;
+			font-size: 12px;
+		}
+		.ui strong { color: #34d399; display: block; margin-bottom: 4px; }
+	</style>
+</head>
+<body>
+	<canvas id="matrix"></canvas>
+	<div class="ui">
+		<strong>CODEX MATRIX</strong>
+		<p>FPS sync / neon drift / adaptive density</p>
+	</div>
+	<script>
+		const canvas = document.getElementById("matrix");
+		const ctx = canvas.getContext("2d");
+		const glyphs = "アイウエオカキクケコサシスセソタチツテトナニヌネノ01";
+		let columns = [];
+		let width = 0;
+		let height = 0;
+		let fontSize = 18;
+
+		function resize() {
+			const dpr = window.devicePixelRatio || 1;
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = width * dpr;
+			canvas.height = height * dpr;
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			fontSize = Math.max(14, Math.min(22, width / 60));
+			ctx.font = `${fontSize}px "Share Tech Mono"`;
+			const colCount = Math.floor(width / fontSize);
+			columns = Array.from({ length: colCount }, () => ({
+				y: Math.random() * height,
+				speed: 40 + Math.random() * 120,
+				opacity: 0.2 + Math.random() * 0.8,
+			}));
+		}
+
+		function draw(time) {
+			ctx.fillStyle = "rgba(2, 8, 12, 0.25)";
+			ctx.fillRect(0, 0, width, height);
+			ctx.shadowColor = "rgba(16, 185, 129, 0.8)";
+			ctx.shadowBlur = 12;
+
+			columns.forEach((col, i) => {
+				const x = i * fontSize;
+				const y = col.y;
+				const glyph = glyphs[Math.floor(Math.random() * glyphs.length)];
+				ctx.fillStyle = `rgba(16, 255, 160, ${col.opacity})`;
+				ctx.fillText(glyph, x, y);
+				ctx.fillStyle = `rgba(167, 243, 208, ${Math.min(1, col.opacity + 0.4)})`;
+				ctx.fillText(glyph, x, y - fontSize);
+				col.y += col.speed * 0.016;
+				if (col.y > height + Math.random() * 200) {
+					col.y = -Math.random() * 200;
+					col.speed = 40 + Math.random() * 140;
+					col.opacity = 0.2 + Math.random() * 0.8;
+				}
+			});
+
+			requestAnimationFrame(draw);
+		}
+
+		window.addEventListener("resize", resize);
+		resize();
+		requestAnimationFrame(draw);
+	</script>
+</body>
+</html>

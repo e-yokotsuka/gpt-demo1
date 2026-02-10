@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Codex Snow Pulse</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600&display=swap" rel="stylesheet">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			background: radial-gradient(circle at top, rgba(94, 234, 212, 0.25), transparent 55%),
+				linear-gradient(180deg, #050b12, #101b2c 60%, #0c1620);
+			color: #e2e8f0;
+			font-family: "DM Sans", sans-serif;
+			height: 100vh;
+			overflow: hidden;
+		}
+		canvas { display: block; width: 100vw; height: 100vh; }
+		.badge {
+			position: fixed;
+			bottom: 16px;
+			right: 16px;
+			padding: 8px 12px;
+			border-radius: 999px;
+			font-size: 12px;
+			letter-spacing: 0.08em;
+			background: rgba(12, 24, 38, 0.7);
+			border: 1px solid rgba(94, 234, 212, 0.4);
+		}
+	</style>
+</head>
+<body>
+	<canvas id="snow"></canvas>
+	<div class="badge">CODEX // LAYERED SNOW</div>
+	<script>
+		const canvas = document.getElementById("snow");
+		const ctx = canvas.getContext("2d");
+		const flakes = [];
+		let width = 0;
+		let height = 0;
+
+		function resize() {
+			const dpr = window.devicePixelRatio || 1;
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = width * dpr;
+			canvas.height = height * dpr;
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			flakes.length = 0;
+			const count = Math.floor(width * height / 12000);
+			for (let i = 0; i < count; i++) {
+				flakes.push({
+					x: Math.random() * width,
+					y: Math.random() * height,
+					r: 1 + Math.random() * 3,
+					speed: 20 + Math.random() * 60,
+					drift: Math.random() * Math.PI * 2,
+					layer: 0.5 + Math.random(),
+				});
+			}
+		}
+
+		function draw(time) {
+			ctx.clearRect(0, 0, width, height);
+			ctx.fillStyle = "rgba(5, 10, 18, 0.35)";
+			ctx.fillRect(0, 0, width, height);
+
+			for (const flake of flakes) {
+				flake.drift += 0.01 * flake.layer;
+				flake.y += flake.speed * 0.016 * flake.layer;
+				flake.x += Math.cos(flake.drift) * flake.layer;
+				if (flake.y > height + 10) {
+					flake.y = -10;
+					flake.x = Math.random() * width;
+				}
+				if (flake.x < -10) flake.x = width + 10;
+				if (flake.x > width + 10) flake.x = -10;
+
+				ctx.beginPath();
+				ctx.fillStyle = `rgba(226, 232, 240, ${0.6 + flake.layer * 0.3})`;
+				ctx.arc(flake.x, flake.y, flake.r * flake.layer, 0, Math.PI * 2);
+				ctx.fill();
+			}
+			requestAnimationFrame(draw);
+		}
+
+		window.addEventListener("resize", resize);
+		resize();
+		requestAnimationFrame(draw);
+	</script>
+</body>
+</html>

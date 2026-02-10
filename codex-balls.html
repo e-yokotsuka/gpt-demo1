@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Codex Neon Balls</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			background: radial-gradient(circle at top, rgba(236, 72, 153, 0.18), transparent 50%),
+				linear-gradient(160deg, #05060c, #0f172a 55%, #181f34);
+			font-family: "Outfit", sans-serif;
+			color: #f8fafc;
+			height: 100vh;
+			overflow: hidden;
+		}
+		canvas { display: block; width: 100vw; height: 100vh; }
+		.tag {
+			position: fixed;
+			left: 16px;
+			bottom: 16px;
+			padding: 8px 14px;
+			border-radius: 999px;
+			background: rgba(15, 23, 42, 0.8);
+			border: 1px solid rgba(236, 72, 153, 0.4);
+			font-size: 12px;
+			letter-spacing: 0.12em;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="balls"></canvas>
+	<div class="tag">CODEX // BOUNCE SYSTEM</div>
+	<script>
+		const canvas = document.getElementById("balls");
+		const ctx = canvas.getContext("2d");
+		let width = 0;
+		let height = 0;
+		let balls = [];
+
+		function resize() {
+			const dpr = window.devicePixelRatio || 1;
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = width * dpr;
+			canvas.height = height * dpr;
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			balls = Array.from({ length: 32 }, () => ({
+				x: Math.random() * width,
+				y: Math.random() * height,
+				r: 12 + Math.random() * 20,
+				vx: (Math.random() - 0.5) * 160,
+				vy: (Math.random() - 0.5) * 160,
+				hue: 300 + Math.random() * 80,
+			}));
+		}
+
+		function update(dt) {
+			for (const b of balls) {
+				b.x += b.vx * dt;
+				b.y += b.vy * dt;
+				if (b.x - b.r < 0 || b.x + b.r > width) b.vx *= -1;
+				if (b.y - b.r < 0 || b.y + b.r > height) b.vy *= -1;
+			}
+		}
+
+		function render() {
+			ctx.fillStyle = "rgba(5, 8, 14, 0.2)";
+			ctx.fillRect(0, 0, width, height);
+			for (let i = 0; i < balls.length; i++) {
+				for (let j = i + 1; j < balls.length; j++) {
+					const a = balls[i];
+					const b = balls[j];
+					const dx = a.x - b.x;
+					const dy = a.y - b.y;
+					const dist = Math.hypot(dx, dy);
+					if (dist < 160) {
+						ctx.strokeStyle = `rgba(244, 114, 182, ${1 - dist / 160})`;
+						ctx.lineWidth = 1;
+						ctx.beginPath();
+						ctx.moveTo(a.x, a.y);
+						ctx.lineTo(b.x, b.y);
+						ctx.stroke();
+					}
+				}
+			}
+			for (const b of balls) {
+				const gradient = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+				gradient.addColorStop(0, `hsla(${b.hue}, 90%, 70%, 0.9)`);
+				gradient.addColorStop(1, "rgba(15, 23, 42, 0.2)");
+				ctx.fillStyle = gradient;
+				ctx.beginPath();
+				ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+				ctx.fill();
+			}
+		}
+
+		let last = 0;
+		function loop(t) {
+			const dt = Math.min(0.033, (t - last) / 1000 || 0.016);
+			last = t;
+			update(dt);
+			render();
+			requestAnimationFrame(loop);
+		}
+
+		window.addEventListener("resize", resize);
+		resize();
+		requestAnimationFrame(loop);
+	</script>
+</body>
+</html>

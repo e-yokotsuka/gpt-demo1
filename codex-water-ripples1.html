@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Codex Water Ripples I</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700&display=swap" rel="stylesheet">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			background: radial-gradient(circle at top, rgba(14, 165, 233, 0.2), transparent 55%),
+				linear-gradient(180deg, #02040a, #0b1d2b 60%, #0a1a2a);
+			font-family: "Manrope", sans-serif;
+			color: #e2e8f0;
+			height: 100vh;
+			overflow: hidden;
+		}
+		canvas { display: block; width: 100vw; height: 100vh; }
+		.hint {
+			position: fixed;
+			top: 16px;
+			right: 16px;
+			padding: 8px 12px;
+			border-radius: 999px;
+			background: rgba(2, 10, 18, 0.7);
+			border: 1px solid rgba(14, 165, 233, 0.4);
+			font-size: 12px;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="ripples"></canvas>
+	<div class="hint">CODEX // click & ripple</div>
+	<script>
+		const canvas = document.getElementById("ripples");
+		const ctx = canvas.getContext("2d");
+		let width = 0;
+		let height = 0;
+		let gridW = 0;
+		let gridH = 0;
+		let scale = 4;
+		let prev;
+		let curr;
+		let offscreen;
+		let offctx;
+
+		function resize() {
+			const dpr = window.devicePixelRatio || 1;
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = width * dpr;
+			canvas.height = height * dpr;
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			scale = Math.max(3, Math.floor(width / 240));
+			gridW = Math.floor(width / scale);
+			gridH = Math.floor(height / scale);
+			prev = new Float32Array(gridW * gridH);
+			curr = new Float32Array(gridW * gridH);
+			offscreen = document.createElement("canvas");
+			offscreen.width = gridW;
+			offscreen.height = gridH;
+			offctx = offscreen.getContext("2d");
+		}
+
+		function splash(x, y, power) {
+			const gx = Math.floor(x / scale);
+			const gy = Math.floor(y / scale);
+			for (let oy = -2; oy <= 2; oy++) {
+				for (let ox = -2; ox <= 2; ox++) {
+					const nx = gx + ox;
+					const ny = gy + oy;
+					if (nx < 1 || ny < 1 || nx >= gridW - 1 || ny >= gridH - 1) continue;
+					curr[ny * gridW + nx] = power;
+				}
+			}
+		}
+
+		function step() {
+			for (let y = 1; y < gridH - 1; y++) {
+				for (let x = 1; x < gridW - 1; x++) {
+					const idx = y * gridW + x;
+					const value =
+						(prev[idx - 1] +
+							prev[idx + 1] +
+							prev[idx - gridW] +
+							prev[idx + gridW]) / 2 -
+						curr[idx];
+					curr[idx] = value * 0.985;
+				}
+			}
+			const temp = prev;
+			prev = curr;
+			curr = temp;
+		}
+
+		function render() {
+			ctx.fillStyle = "rgba(5, 12, 20, 0.35)";
+			ctx.fillRect(0, 0, width, height);
+			const img = offctx.createImageData(gridW, gridH);
+			for (let i = 0; i < prev.length; i++) {
+				const v = prev[i];
+				const shade = Math.max(0, Math.min(255, 120 + v * 8000));
+				img.data[i * 4] = 20 + shade * 0.4;
+				img.data[i * 4 + 1] = 80 + shade * 0.5;
+				img.data[i * 4 + 2] = 120 + shade * 0.7;
+				img.data[i * 4 + 3] = 255;
+			}
+			offctx.putImageData(img, 0, 0);
+			ctx.drawImage(offscreen, 0, 0, width, height);
+		}
+
+		canvas.addEventListener("pointerdown", (e) => {
+			const rect = canvas.getBoundingClientRect();
+			splash(e.clientX - rect.left, e.clientY - rect.top, -0.6);
+		});
+
+		window.addEventListener("resize", resize);
+		resize();
+
+		function loop() {
+			step();
+			render();
+			requestAnimationFrame(loop);
+		}
+		loop();
+	</script>
+</body>
+</html>

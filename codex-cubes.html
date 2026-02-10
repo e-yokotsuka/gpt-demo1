@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Codex Prism Cubes</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			background: radial-gradient(circle at top left, rgba(251, 191, 36, 0.15), transparent 50%),
+				linear-gradient(140deg, #05060b, #0d1324 55%, #1b2138);
+			color: #f8fafc;
+			font-family: "Rajdhani", sans-serif;
+			height: 100vh;
+			overflow: hidden;
+		}
+		canvas { display: block; width: 100vw; height: 100vh; }
+		.label {
+			position: fixed;
+			top: 16px;
+			left: 16px;
+			padding: 6px 12px;
+			border-radius: 8px;
+			background: rgba(13, 19, 36, 0.8);
+			border: 1px solid rgba(251, 191, 36, 0.4);
+			font-size: 12px;
+			letter-spacing: 0.1em;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="cubes"></canvas>
+	<div class="label">CODEX // PRISM STACK</div>
+	<script>
+		const canvas = document.getElementById("cubes");
+		const ctx = canvas.getContext("2d");
+		let width = 0;
+		let height = 0;
+
+		const cubes = Array.from({ length: 12 }, (_, i) => ({
+			x: (i % 4) * 2 - 3,
+			y: Math.floor(i / 4) * 2 - 2,
+			z: 0,
+			rot: Math.random() * Math.PI * 2,
+		}));
+
+		function project(p) {
+			const scale = 120;
+			const z = p.z + 6;
+			return {
+				x: width / 2 + p.x * scale / z,
+				y: height / 2 + p.y * scale / z,
+			};
+		}
+
+		function rotate(p, ax, ay, az) {
+			let { x, y, z } = p;
+			let cy = Math.cos(ay), sy = Math.sin(ay);
+			let cx = Math.cos(ax), sx = Math.sin(ax);
+			let cz = Math.cos(az), sz = Math.sin(az);
+			let dx = x * cy + z * sy;
+			let dz = -x * sy + z * cy;
+			let dy = y * cx - dz * sx;
+			dz = y * sx + dz * cx;
+			const rx = dx * cz - dy * sz;
+			const ry = dx * sz + dy * cz;
+			return { x: rx, y: ry, z: dz };
+		}
+
+		function resize() {
+			const dpr = window.devicePixelRatio || 1;
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = width * dpr;
+			canvas.height = height * dpr;
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		}
+
+		function draw(time) {
+			ctx.fillStyle = "rgba(6, 10, 18, 0.25)";
+			ctx.fillRect(0, 0, width, height);
+			const t = time * 0.0006;
+
+			cubes.forEach((cube, idx) => {
+				const size = 0.7 + (idx % 3) * 0.15;
+				const points = [
+					{ x: -size, y: -size, z: -size },
+					{ x: size, y: -size, z: -size },
+					{ x: size, y: size, z: -size },
+					{ x: -size, y: size, z: -size },
+					{ x: -size, y: -size, z: size },
+					{ x: size, y: -size, z: size },
+					{ x: size, y: size, z: size },
+					{ x: -size, y: size, z: size },
+				];
+				const rot = cube.rot + t * (0.8 + idx * 0.03);
+				const transformed = points.map((p) => {
+					const r = rotate(p, rot, rot * 0.7, rot * 1.2);
+					return project({ x: r.x + cube.x, y: r.y + cube.y, z: r.z + cube.z });
+				});
+
+				const edges = [
+					[0,1],[1,2],[2,3],[3,0],
+					[4,5],[5,6],[6,7],[7,4],
+					[0,4],[1,5],[2,6],[3,7],
+				];
+				ctx.strokeStyle = `hsla(${40 + idx * 14}, 90%, 65%, 0.7)`;
+				ctx.lineWidth = 2;
+				ctx.beginPath();
+				for (const [a, b] of edges) {
+					ctx.moveTo(transformed[a].x, transformed[a].y);
+					ctx.lineTo(transformed[b].x, transformed[b].y);
+				}
+				ctx.stroke();
+			});
+			requestAnimationFrame(draw);
+		}
+
+		window.addEventListener("resize", resize);
+		resize();
+		requestAnimationFrame(draw);
+	</script>
+</body>
+</html>

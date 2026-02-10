@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Codex Thunderstrike</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			background: radial-gradient(circle at top, rgba(59, 130, 246, 0.2), transparent 45%),
+				linear-gradient(180deg, #05060b, #0c1326 60%, #101827);
+			font-family: "Bebas Neue", sans-serif;
+			color: #e2e8f0;
+			height: 100vh;
+			overflow: hidden;
+		}
+		canvas { display: block; width: 100vw; height: 100vh; }
+		.caption {
+			position: fixed;
+			right: 16px;
+			bottom: 16px;
+			font-size: 14px;
+			letter-spacing: 0.3em;
+			text-transform: uppercase;
+			color: rgba(226, 232, 240, 0.7);
+		}
+	</style>
+</head>
+<body>
+	<canvas id="thunder"></canvas>
+	<div class="caption">CODEX // STRIKE</div>
+	<script>
+		const canvas = document.getElementById("thunder");
+		const ctx = canvas.getContext("2d");
+		let width = 0;
+		let height = 0;
+		let flash = 0;
+
+		function resize() {
+			const dpr = window.devicePixelRatio || 1;
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = width * dpr;
+			canvas.height = height * dpr;
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		}
+
+		function bolt(x, y, len, angle, depth) {
+			if (depth <= 0) return;
+			const step = len / 6;
+			let cx = x;
+			let cy = y;
+			ctx.beginPath();
+			ctx.moveTo(cx, cy);
+			for (let i = 0; i < 6; i++) {
+				angle += (Math.random() - 0.5) * 0.4;
+				cx += Math.cos(angle) * step;
+				cy += Math.sin(angle) * step;
+				ctx.lineTo(cx, cy);
+			}
+			ctx.stroke();
+			if (Math.random() < 0.4) {
+				bolt(cx, cy, len * 0.6, angle - 0.8, depth - 1);
+			}
+			if (Math.random() < 0.4) {
+				bolt(cx, cy, len * 0.6, angle + 0.8, depth - 1);
+			}
+		}
+
+		function draw() {
+			ctx.fillStyle = "rgba(5, 8, 16, 0.2)";
+			ctx.fillRect(0, 0, width, height);
+
+			if (Math.random() < 0.05) {
+				const startX = Math.random() * width;
+				const startY = -40;
+				ctx.strokeStyle = "rgba(56, 189, 248, 0.9)";
+				ctx.lineWidth = 2.5;
+				bolt(startX, startY, height * 0.7, Math.PI / 2, 3);
+				flash = 1;
+			}
+
+			if (flash > 0) {
+				ctx.fillStyle = `rgba(255, 255, 255, ${flash * 0.25})`;
+				ctx.fillRect(0, 0, width, height);
+				flash *= 0.86;
+			}
+
+			requestAnimationFrame(draw);
+		}
+
+		window.addEventListener("resize", resize);
+		resize();
+		requestAnimationFrame(draw);
+	</script>
+</body>
+</html>

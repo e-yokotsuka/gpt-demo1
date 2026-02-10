@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Codex Flow Lines</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@500;700&display=swap" rel="stylesheet">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.2), transparent 45%),
+				linear-gradient(135deg, #04060b, #0c1224 55%, #131a2f);
+			color: #e2e8f0;
+			font-family: "IBM Plex Sans", sans-serif;
+			height: 100vh;
+			overflow: hidden;
+		}
+		canvas { display: block; width: 100vw; height: 100vh; }
+		.title {
+			position: fixed;
+			top: 16px;
+			right: 16px;
+			font-size: 12px;
+			letter-spacing: 0.2em;
+			color: rgba(226, 232, 240, 0.7);
+			text-transform: uppercase;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="flow"></canvas>
+	<div class="title">CODEX // FLOW FIELD</div>
+	<script>
+		const canvas = document.getElementById("flow");
+		const ctx = canvas.getContext("2d");
+		let width = 0;
+		let height = 0;
+		let particles = [];
+
+		function resize() {
+			const dpr = window.devicePixelRatio || 1;
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = width * dpr;
+			canvas.height = height * dpr;
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			particles = Array.from({ length: 700 }, () => ({
+				x: Math.random() * width,
+				y: Math.random() * height,
+				speed: 0.6 + Math.random() * 1.8,
+				hue: 200 + Math.random() * 140,
+			}));
+			ctx.fillStyle = "rgba(5, 8, 14, 0.25)";
+			ctx.fillRect(0, 0, width, height);
+		}
+
+		function field(x, y, t) {
+			const nx = x / width - 0.5;
+			const ny = y / height - 0.5;
+			return Math.sin(nx * 4 + t * 0.0006) + Math.cos(ny * 5 - t * 0.0004);
+		}
+
+		function draw(time) {
+			ctx.fillStyle = "rgba(5, 8, 14, 0.08)";
+			ctx.fillRect(0, 0, width, height);
+			for (const p of particles) {
+				const angle = field(p.x, p.y, time) * Math.PI;
+				const vx = Math.cos(angle) * p.speed;
+				const vy = Math.sin(angle) * p.speed;
+				const nx = p.x + vx;
+				const ny = p.y + vy;
+
+				ctx.strokeStyle = `hsla(${p.hue}, 80%, 60%, 0.5)`;
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.moveTo(p.x, p.y);
+				ctx.lineTo(nx, ny);
+				ctx.stroke();
+
+				p.x = nx;
+				p.y = ny;
+				if (p.x < 0 || p.x > width || p.y < 0 || p.y > height) {
+					p.x = Math.random() * width;
+					p.y = Math.random() * height;
+				}
+			}
+			requestAnimationFrame(draw);
+		}
+
+		window.addEventListener("resize", resize);
+		resize();
+		requestAnimationFrame(draw);
+	</script>
+</body>
+</html>
