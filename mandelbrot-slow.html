@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>永遠にズームするマンデルブロットフラクタル</title>
+    <style>
+        canvas {
+            display: block;
+            margin: auto;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="fractalCanvas" width="800" height="800"></canvas>
+    <script>
+        const canvas = document.getElementById('fractalCanvas');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        let zoom = 200;
+        let offsetX = -1.5;
+        let offsetY = 0;
+
+        function mandelbrot(cX, cY) {
+            let x = 0;
+            let y = 0;
+            let n = 0;
+
+            while (n < 100) {
+                const newX = x * x - y * y + cX;
+                const newY = 2 * x * y + cY;
+
+                if (newX * newX + newY * newY > 4) {
+                    break;
+                }
+
+                x = newX;
+                y = newY;
+                n++;
+            }
+
+            return n;
+        }
+
+        function drawFractal() {
+            for (let i = 0; i < width; i++) {
+                for (let j = 0; j < height; j++) {
+                    const x = (i - width / 2) / zoom + offsetX;
+                    const y = (j - height / 2) / zoom + offsetY;
+
+                    const m = mandelbrot(x, y);
+                    const color = m === 100 ? 0 : (m * 12) % 255;
+
+                    ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+                    ctx.fillRect(i, j, 1, 1);
+                }
+            }
+        }
+
+        function animate() {
+            zoom *= 1.01;
+            offsetX -= 0.005;
+
+            drawFractal();
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>雨と波紋のデモ</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        class RainDrop {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = 0;
+                this.radius = 2;
+                this.speed = Math.random() * 4 + 2;
+                this.ripple = null;
+            }
+
+            update() {
+                this.y += this.speed;
+                if (this.y > canvas.height-40) {
+                    if (this.ripple) {
+                        this.ripple.update();
+                    } else {
+                        this.ripple = new Ripple(this.x, canvas.height-40);
+                    }
+                    this.y = 0;
+                    this.x = Math.random() * canvas.width;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(0, 0, 255, 0.5)";
+                ctx.fill();
+                if (this.ripple) {
+                    this.ripple.draw();
+                }
+            }
+        }
+
+        class Ripple {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 0;
+                this.maxRadius = 40;
+            }
+
+            update() {
+                if (this.radius < this.maxRadius) {
+                    this.radius += 1;
+                } else {
+                    this.radius = 0;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.strokeStyle = "rgba(0, 0, 255, " + (1 - this.radius / this.maxRadius) + ")";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+        const rainDrops = [];
+        for (let i = 0; i < 100; i++) {
+            rainDrops.push(new RainDrop());
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (const drop of rainDrops) {
+                drop.update();
+                drop.draw();
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+{
+	"frames": {
+		"pen1.svg": {
+			"frame": {
+				"x": 1,
+				"y": 629,
+				"w": 191,
+				"h": 181
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 191,
+				"h": 181
+			},
+			"sourceSize": {
+				"w": 191,
+				"h": 181
+			}
+		},
+		"pen2.svg": {
+			"frame": {
+				"x": 1,
+				"y": 1,
+				"w": 494,
+				"h": 626
+			},
+			"rotated": false,
+			"trimmed": true,
+			"spriteSourceSize": {
+				"x": 125,
+				"y": 213,
+				"w": 494,
+				"h": 626
+			},
+			"sourceSize": {
+				"w": 744,
+				"h": 1052
+			}
+		}
+	},
+	"meta": {
+		"app": "https://www.codeandweb.com/texturepacker",
+		"version": "1.0",
+		"image": "atras.png",
+		"format": "RGBA8888",
+		"size": {
+			"w": 496,
+			"h": 811
+		},
+		"scale": "1",
+		"smartupdate": "$TexturePacker:SmartUpdate:93983c9836aa639252794a62d8a955d2:92e8f83e52bacc6382d9c505bb50f7ea:02ab132358d6d8b512e80119463a8329$"
+	}
+}
