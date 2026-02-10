@@ -9,23 +9,25 @@
 <body>
     <div class="game-container">
         <h1>横スクロールアクションゲーム</h1>
-        <canvas id="gameCanvas" width="800" height="600"></canvas>
-        <div class="controls">
-            <p>操作方法：</p>
-            <ul>
-                <li>← → 矢印キー / A・D：移動</li>
-                <li>↑ 矢印キー / W / スペース：ジャンプ</li>
-                <li>Xキー：通常弾（連射可能、当たると爆発）</li>
-                <li>Zキー：ホーミングミサイル（板野サーカス風追尾弾）</li>
-                <li>Rキー：リスタート（ゲームオーバー時）</li>
-            </ul>
-            <p>ヒント：</p>
-            <ul>
-                <li>穴に落ちるとライフが減ります</li>
-                <li>★を取ると一定時間無敵！敵を体当たりで倒せます</li>
-                <li>紫の敵は弾を撃ってきます。オレンジの敵は突然ダッシュします</li>
-                <li>上にも足場があります。どこまでも登れます！</li>
-            </ul>
+        <div class="game-layout">
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <div class="controls">
+                <p>操作方法</p>
+                <ul>
+                    <li>←→ / A・D：移動</li>
+                    <li>↑ / W / Space：ジャンプ</li>
+                    <li>X：通常弾（連射・爆発）</li>
+                    <li>Z：ホーミングミサイル</li>
+                    <li>R：リスタート</li>
+                </ul>
+                <p>ヒント</p>
+                <ul>
+                    <li>穴に落ちるとライフ減</li>
+                    <li>★で無敵！体当たり可</li>
+                    <li>紫＝射撃 橙＝ダッシュ</li>
+                    <li>上にも足場あり！</li>
+                </ul>
+            </div>
         </div>
     </div>
     <script src="game.js"></script>

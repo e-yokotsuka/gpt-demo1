@@ -568,17 +568,13 @@ function update() {
 	camera.x = player.x - canvas.width / 3;
 	if (camera.x < 0) camera.x = 0;
 
-	// カメラをプレイヤーに追従させる（Y軸：デッドゾーン付き滑らか追従）
-	// プレイヤーがデッドゾーン内にいる間はカメラを動かさない（ジャンプ時のガタつき抑制）
-	const cameraCenterY = camera.y + canvas.height / 2;
-	const deadZoneY = 100; // この範囲内ならカメラは追従しない
-	if (player.y < cameraCenterY - deadZoneY) {
-		camera.targetY = player.y + deadZoneY - canvas.height / 2;
-	} else if (player.y > cameraCenterY + deadZoneY) {
-		camera.targetY = player.y - deadZoneY - canvas.height / 2;
+	// カメラをプレイヤーに追従させる（Y軸：着地時のみ目標更新）
+	// ジャンプ中はカメラ目標を変更しない → ガタつき完全抑制
+	if (!player.isJumping) {
+		camera.targetY = player.y - canvas.height * 0.4;
 	}
 	if (camera.targetY > 0) camera.targetY = 0; // 地面より下にはスクロールしない
-	camera.y += (camera.targetY - camera.y) * 0.04;
+	camera.y += (camera.targetY - camera.y) * 0.03;
 
 	// 無限スクロール：新しいチャンクを必要に応じて生成
 	const currentChunk = Math.floor(camera.x / CHUNK_WIDTH);
