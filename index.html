@@ -80,6 +80,33 @@
 			background: #d4a27f;
 			color: #1a1a2e;
 		}
+		.ai-icons {
+			display: inline-flex;
+			gap: 6px;
+			align-items: center;
+		}
+		.ai-icon {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			min-width: 34px;
+			height: 20px;
+			padding: 0 6px;
+			border-radius: 999px;
+			font-size: 10px;
+			font-weight: bold;
+			letter-spacing: 0.05em;
+			background: rgba(255,255,255,0.08);
+			color: #e2e8f0;
+			border: 1px solid rgba(255,255,255,0.15);
+		}
+		.ai-icon.ai-gpt { border-color: rgba(16,163,127,0.6); color: #8ff3d8; }
+		.ai-icon.ai-claude { border-color: rgba(212,162,127,0.6); color: #f2c19a; }
+		.ai-icon.ai-codex { border-color: rgba(56,189,248,0.6); color: #9ee7ff; }
+		.ai-icon.is-disabled {
+			opacity: 0.35;
+			filter: grayscale(1);
+		}
 		.demo-name { flex: 1; }
 		.demo-note {
 			font-size: 12px;
@@ -151,5 +178,42 @@
 			</div>
 		</div>
 	</div>
+	<script>
+		const claudeSupported = new Set(["side-scroller"]);
+		const codexSupported = new Set([
+			"side-scroller",
+			"matrix",
+			"snow",
+			"linedemo",
+			"thunder",
+			"water-ripples1",
+			"water-ripples2",
+			"balls",
+			"cubes",
+		]);
+
+		function buildIcon(label, className, enabled) {
+			const span = document.createElement("span");
+			span.className = `ai-icon ${className}${enabled ? "" : " is-disabled"}`;
+			span.textContent = label;
+			return span;
+		}
+
+		document.querySelectorAll(".demo-link").forEach((link) => {
+			const match = link.getAttribute("href")?.match(/compare\\.html\\?demo=([^&]+)/);
+			if (!match) return;
+			const demoId = match[1];
+			const badge = link.querySelector(".badge-compare");
+			if (!badge) return;
+
+			const icons = document.createElement("span");
+			icons.className = "ai-icons";
+			icons.appendChild(buildIcon("G", "ai-gpt", true));
+			icons.appendChild(buildIcon("C4.6", "ai-claude", claudeSupported.has(demoId)));
+			icons.appendChild(buildIcon("G5.2", "ai-codex", codexSupported.has(demoId)));
+
+			badge.insertAdjacentElement("afterend", icons);
+		});
+	</script>
 </body>
 </html>
