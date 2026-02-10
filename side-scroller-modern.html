@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Side-Scroller Action Game - Latest AI Remix</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Unbounded:wght@400;600;700&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="side-scroller-modern.css">
+</head>
+<body>
+	<div class="page">
+		<header class="topbar">
+			<div>
+				<p class="eyebrow">Latest AI Remix</p>
+				<h1>Side-Scroller Action Game</h1>
+			</div>
+			<div class="topbar-actions">
+				<a class="ghost-link" href="./index.html">メニューに戻る</a>
+				<span class="chip">Build v2.6</span>
+			</div>
+		</header>
+
+		<main class="layout">
+			<section class="stage">
+				<div class="stage-header">
+					<div class="stage-title">
+						<h2>Neon Drift District</h2>
+						<p>パルクール + ダッシュ + コンボ。モーションは軽量、操作感は高密度。</p>
+					</div>
+					<div class="stage-controls">
+						<button class="primary" id="btn-pause">Pause</button>
+						<button class="secondary" id="btn-restart">Restart</button>
+					</div>
+				</div>
+
+				<div class="stage-stats">
+					<div class="stat">
+						<span class="stat-label">DISTANCE</span>
+						<span class="stat-value" id="stat-distance">0</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">SCORE</span>
+						<span class="stat-value" id="stat-score">0</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">COMBO</span>
+						<span class="stat-value" id="stat-combo">x1</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">ENERGY</span>
+						<span class="stat-value" id="stat-energy">100%</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">LIVES</span>
+						<span class="stat-value" id="stat-lives">3</span>
+					</div>
+				</div>
+
+				<div class="canvas-shell">
+					<canvas id="gameCanvas" width="960" height="540"></canvas>
+					<div class="overlay show" id="overlay-start">
+						<div class="overlay-card">
+							<h3>Ready to Drift?</h3>
+							<p>← → / A D 移動, Space ジャンプ, Shift ダッシュ</p>
+							<p>初回入力で開始。長押しジャンプで滞空が伸びます。</p>
+							<button class="primary" id="btn-start">Start Run</button>
+						</div>
+					</div>
+					<div class="overlay" id="overlay-pause">
+						<div class="overlay-card">
+							<h3>Paused</h3>
+							<p>集中を整えて、もう一度。</p>
+							<button class="primary" id="btn-resume">Resume</button>
+						</div>
+					</div>
+					<div class="overlay" id="overlay-gameover">
+						<div class="overlay-card">
+							<h3>Run Complete</h3>
+							<p id="final-score">Score 0</p>
+							<button class="primary" id="btn-retry">Retry</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="touch-controls" id="touch-controls">
+					<button data-control="left">◀</button>
+					<button data-control="right">▶</button>
+					<button data-control="jump">⤒</button>
+					<button data-control="dash">◆</button>
+				</div>
+			</section>
+
+			<aside class="panel">
+				<div class="panel-tabs">
+					<button class="tab active" data-tab="guide">Guide</button>
+					<button class="tab" data-tab="skills">Skills</button>
+					<button class="tab" data-tab="settings">Settings</button>
+				</div>
+
+				<div class="panel-content active" id="panel-guide">
+					<h3>操作</h3>
+					<ul>
+						<li>移動: ← → / A D</li>
+						<li>ジャンプ: Space / W / ↑ (押しっぱなしで伸びる)</li>
+						<li>ダッシュ: Shift / K (エナジー消費)</li>
+						<li>リスタート: R</li>
+					</ul>
+					<h3>ルール</h3>
+					<ul>
+						<li>地形は進行に合わせて生成されます</li>
+						<li>オーブ連続取得でコンボ倍率が上昇</li>
+						<li>被弾するとライフが減り、リスポーン</li>
+					</ul>
+				</div>
+
+				<div class="panel-content" id="panel-skills">
+					<h3>アクション</h3>
+					<ul>
+						<li>ダッシュは無敵フレーム付き</li>
+						<li>着地直後にジャンプすると高く跳べる</li>
+						<li>コンボが切れるとスコア倍率が戻る</li>
+					</ul>
+					<h3>敵</h3>
+					<ul>
+						<li>ドローンは横移動で接近</li>
+						<li>高所に逃げると安全</li>
+					</ul>
+				</div>
+
+				<div class="panel-content" id="panel-settings">
+					<h3>アクセシビリティ</h3>
+					<label class="toggle">
+						<input type="checkbox" id="toggle-reduce-motion">
+						<span>モーション軽減</span>
+					</label>
+					<label class="toggle">
+						<input type="checkbox" id="toggle-high-contrast">
+						<span>高コントラスト</span>
+					</label>
+					<label class="toggle">
+						<input type="checkbox" id="toggle-auto-run">
+						<span>オート前進</span>
+					</label>
+					<p class="note">設定はこのブラウザに保存されます。</p>
+				</div>
+			</aside>
+		</main>
+	</div>
+	<script src="side-scroller-modern.js"></script>
+</body>
+</html>

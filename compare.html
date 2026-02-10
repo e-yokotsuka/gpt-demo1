@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>ChatGPT vs Claude デモ比較</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			font-family: "Segoe UI", Arial, sans-serif;
+			background: #1a1a2e;
+			color: #fff;
+			height: 100vh;
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
+		header {
+			display: flex;
+			align-items: center;
+			padding: 8px 16px;
+			background: #16213e;
+			border-bottom: 1px solid #0f3460;
+			gap: 16px;
+			flex-shrink: 0;
+		}
+		header a {
+			color: #a8b2d1;
+			text-decoration: none;
+			font-size: 14px;
+			white-space: nowrap;
+		}
+		header a:hover { color: #fff; }
+		#demo-title {
+			font-size: 16px;
+			font-weight: bold;
+			color: #e2e8f0;
+			flex: 1;
+			text-align: center;
+		}
+		.tab-bar {
+			display: flex;
+			background: #16213e;
+			border-bottom: 2px solid #0f3460;
+			flex-shrink: 0;
+		}
+		.tab {
+			padding: 10px 24px;
+			border: none;
+			background: transparent;
+			color: #a8b2d1;
+			font-size: 15px;
+			font-weight: bold;
+			cursor: pointer;
+			position: relative;
+			transition: all 0.2s;
+		}
+		.tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
+		.tab.active-chatgpt {
+			color: #10a37f;
+			background: rgba(16, 163, 127, 0.1);
+		}
+		.tab.active-chatgpt::after {
+			content: "";
+			position: absolute;
+			bottom: -2px;
+			left: 0;
+			right: 0;
+			height: 3px;
+			background: #10a37f;
+		}
+		.tab.active-claude {
+			color: #d4a27f;
+			background: rgba(212, 162, 127, 0.1);
+		}
+		.tab.active-claude::after {
+			content: "";
+			position: absolute;
+			bottom: -2px;
+			left: 0;
+			right: 0;
+			height: 3px;
+			background: #d4a27f;
+		}
+		.iframe-container {
+			flex: 1;
+			position: relative;
+		}
+		.demo-frame {
+			width: 100%;
+			height: 100%;
+			border: none;
+			display: none;
+			position: absolute;
+			top: 0;
+			left: 0;
+		}
+		.demo-frame.active { display: block; }
+		.coming-soon {
+			display: none;
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background: #1a1a2e;
+			color: #a8b2d1;
+			font-size: 24px;
+			justify-content: center;
+			align-items: center;
+			flex-direction: column;
+			gap: 12px;
+		}
+		.coming-soon.active { display: flex; }
+	</style>
+</head>
+<body>
+	<header>
+		<a href="./index.html">&larr; メニューに戻る</a>
+		<span id="demo-title"></span>
+		<span style="width:100px"></span>
+	</header>
+	<div class="tab-bar">
+		<button class="tab active-chatgpt" id="tab-chatgpt" onclick="switchTab('chatgpt')">ChatGPT</button>
+		<button class="tab" id="tab-claude" onclick="switchTab('claude')">Claude Opus 4.6</button>
+	</div>
+	<div class="iframe-container">
+		<iframe id="chatgpt-frame" class="demo-frame active"></iframe>
+		<iframe id="claude-frame" class="demo-frame"></iframe>
+		<div id="coming-soon" class="coming-soon">
+			<div>準備中...</div>
+			<div style="font-size:14px;color:#666">このデモのClaude版はまだ作成されていません</div>
+		</div>
+	</div>
+	<script>
+		const DEMO_CONFIG = {
+			"matrix": { title: "Digital Rain Matrix", chatgpt: "./matrix.html", claude: "./claude/matrix.html" },
+			"snow": { title: "Falling Snowflakes", chatgpt: "./snow.html", claude: "./claude/snow.html" },
+			"roaming-cockroaches": { title: "Roaming Cockroaches", chatgpt: "./roaming-cockroaches.html", claude: "./claude/roaming-cockroaches.html" },
+			"mandelbrot-slow": { title: "Mandelbrot Explorer Part.1", chatgpt: "./mandelbrot-slow.html", claude: "./claude/mandelbrot-slow.html" },
+			"mandelbrot-slow2": { title: "Mandelbrot Explorer Part.2", chatgpt: "./mandelbrot-slow2.html", claude: "./claude/mandelbrot-slow2.html" },
+			"mandelbrot-ol": { title: "Mandelbrot OpenLayers", chatgpt: "./mandelbrot-ol.html", claude: "./claude/mandelbrot-ol.html" },
+			"linedemo": { title: "Dynamic Colorful Lines", chatgpt: "./linedemo.html", claude: "./claude/linedemo.html" },
+			"thunder": { title: "Electrifying Thunderstorm", chatgpt: "./thunder.html", claude: "./claude/thunder.html" },
+			"water-ripples1": { title: "Water Ripples Simulation Part.1", chatgpt: "./water-ripples1.html", claude: "./claude/water-ripples1.html" },
+			"water-ripples2": { title: "Water Ripples Simulation Part.2", chatgpt: "./water-ripples2.html", claude: "./claude/water-ripples2.html" },
+			"balls": { title: "Bouncing Colorful Balls", chatgpt: "./balls.html", claude: "./claude/balls.html" },
+			"cool-design": { title: "Cool Design Showcase", chatgpt: "./cool-design.html", claude: "./claude/cool-design.html" },
+			"retro-1980s-homepage": { title: "1980s Retro Homepage", chatgpt: "./retro-1980s-homepage.html", claude: "./claude/retro-1980s-homepage.html" },
+			"space-travel-demo": { title: "Space Travel Demo Part.1", chatgpt: "./space-travel-demo.html", claude: "./claude/space-travel-demo.html" },
+			"space-travel-demo2": { title: "Space Travel Demo Part.2", chatgpt: "./space-travel-demo2.html", claude: "./claude/space-travel-demo2.html" },
+			"stereogram-demo": { title: "Stereogram Demo", chatgpt: "./stereogram-demo.html", claude: "./claude/stereogram-demo.html" },
+			"chaos-curve-demo": { title: "Chaos Curve Demo", chatgpt: "./chaos-curve-demo.html", claude: "./claude/chaos-curve-demo.html" },
+			"megademo-style-demo": { title: "MegaDemo Style Demo", chatgpt: "./megademo-style-demo.html", claude: "./claude/megademo-style-demo.html" },
+			"daisy-bell-music-demo": { title: "Daisy Bell Music Demo", chatgpt: "./daisy-bell-music-demo.html", claude: "./claude/daisy-bell-music-demo.html" },
+			"lorenz-attractor-demo": { title: "Lorenz Attractor Demo", chatgpt: "./lorenz-attractor-demo.html", claude: "./claude/lorenz-attractor-demo.html" },
+			"picture-book": { title: "Picture Book", chatgpt: "./picture-book.html", claude: "./claude/picture-book.html" },
+			"tetris": { title: "Tetris (PixiJS)", chatgpt: "./tetris.html", claude: "./claude/tetris.html" },
+			"yaruo": { title: "Yaruo", chatgpt: "./yaruo.html", claude: "./claude/yaruo.html" },
+			"wiz": { title: "Wizardry Dungeon", chatgpt: "./wiz.html", claude: "./claude/wiz.html" },
+			"wiz2": { title: "Wizardry 3D Dungeon", chatgpt: "./wiz2.html", claude: "./claude/wiz2.html" },
+			"particles": { title: "Particle Editor", chatgpt: "./particles.html", claude: "./claude/particles.html" },
+			"rpg": { title: "Retro RPG", chatgpt: "./rpg.html", claude: "./claude/rpg.html" },
+			"tet": { title: "Tetris (Simple)", chatgpt: "./tet.html", claude: "./claude/tet.html" },
+			"shoot": { title: "Shooting Game", chatgpt: "./shoot.html", claude: "./claude/shoot.html" },
+			"cubes": { title: "Rotating Cubes", chatgpt: "./cubes.html", claude: "./claude/cubes.html" },
+			"side-scroller": {
+				title: "Side-Scroller Action Game",
+				chatgpt: "./side-scroller-modern.html",
+				claude: "./side-scroller.html",
+				labels: { primary: "Latest AI", secondary: "Claude Opus 4.6" },
+			},
+		};
+
+		const params = new URLSearchParams(window.location.search);
+		const demoId = params.get("demo");
+		const config = DEMO_CONFIG[demoId];
+
+		if (config) {
+			document.getElementById("demo-title").textContent = config.title;
+			document.title = config.title + " - ChatGPT vs Claude";
+			document.getElementById("chatgpt-frame").src = config.chatgpt;
+			document.getElementById("claude-frame").src = config.claude;
+			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6" };
+			document.getElementById("tab-chatgpt").textContent = labels.primary;
+			document.getElementById("tab-claude").textContent = labels.secondary;
+		} else {
+			document.getElementById("demo-title").textContent = "デモが見つかりません";
+		}
+
+		let currentTab = "chatgpt";
+
+		function switchTab(tab) {
+			currentTab = tab;
+			const chatgptFrame = document.getElementById("chatgpt-frame");
+			const claudeFrame = document.getElementById("claude-frame");
+			const tabChatgpt = document.getElementById("tab-chatgpt");
+			const tabClaude = document.getElementById("tab-claude");
+			const comingSoon = document.getElementById("coming-soon");
+
+			// タブのスタイルをリセット
+			tabChatgpt.className = "tab";
+			tabClaude.className = "tab";
+
+			if (tab === "chatgpt") {
+				chatgptFrame.classList.add("active");
+				claudeFrame.classList.remove("active");
+				comingSoon.classList.remove("active");
+				tabChatgpt.classList.add("active-chatgpt");
+				// キーボードフォーカスをiframeに移動
+				setTimeout(() => chatgptFrame.contentWindow?.focus(), 50);
+			} else {
+				chatgptFrame.classList.remove("active");
+				tabClaude.classList.add("active-claude");
+				// Claude版のiframeが読み込めたか確認
+				claudeFrame.classList.add("active");
+				comingSoon.classList.remove("active");
+				setTimeout(() => claudeFrame.contentWindow?.focus(), 50);
+			}
+		}
+	</script>
+</body>
+</html>

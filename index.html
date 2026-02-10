@@ -1,69 +1,155 @@
 <!DOCTYPE html>
 <html lang="ja">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body {
-      margin: 40;
-      overflow-y: auto;
-    }
-
-    .main {
-      width: 100%;
-      text-align: center;
-      font-size: x-large;
-    }
-  </style>
-  <title>Chat-GPTによるコード生成</title>
-  <meta charset="utf-8">
-  <meta property="og:title" content="Chat-GPTによるコード生成" />
-  <meta property="og:description" content="Chat-GPTでコード生成した様々なデモを集めたトップページ。雨と波紋のデモ、雷のデモなど、興味深いデモが楽しめます。" />
-  <meta property="og:type" content="website" />
-  <meta property="og:image" content="https://e-yokotsuka.github.io/gpt-demo1/image.png" />
-  <meta property="og:url" content="https://e-yokotsuka.github.io/gpt-demo1/" />
-  <meta property="og:site_name" content="Chat-GPTによるコード生成デモコレクションサイト" />
-  <meta property="fb:app_id" content="230836995981833" />
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>ChatGPT vs Claude コード生成デモ比較</title>
+	<meta property="og:title" content="ChatGPT vs Claude コード生成デモ比較" />
+	<meta property="og:description" content="ChatGPTで生成されたデモをClaude Opus 4.6で作り直して比較。タブ切り替えで新旧の差が一目でわかります。" />
+	<meta property="og:type" content="website" />
+	<meta property="og:image" content="https://e-yokotsuka.github.io/gpt-demo1/image.png" />
+	<meta property="og:url" content="https://e-yokotsuka.github.io/gpt-demo1/" />
+	<meta property="og:site_name" content="ChatGPT vs Claude コード生成デモ比較" />
+	<meta property="fb:app_id" content="230836995981833" />
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			font-family: "Segoe UI", Arial, sans-serif;
+			background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+			color: #e2e8f0;
+			min-height: 100vh;
+			padding: 40px 20px;
+		}
+		.container {
+			max-width: 900px;
+			margin: 0 auto;
+		}
+		h1 {
+			text-align: center;
+			font-size: 28px;
+			margin-bottom: 8px;
+			background: linear-gradient(90deg, #10a37f, #d4a27f);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+		}
+		.subtitle {
+			text-align: center;
+			color: #a8b2d1;
+			font-size: 14px;
+			margin-bottom: 36px;
+		}
+		h2 {
+			font-size: 18px;
+			margin: 28px 0 12px;
+			padding-bottom: 6px;
+			border-bottom: 1px solid #0f3460;
+			color: #a8b2d1;
+		}
+		.demo-list {
+			display: flex;
+			flex-direction: column;
+			gap: 6px;
+		}
+		.demo-link {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 10px 16px;
+			background: rgba(255,255,255,0.04);
+			border-radius: 8px;
+			text-decoration: none;
+			color: #e2e8f0;
+			transition: all 0.15s;
+		}
+		.demo-link:hover {
+			background: rgba(255,255,255,0.1);
+			transform: translateX(4px);
+		}
+		.badge {
+			font-size: 11px;
+			padding: 2px 8px;
+			border-radius: 4px;
+			font-weight: bold;
+			flex-shrink: 0;
+		}
+		.badge-compare {
+			background: linear-gradient(90deg, #10a37f, #d4a27f);
+			color: #1a1a2e;
+		}
+		.badge-claude {
+			background: #d4a27f;
+			color: #1a1a2e;
+		}
+		.demo-name { flex: 1; }
+		.demo-note {
+			font-size: 12px;
+			color: #666;
+		}
+		.section-claude {
+			margin-top: 40px;
+			padding-top: 20px;
+			border-top: 2px solid #d4a27f;
+		}
+	</style>
 </head>
-
 <body>
-  <div class="main">
-    <a href="./matrix.html" target="_blank">Digital Rain Matrix</a><br />
-    <a href="./snow.html" target="_blank">Falling Snowflakes</a><br />
-    <a href="./roaming-cockroaches.html" target="_blank">Roaming Cockroaches</a><br />
-    <a href="./mandelbrot-slow.html" target="_blank">Mandelbrot Explorer Part.1 (Slow)</a><br />
-    <a href="./mandelbrot-slow2.html" target="_blank">Mandelbrot Explorer Part.2 (Slow)</a><br />
-    <a href="./mandelbrot-ol.html" target="_blank">Mandelbrot OpenLayers (Not Optimal)</a><br />
-    <a href="./linedemo.html" target="_blank">Dynamic Colorful Lines</a><br />
-    <a href="./thunder.html" target="_blank">Electrifying Thunderstorm</a><br />
-    <a href="./water-ripples1.html" target="_blank">Water Ripples Simulation Part.1</a><br />
-    <a href="./water-ripples2.html" target="_blank">Water Ripples Simulation Part.2</a><br />
-    <a href="./balls.html" target="_blank">Bouncing Colorful Balls</a><br />
-    <a href="./cool-design.html" target="_blank">Cool Design Showcase(static)</a><br />
-    <a href="./retro-1980s-homepage.html" target="_blank">1980s Retro Homepage(static)</a><br />
-    <a href="./space-travel-demo.html" target="_blank">Space Travel Demo Part.1</a><br />
-    <a href="./space-travel-demo2.html" target="_blank">Space Travel Demo Part.2</a><br />
-    <a href="./stereogram-demo.html" target="_blank">Stereogram Demo(Not Optimal)</a><br />
-    <a href="./chaos-curve-demo.html" target="_blank">Chaos Curve Demo(That's not it!!!!!!!)</a><br />
-    <a href="./megademo-style-demo.html" target="_blank">MegaDemo Style Demo(Pretty good!)</a><br />
-    <a href="./daisy-bell-music-demo.html" target="_blank">Daisy Bell Music Demo(This isn't Daisy Bell at all!
-      😡)</a><br />
-    <a href="./lorenz-attractor-demo.html" target="_blank">Lorenz Attractor Demo(Pretty good!)</a><br />
-    <a href="./picture-book.html" target="_blank">Picture Book(static)</a><br />
-    <a href="./tetris.html" target="_blank">Tetris (You can control it with the arrow keys.)</a><br />
-    <a href="./yaruo.html" target="_blank">Yaruo</a><br />
-    <a href="./wiz.html" target="_blank">Wiz</a><br />
-    <a href="./wiz2.html" target="_blank">Wiz2</a><br />
-    <a href="./particles.html" target="_blank">Particle Editor (Powered by GPT-4)</a><br />
-    <a href="./rpg.html" target="_blank">Retro RPG (Powered by GPT-4)</a><br />
-    <a href="./tet.html" target="_blank">Tetris (Powered by GPT-4 o3-mini-high)</a><br />
-    <a href="./shoot.html" target="_blank">Shooting Game(Powered by GPT-4 o3-mini-high)</a><br />
-    <a href="./side-scroller.html" target="_blank">Side-Scroller Action Game (Powered by Claude Opus 4.6)</a><br />
-    <p>
-      Could someone please generate code using only Chat-GPT to speed up the "Mandelbrot Part.1 (Slow)"?
-    </p>
-  </div>
-</body>
+	<div class="container">
+		<h1>ChatGPT vs Claude コード生成デモ比較</h1>
+		<p class="subtitle">ChatGPTで生成されたデモをClaude Opus 4.6で作り直して比較できます</p>
 
+		<h2>ゲーム / インタラクティブ</h2>
+		<div class="demo-list">
+			<a class="demo-link" href="./compare.html?demo=side-scroller"><span class="badge badge-compare">比較</span><span class="demo-name">Side-Scroller Action Game (Latest AI)</span></a>
+			<a class="demo-link" href="./compare.html?demo=shoot"><span class="badge badge-compare">比較</span><span class="demo-name">Shooting Game</span></a>
+			<a class="demo-link" href="./compare.html?demo=tetris"><span class="badge badge-compare">比較</span><span class="demo-name">Tetris (PixiJS版)</span></a>
+			<a class="demo-link" href="./compare.html?demo=tet"><span class="badge badge-compare">比較</span><span class="demo-name">Tetris (シンプル版)</span></a>
+			<a class="demo-link" href="./compare.html?demo=rpg"><span class="badge badge-compare">比較</span><span class="demo-name">Retro RPG</span></a>
+			<a class="demo-link" href="./compare.html?demo=wiz"><span class="badge badge-compare">比較</span><span class="demo-name">Wizardry Dungeon</span></a>
+			<a class="demo-link" href="./compare.html?demo=wiz2"><span class="badge badge-compare">比較</span><span class="demo-name">Wizardry 3D Dungeon</span></a>
+			<a class="demo-link" href="./compare.html?demo=particles"><span class="badge badge-compare">比較</span><span class="demo-name">Particle Editor</span></a>
+		</div>
+
+		<h2>ビジュアル / アニメーション</h2>
+		<div class="demo-list">
+			<a class="demo-link" href="./compare.html?demo=matrix"><span class="badge badge-compare">比較</span><span class="demo-name">Digital Rain Matrix</span></a>
+			<a class="demo-link" href="./compare.html?demo=snow"><span class="badge badge-compare">比較</span><span class="demo-name">Falling Snowflakes</span></a>
+			<a class="demo-link" href="./compare.html?demo=roaming-cockroaches"><span class="badge badge-compare">比較</span><span class="demo-name">Roaming Cockroaches</span></a>
+			<a class="demo-link" href="./compare.html?demo=linedemo"><span class="badge badge-compare">比較</span><span class="demo-name">Dynamic Colorful Lines</span></a>
+			<a class="demo-link" href="./compare.html?demo=thunder"><span class="badge badge-compare">比較</span><span class="demo-name">Electrifying Thunderstorm</span></a>
+			<a class="demo-link" href="./compare.html?demo=water-ripples1"><span class="badge badge-compare">比較</span><span class="demo-name">Water Ripples Simulation Part.1</span></a>
+			<a class="demo-link" href="./compare.html?demo=water-ripples2"><span class="badge badge-compare">比較</span><span class="demo-name">Water Ripples Simulation Part.2</span></a>
+			<a class="demo-link" href="./compare.html?demo=balls"><span class="badge badge-compare">比較</span><span class="demo-name">Bouncing Colorful Balls</span></a>
+			<a class="demo-link" href="./compare.html?demo=lorenz-attractor-demo"><span class="badge badge-compare">比較</span><span class="demo-name">Lorenz Attractor Demo</span></a>
+			<a class="demo-link" href="./compare.html?demo=cubes"><span class="badge badge-compare">比較</span><span class="demo-name">Rotating Cubes</span></a>
+			<a class="demo-link" href="./compare.html?demo=space-travel-demo"><span class="badge badge-compare">比較</span><span class="demo-name">Space Travel Demo Part.1</span></a>
+			<a class="demo-link" href="./compare.html?demo=space-travel-demo2"><span class="badge badge-compare">比較</span><span class="demo-name">Space Travel Demo Part.2</span></a>
+			<a class="demo-link" href="./compare.html?demo=stereogram-demo"><span class="badge badge-compare">比較</span><span class="demo-name">Stereogram Demo</span></a>
+			<a class="demo-link" href="./compare.html?demo=chaos-curve-demo"><span class="badge badge-compare">比較</span><span class="demo-name">Chaos Curve Demo</span></a>
+			<a class="demo-link" href="./compare.html?demo=megademo-style-demo"><span class="badge badge-compare">比較</span><span class="demo-name">MegaDemo Style Demo</span></a>
+			<a class="demo-link" href="./compare.html?demo=mandelbrot-slow"><span class="badge badge-compare">比較</span><span class="demo-name">Mandelbrot Explorer Part.1</span></a>
+			<a class="demo-link" href="./compare.html?demo=mandelbrot-slow2"><span class="badge badge-compare">比較</span><span class="demo-name">Mandelbrot Explorer Part.2</span></a>
+			<a class="demo-link" href="./compare.html?demo=mandelbrot-ol"><span class="badge badge-compare">比較</span><span class="demo-name">Mandelbrot OpenLayers</span></a>
+		</div>
+
+		<h2>静的デザイン</h2>
+		<div class="demo-list">
+			<a class="demo-link" href="./compare.html?demo=cool-design"><span class="badge badge-compare">比較</span><span class="demo-name">Cool Design Showcase</span></a>
+			<a class="demo-link" href="./compare.html?demo=retro-1980s-homepage"><span class="badge badge-compare">比較</span><span class="demo-name">1980s Retro Homepage</span></a>
+			<a class="demo-link" href="./compare.html?demo=picture-book"><span class="badge badge-compare">比較</span><span class="demo-name">Picture Book</span></a>
+			<a class="demo-link" href="./compare.html?demo=yaruo"><span class="badge badge-compare">比較</span><span class="demo-name">Yaruo</span></a>
+		</div>
+
+		<h2>オーディオ</h2>
+		<div class="demo-list">
+			<a class="demo-link" href="./compare.html?demo=daisy-bell-music-demo"><span class="badge badge-compare">比較</span><span class="demo-name">Daisy Bell Music Demo</span></a>
+		</div>
+
+		<div class="section-claude">
+			<h2>Claude Opus 4.6 オリジナル</h2>
+			<div class="demo-list">
+				<a class="demo-link" href="./side-scroller.html" target="_blank"><span class="badge badge-claude">Claude</span><span class="demo-name">Side-Scroller Action Game</span></a>
+			</div>
+		</div>
+	</div>
+</body>
 </html>
