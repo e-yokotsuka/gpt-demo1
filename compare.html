@@ -82,6 +82,19 @@
 			height: 3px;
 			background: #d4a27f;
 		}
+		.tab.active-codex {
+			color: #38bdf8;
+			background: rgba(56, 189, 248, 0.12);
+		}
+		.tab.active-codex::after {
+			content: "";
+			position: absolute;
+			bottom: -2px;
+			left: 0;
+			right: 0;
+			height: 3px;
+			background: #38bdf8;
+		}
 		.iframe-container {
 			flex: 1;
 			position: relative;
@@ -123,10 +136,12 @@
 	<div class="tab-bar">
 		<button class="tab active-chatgpt" id="tab-chatgpt" onclick="switchTab('chatgpt')">ChatGPT</button>
 		<button class="tab" id="tab-claude" onclick="switchTab('claude')">Claude Opus 4.6</button>
+		<button class="tab" id="tab-codex" onclick="switchTab('codex')">GPT-5.2-Codex</button>
 	</div>
 	<div class="iframe-container">
 		<iframe id="chatgpt-frame" class="demo-frame active"></iframe>
 		<iframe id="claude-frame" class="demo-frame"></iframe>
+		<iframe id="codex-frame" class="demo-frame"></iframe>
 		<div id="coming-soon" class="coming-soon">
 			<div>準備中...</div>
 			<div style="font-size:14px;color:#666">このデモのClaude版はまだ作成されていません</div>
@@ -168,7 +183,8 @@
 				title: "Side-Scroller Action Game",
 				chatgpt: "./side-scroller-modern.html",
 				claude: "./side-scroller.html",
-				labels: { primary: "Latest AI", secondary: "Claude Opus 4.6" },
+				codex: "./side-scroller-codex.html",
+				labels: { primary: "Latest AI", secondary: "Claude Opus 4.6", tertiary: "GPT-5.2-Codex" },
 			},
 		};
 
@@ -181,9 +197,18 @@
 			document.title = config.title + " - ChatGPT vs Claude";
 			document.getElementById("chatgpt-frame").src = config.chatgpt;
 			document.getElementById("claude-frame").src = config.claude;
-			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6" };
+			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "GPT-5.2-Codex" };
 			document.getElementById("tab-chatgpt").textContent = labels.primary;
 			document.getElementById("tab-claude").textContent = labels.secondary;
+			document.getElementById("tab-codex").textContent = labels.tertiary || "GPT-5.2-Codex";
+			const codexTab = document.getElementById("tab-codex");
+			const codexFrame = document.getElementById("codex-frame");
+			if (config.codex) {
+				codexTab.style.display = "";
+				codexFrame.src = config.codex;
+			} else {
+				codexTab.style.display = "none";
+			}
 		} else {
 			document.getElementById("demo-title").textContent = "デモが見つかりません";
 		}
@@ -194,28 +219,40 @@
 			currentTab = tab;
 			const chatgptFrame = document.getElementById("chatgpt-frame");
 			const claudeFrame = document.getElementById("claude-frame");
+			const codexFrame = document.getElementById("codex-frame");
 			const tabChatgpt = document.getElementById("tab-chatgpt");
 			const tabClaude = document.getElementById("tab-claude");
+			const tabCodex = document.getElementById("tab-codex");
 			const comingSoon = document.getElementById("coming-soon");
 
 			// タブのスタイルをリセット
 			tabChatgpt.className = "tab";
 			tabClaude.className = "tab";
+			tabCodex.className = "tab";
 
 			if (tab === "chatgpt") {
 				chatgptFrame.classList.add("active");
 				claudeFrame.classList.remove("active");
+				codexFrame.classList.remove("active");
 				comingSoon.classList.remove("active");
 				tabChatgpt.classList.add("active-chatgpt");
 				// キーボードフォーカスをiframeに移動
 				setTimeout(() => chatgptFrame.contentWindow?.focus(), 50);
-			} else {
+			} else if (tab === "claude") {
 				chatgptFrame.classList.remove("active");
+				codexFrame.classList.remove("active");
 				tabClaude.classList.add("active-claude");
 				// Claude版のiframeが読み込めたか確認
 				claudeFrame.classList.add("active");
 				comingSoon.classList.remove("active");
 				setTimeout(() => claudeFrame.contentWindow?.focus(), 50);
+			} else {
+				chatgptFrame.classList.remove("active");
+				claudeFrame.classList.remove("active");
+				codexFrame.classList.add("active");
+				comingSoon.classList.remove("active");
+				tabCodex.classList.add("active-codex");
+				setTimeout(() => codexFrame.contentWindow?.focus(), 50);
 			}
 		}
 	</script>

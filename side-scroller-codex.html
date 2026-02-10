@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Side-Scroller Action Game - GPT-5.2-Codex</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="side-scroller-codex.css">
+</head>
+<body>
+	<div class="codex-page">
+		<header class="codex-header">
+			<div>
+				<p class="codex-eyebrow">GPT-5.2-Codex // Full Throttle</p>
+				<h1>Side-Scroller Action Game</h1>
+			</div>
+			<div class="codex-actions">
+				<a class="codex-link" href="./index.html">メニューに戻る</a>
+				<span class="codex-badge">Codex Build 5.2</span>
+			</div>
+		</header>
+
+		<main class="codex-layout">
+			<section class="codex-stage">
+				<div class="stage-top">
+					<div>
+						<h2>Neon Archive: Run 04</h2>
+						<p>スピード、壁蹴り、エナジー管理。最新ロジックで全力展示。</p>
+					</div>
+					<div class="stage-buttons">
+						<button class="btn primary" id="btn-codex-pause">Pause</button>
+						<button class="btn ghost" id="btn-codex-restart">Restart</button>
+					</div>
+				</div>
+
+				<div class="hud">
+					<div class="hud-card">
+						<span class="label">DIST</span>
+						<span id="hud-distance">0</span>
+					</div>
+					<div class="hud-card">
+						<span class="label">SCORE</span>
+						<span id="hud-score">0</span>
+					</div>
+					<div class="hud-card">
+						<span class="label">COMBO</span>
+						<span id="hud-combo">x1</span>
+					</div>
+					<div class="hud-card">
+						<span class="label">ENERGY</span>
+						<span id="hud-energy">100%</span>
+					</div>
+					<div class="hud-card">
+						<span class="label">LIVES</span>
+						<span id="hud-lives">3</span>
+					</div>
+				</div>
+
+				<div class="canvas-frame">
+					<canvas id="codexCanvas" width="960" height="540"></canvas>
+					<div class="overlay show" id="codex-overlay-start">
+						<div class="overlay-box">
+							<h3>Launch Sequence</h3>
+							<p>← → / A D 移動, Space ジャンプ, Shift ダッシュ</p>
+							<p>壁キックは接触中にジャンプ。コンボ5でOverdrive。</p>
+							<button class="btn primary" id="btn-codex-start">Start</button>
+						</div>
+					</div>
+					<div class="overlay" id="codex-overlay-pause">
+						<div class="overlay-box">
+							<h3>Paused</h3>
+							<button class="btn primary" id="btn-codex-resume">Resume</button>
+						</div>
+					</div>
+					<div class="overlay" id="codex-overlay-over">
+						<div class="overlay-box">
+							<h3>Run Complete</h3>
+							<p id="codex-final">Score 0</p>
+							<button class="btn primary" id="btn-codex-retry">Retry</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="touch-bar" id="codex-touch">
+					<button data-control="left">◀</button>
+					<button data-control="right">▶</button>
+					<button data-control="jump">⤒</button>
+					<button data-control="dash">◆</button>
+				</div>
+			</section>
+
+			<aside class="codex-panel">
+				<div class="panel-tabs">
+					<button class="panel-tab active" data-panel="guide">Guide</button>
+					<button class="panel-tab" data-panel="systems">Systems</button>
+					<button class="panel-tab" data-panel="legacy">Legacy</button>
+				</div>
+
+				<div class="panel-body active" id="panel-guide">
+					<h3>操作</h3>
+					<ul>
+						<li>移動: ← → / A D</li>
+						<li>ジャンプ: Space / W / ↑ (長押し可)</li>
+						<li>壁キック: 壁接触中にジャンプ</li>
+						<li>ダッシュ: Shift / K (エナジー消費)</li>
+						<li>リスタート: R</li>
+					</ul>
+					<h3>Overdrive</h3>
+					<ul>
+						<li>コンボ5以上で速度とスコア倍率が上昇</li>
+						<li>ダッシュ中は無敵フレーム</li>
+					</ul>
+				</div>
+
+				<div class="panel-body" id="panel-systems">
+					<h3>設定</h3>
+					<label class="toggle">
+						<input type="checkbox" id="codex-reduce-motion">
+						<span>モーション軽減</span>
+					</label>
+					<label class="toggle">
+						<input type="checkbox" id="codex-high-contrast">
+						<span>高コントラスト</span>
+					</label>
+					<label class="toggle">
+						<input type="checkbox" id="codex-auto-run">
+						<span>オート前進</span>
+					</label>
+					<p class="note">設定はローカルに保存されます。</p>
+				</div>
+
+				<div class="panel-body" id="panel-legacy">
+					<h3>過去の挑戦</h3>
+					<ul>
+						<li>Yaruo: 2Ch発のキャラを再現できるか</li>
+						<li>Wiz / Wiz2: Wizardry風RPGを構築できるか</li>
+						<li>Daisy Bell: ブラウザで演奏できるか</li>
+					</ul>
+					<p class="note">このページは最新AIの演出力と制御力を見せる実験です。</p>
+				</div>
+			</aside>
+		</main>
+	</div>
+	<script src="side-scroller-codex.js"></script>
+</body>
+</html>
