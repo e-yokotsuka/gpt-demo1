@@ -1,33 +1,69 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>横スクロールアクションゲーム</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      margin: 40;
+      overflow-y: auto;
+    }
+
+    .main {
+      width: 100%;
+      text-align: center;
+      font-size: x-large;
+    }
+  </style>
+  <title>Chat-GPTによるコード生成</title>
+  <meta charset="utf-8">
+  <meta property="og:title" content="Chat-GPTによるコード生成" />
+  <meta property="og:description" content="Chat-GPTでコード生成した様々なデモを集めたトップページ。雨と波紋のデモ、雷のデモなど、興味深いデモが楽しめます。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://e-yokotsuka.github.io/gpt-demo1/image.png" />
+  <meta property="og:url" content="https://e-yokotsuka.github.io/gpt-demo1/" />
+  <meta property="og:site_name" content="Chat-GPTによるコード生成デモコレクションサイト" />
+  <meta property="fb:app_id" content="230836995981833" />
 </head>
+
 <body>
-    <div class="game-container">
-        <h1>横スクロールアクションゲーム</h1>
-        <canvas id="gameCanvas" width="800" height="600"></canvas>
-        <div class="controls">
-            <p>操作方法：</p>
-            <ul>
-                <li>← → 矢印キー / A・D：移動</li>
-                <li>↑ 矢印キー / W / スペース：ジャンプ</li>
-                <li>Xキー：通常弾（連射可能、当たると爆発）</li>
-                <li>Zキー：ホーミングミサイル（板野サーカス風追尾弾）</li>
-                <li>Rキー：リスタート（ゲームオーバー時）</li>
-            </ul>
-            <p>ヒント：</p>
-            <ul>
-                <li>穴に落ちるとライフが減ります</li>
-                <li>★を取ると一定時間無敵！敵を体当たりで倒せます</li>
-                <li>紫の敵は弾を撃ってきます。オレンジの敵は突然ダッシュします</li>
-                <li>上にも足場があります。どこまでも登れます！</li>
-            </ul>
-        </div>
-    </div>
-    <script src="game.js"></script>
+  <div class="main">
+    <a href="./matrix.html" target="_blank">Digital Rain Matrix</a><br />
+    <a href="./snow.html" target="_blank">Falling Snowflakes</a><br />
+    <a href="./roaming-cockroaches.html" target="_blank">Roaming Cockroaches</a><br />
+    <a href="./mandelbrot-slow.html" target="_blank">Mandelbrot Explorer Part.1 (Slow)</a><br />
+    <a href="./mandelbrot-slow2.html" target="_blank">Mandelbrot Explorer Part.2 (Slow)</a><br />
+    <a href="./mandelbrot-ol.html" target="_blank">Mandelbrot OpenLayers (Not Optimal)</a><br />
+    <a href="./linedemo.html" target="_blank">Dynamic Colorful Lines</a><br />
+    <a href="./thunder.html" target="_blank">Electrifying Thunderstorm</a><br />
+    <a href="./water-ripples1.html" target="_blank">Water Ripples Simulation Part.1</a><br />
+    <a href="./water-ripples2.html" target="_blank">Water Ripples Simulation Part.2</a><br />
+    <a href="./balls.html" target="_blank">Bouncing Colorful Balls</a><br />
+    <a href="./cool-design.html" target="_blank">Cool Design Showcase(static)</a><br />
+    <a href="./retro-1980s-homepage.html" target="_blank">1980s Retro Homepage(static)</a><br />
+    <a href="./space-travel-demo.html" target="_blank">Space Travel Demo Part.1</a><br />
+    <a href="./space-travel-demo2.html" target="_blank">Space Travel Demo Part.2</a><br />
+    <a href="./stereogram-demo.html" target="_blank">Stereogram Demo(Not Optimal)</a><br />
+    <a href="./chaos-curve-demo.html" target="_blank">Chaos Curve Demo(That's not it!!!!!!!)</a><br />
+    <a href="./megademo-style-demo.html" target="_blank">MegaDemo Style Demo(Pretty good!)</a><br />
+    <a href="./daisy-bell-music-demo.html" target="_blank">Daisy Bell Music Demo(This isn't Daisy Bell at all!
+      😡)</a><br />
+    <a href="./lorenz-attractor-demo.html" target="_blank">Lorenz Attractor Demo(Pretty good!)</a><br />
+    <a href="./picture-book.html" target="_blank">Picture Book(static)</a><br />
+    <a href="./tetris.html" target="_blank">Tetris (You can control it with the arrow keys.)</a><br />
+    <a href="./yaruo.html" target="_blank">Yaruo</a><br />
+    <a href="./wiz.html" target="_blank">Wiz</a><br />
+    <a href="./wiz2.html" target="_blank">Wiz2</a><br />
+    <a href="./particles.html" target="_blank">Particle Editor (Powered by GPT-4)</a><br />
+    <a href="./rpg.html" target="_blank">Retro RPG (Powered by GPT-4)</a><br />
+    <a href="./tet.html" target="_blank">Tetris (Powered by GPT-4 o3-mini-high)</a><br />
+    <a href="./shoot.html" target="_blank">Shooting Game(Powered by GPT-4 o3-mini-high)</a><br />
+    <a href="./side-scroller.html" target="_blank">Side-Scroller Action Game (Powered by Claude Opus 4.6)</a><br />
+    <p>
+      Could someone please generate code using only Chat-GPT to speed up the "Mandelbrot Part.1 (Slow)"?
+    </p>
+  </div>
 </body>
+
 </html>
