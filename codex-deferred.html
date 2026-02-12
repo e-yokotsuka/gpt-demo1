@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChatGPT-5.3-Codex 実装見送り</title>
+  <title>ChatGPT-5.3-Codex 進捗メモ</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -56,13 +56,12 @@
 </head>
 <body>
   <main class="card">
-    <h1>ChatGPT-5.3-Codex 実装見送り</h1>
+    <h1>ChatGPT-5.3-Codex 進捗メモ</h1>
     <p>
       デモ: <span id="demo-name" class="demo-name">不明</span>
     </p>
-    <p>
-      このデモは今回の作業範囲では完成実装を見送りました。
-      実装規模と検証コストが大きく、短時間で品質担保ができないためです。
+    <p id="summary">
+      このデモの進捗と判断理由を表示します。
     </p>
     <div id="reason" class="reason">理由: 実装・検証の工数が大きいため、今回のスコープ外と判断しました。</div>
     <div class="footer">比較タブで他モデル版の挙動は継続して確認できます。</div>
@@ -70,9 +69,14 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const demoName = params.get("name") || "不明";
-    const reason = params.get("reason") || "実装・検証の工数が大きいため、今回のスコープ外と判断しました。";
+    const reason = params.get("reason") || "このデモは見送り対象ではありません。";
     document.getElementById("demo-name").textContent = demoName;
     document.getElementById("reason").textContent = "理由: " + reason;
+    if (reason.includes("見送り")) {
+      document.getElementById("summary").textContent = "このデモは今回の作業範囲では一部見送りとしました。";
+    } else {
+      document.getElementById("summary").textContent = "このデモは見送り対象ではなく、比較表示を継続します。";
+    }
   </script>
 </body>
 </html>

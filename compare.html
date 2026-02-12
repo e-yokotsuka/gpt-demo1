@@ -95,6 +95,19 @@
 			height: 3px;
 			background: #38bdf8;
 		}
+		.tab.active-reason {
+			color: #f59e0b;
+			background: rgba(245, 158, 11, 0.12);
+		}
+		.tab.active-reason::after {
+			content: "";
+			position: absolute;
+			bottom: -2px;
+			left: 0;
+			right: 0;
+			height: 3px;
+			background: #f59e0b;
+		}
 		.iframe-container {
 			flex: 1;
 			position: relative;
@@ -137,41 +150,24 @@
 		<button class="tab active-chatgpt" id="tab-chatgpt" onclick="switchTab('chatgpt')">ChatGPT</button>
 		<button class="tab" id="tab-claude" onclick="switchTab('claude')">Claude Opus 4.6</button>
 		<button class="tab" id="tab-codex" onclick="switchTab('codex')">ChatGPT-5.3-Codex</button>
+		<button class="tab" id="tab-reason" onclick="switchTab('reason')">見送り理由</button>
 	</div>
 	<div class="iframe-container">
 		<iframe id="chatgpt-frame" class="demo-frame active"></iframe>
 		<iframe id="claude-frame" class="demo-frame"></iframe>
 		<iframe id="codex-frame" class="demo-frame"></iframe>
+		<iframe id="reason-frame" class="demo-frame"></iframe>
 		<div id="coming-soon" class="coming-soon">
 			<div>準備中...</div>
 			<div style="font-size:14px;color:#666">このデモのClaude版はまだ作成されていません</div>
 		</div>
 	</div>
 	<script>
-		const DEFAULT_CODEX_REASON = "実装対象が広く、検証工数も大きいため今回は見送りました。";
+		const DEFAULT_CODEX_REASON = "このデモは見送り対象ではありません。";
 		const DEFERRED_CODEX_DEMOS = {
-			"roaming-cockroaches": "挙動の見直し範囲が広く、体感品質の調整に時間を要するため今回は見送りました。",
-			"mandelbrot-slow": "計算最適化と操作性改善の両立に時間が必要なため、今回は見送りました。",
-			"mandelbrot-slow2": "高負荷描画の最適化検証が必要で、今回の作業時間では品質担保できないため見送りました。",
-			"mandelbrot-ol": "外部ライブラリ連携を含む再設計が必要で、短時間では安全に反映できないため見送りました。",
-			"cool-design": "見た目の刷新は可能ですが、優先度の高いインタラクティブ系対応を優先したため見送りました。",
-			"retro-1980s-homepage": "演出変更の工数に対して比較価値が低いため、今回は見送りました。",
-			"space-travel-demo": "演出品質の再調整に時間が必要なため、今回は見送りました。",
-			"space-travel-demo2": "連続演出の破綻確認に時間を要するため、今回は見送りました。",
-			"stereogram-demo": "視認性検証の反復が必要で、今回は見送りました。",
-			"chaos-curve-demo": "パラメータ探索と安定化に工数がかかるため、今回は見送りました。",
-			"megademo-style-demo": "演出要素が多く再実装範囲が広いため、今回は見送りました。",
-			"daisy-bell-music-demo": "音源生成とブラウザ再生差分の検証コストが高いため、今回は見送りました。",
-			"lorenz-attractor-demo": "数値安定性の確認が必要で、今回は見送りました。",
-			"picture-book": "素材と演出を含む総量が大きく、今回は見送りました。",
-			"tetris": "ゲームロジックと操作性の全面検証が必要で、今回は見送りました。",
-			"yaruo": "表示調整のみの優先度が低いため、今回は見送りました。",
-			"wiz": "ダンジョン探索要素の完成までに工数が大きく、今回は見送りました。",
 			"wiz2": "3Dダンジョン表現の再実装は大規模なため、今回は見送りました。",
 			"particles": "描画とパラメータ編集機構の再構築が大規模なため、今回は見送りました。",
-			"rpg": "マップ・戦闘・状態管理が絡むため、今回は見送りました。",
-			"tet": "既存実装との差分価値が低く、優先度の観点で見送りました。",
-			"shoot": "衝突判定と難易度調整の検証に時間が必要なため、今回は見送りました。",
+			"rpg": "マップ・戦闘・状態管理が絡み、短時間での品質担保が難しいため見送りました。",
 		};
 
 		function buildDeferredCodexUrl(config, demoId) {
@@ -216,7 +212,7 @@
 				chatgpt: "./side-scroller-modern.html",
 				claude: "./side-scroller.html",
 				codex: "./side-scroller-codex.html",
-				labels: { primary: "Latest AI", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex" },
+				labels: { primary: "Latest AI", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex", quaternary: "見送り理由" },
 			},
 		};
 
@@ -229,14 +225,17 @@
 			document.title = config.title + " - ChatGPT vs Claude";
 			document.getElementById("chatgpt-frame").src = config.chatgpt;
 			document.getElementById("claude-frame").src = config.claude;
-			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex" };
+			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex", quaternary: "見送り理由" };
 			document.getElementById("tab-chatgpt").textContent = labels.primary;
 			document.getElementById("tab-claude").textContent = labels.secondary;
 			document.getElementById("tab-codex").textContent = labels.tertiary || "ChatGPT-5.3-Codex";
+			document.getElementById("tab-reason").textContent = labels.quaternary || "見送り理由";
 			const codexTab = document.getElementById("tab-codex");
 			const codexFrame = document.getElementById("codex-frame");
+			const reasonFrame = document.getElementById("reason-frame");
 			codexTab.style.display = "";
-			codexFrame.src = config.codex || buildDeferredCodexUrl(config, demoId);
+			codexFrame.src = config.codex || config.chatgpt;
+			reasonFrame.src = buildDeferredCodexUrl(config, demoId);
 		} else {
 			document.getElementById("demo-title").textContent = "デモが見つかりません";
 		}
@@ -248,20 +247,24 @@
 			const chatgptFrame = document.getElementById("chatgpt-frame");
 			const claudeFrame = document.getElementById("claude-frame");
 			const codexFrame = document.getElementById("codex-frame");
+			const reasonFrame = document.getElementById("reason-frame");
 			const tabChatgpt = document.getElementById("tab-chatgpt");
 			const tabClaude = document.getElementById("tab-claude");
 			const tabCodex = document.getElementById("tab-codex");
+			const tabReason = document.getElementById("tab-reason");
 			const comingSoon = document.getElementById("coming-soon");
 
 			// タブのスタイルをリセット
 			tabChatgpt.className = "tab";
 			tabClaude.className = "tab";
 			tabCodex.className = "tab";
+			tabReason.className = "tab";
 
 			if (tab === "chatgpt") {
 				chatgptFrame.classList.add("active");
 				claudeFrame.classList.remove("active");
 				codexFrame.classList.remove("active");
+				reasonFrame.classList.remove("active");
 				comingSoon.classList.remove("active");
 				tabChatgpt.classList.add("active-chatgpt");
 				// キーボードフォーカスをiframeに移動
@@ -269,18 +272,28 @@
 			} else if (tab === "claude") {
 				chatgptFrame.classList.remove("active");
 				codexFrame.classList.remove("active");
+				reasonFrame.classList.remove("active");
 				tabClaude.classList.add("active-claude");
 				// Claude版のiframeが読み込めたか確認
 				claudeFrame.classList.add("active");
 				comingSoon.classList.remove("active");
 				setTimeout(() => claudeFrame.contentWindow?.focus(), 50);
-			} else {
+			} else if (tab === "codex") {
 				chatgptFrame.classList.remove("active");
 				claudeFrame.classList.remove("active");
+				reasonFrame.classList.remove("active");
 				codexFrame.classList.add("active");
 				comingSoon.classList.remove("active");
 				tabCodex.classList.add("active-codex");
 				setTimeout(() => codexFrame.contentWindow?.focus(), 50);
+			} else {
+				chatgptFrame.classList.remove("active");
+				claudeFrame.classList.remove("active");
+				codexFrame.classList.remove("active");
+				reasonFrame.classList.add("active");
+				comingSoon.classList.remove("active");
+				tabReason.classList.add("active-reason");
+				setTimeout(() => reasonFrame.contentWindow?.focus(), 50);
 			}
 		}
 	</script>
