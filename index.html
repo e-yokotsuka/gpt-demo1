@@ -171,16 +171,12 @@
 		<p class="subtitle">ChatGPTで生成されたデモをClaude Opus 4.6で作り直して比較できます</p>
 		<section class="changelog" aria-label="変更履歴">
 			<div class="changelog-title">最近の変更</div>
-			<div class="changelog-list">
-				<div class="changelog-item"><span class="change-date">2026-02-12</span><span class="change-ai codex">Codex</span><span>Space Travel Demo Part.1 の Codex 版を実装し、比較タブへ接続</span></div>
-				<div class="changelog-item"><span class="change-date">2026-02-12</span><span class="change-ai codex">Codex</span><span>Side-Scroller の ChatGPT タブを「存在しない」表示に修正</span></div>
-				<div class="changelog-item"><span class="change-date">2026-02-12</span><span class="change-ai claude">Claude</span><span>Side-Scroller Action Game の比較元（Claude版）を提供</span></div>
-			</div>
+			<div class="changelog-list" id="changelog-list"></div>
 		</section>
 
 		<h2>ゲーム / インタラクティブ</h2>
 		<div class="demo-list">
-			<a class="demo-link" href="./compare.html?demo=side-scroller"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex">G5.3</span></span><span class="demo-name">Side-Scroller Action Game (Latest AI)</span></a>
+			<a class="demo-link" href="./compare.html?demo=side-scroller"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt is-disabled">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex">G5.3</span></span><span class="demo-name">Side-Scroller Action Game (Latest AI)</span></a>
 			<a class="demo-link" href="./compare.html?demo=shoot"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex is-disabled">G5.3</span></span><span class="demo-name">Shooting Game</span></a>
 			<a class="demo-link" href="./compare.html?demo=tetris"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex is-disabled">G5.3</span></span><span class="demo-name">Tetris (PixiJS版)</span></a>
 			<a class="demo-link" href="./compare.html?demo=tet"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex is-disabled">G5.3</span></span><span class="demo-name">Tetris (シンプル版)</span></a>
@@ -232,5 +228,37 @@
 			</div>
 		</div>
 	</div>
+	<script>
+		(function renderChangelog() {
+			const list = document.getElementById("changelog-list");
+			if (!list) return;
+
+			function aiLabel(ai) {
+				if (ai === "codex") return { text: "Codex", className: "codex" };
+				if (ai === "claude") return { text: "Claude", className: "claude" };
+				return { text: "ChatGPT", className: "gpt" };
+			}
+
+			function showMessage(text) {
+				list.innerHTML = `<div class="changelog-item"><span class="change-date">-</span><span>${text}</span></div>`;
+			}
+
+			fetch("./updates.json", { cache: "no-store" })
+				.then((res) => (res.ok ? res.json() : Promise.reject(new Error("updates.json not found"))))
+				.then((entries) => {
+					if (!Array.isArray(entries) || entries.length === 0) {
+						showMessage("変更履歴はまだありません");
+						return;
+					}
+					list.innerHTML = entries.slice(0, 6).map((entry) => {
+						const ai = aiLabel(entry.ai);
+						const date = entry.date || "-";
+						const text = entry.text || "(no message)";
+						return `<div class="changelog-item"><span class="change-date">${date}</span><span class="change-ai ${ai.className}">${ai.text}</span><span>${text}</span></div>`;
+					}).join("");
+				})
+				.catch(() => showMessage("変更履歴の読み込みに失敗しました"));
+		})();
+	</script>
 </body>
 </html>

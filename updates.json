@@ -1,0 +1,74 @@
+[
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
+    "text": "Add Codex Space Travel demo and recent updates panel",
+    "commit": "f388a83"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
+    "text": "Hide redundant reason tab (Codex tab already shows deferral page)",
+    "commit": "996186b"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
+    "text": "Restore ChatGPT originals and hide reason tab for supported Codex demos",
+    "commit": "3a85cbd"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
+    "text": "Add Codex yaruo page and enable Yaruo 5.3 icon",
+    "commit": "00768b5"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
+    "text": "Show deferred page in Codex tab when unsupported",
+    "commit": "7b817c9"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "gpt",
+    "text": "Disable C4.6 icons for demos that were deferred (particles, rpg)",
+    "commit": "dd8ecd2"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "gpt",
+    "text": "Enable ChatGPT5.3 icons only for supported pages",
+    "commit": "7da2fd4"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
+    "text": "Add compare reason tab and broaden Codex 5.3 coverage",
+    "commit": "fb9afd0"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
+    "text": "Add ChatGPT-5.3 Codex fallback page and routing",
+    "commit": "18cbb49"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "claude",
+    "text": "Enable C4.6 icons for all Claude demo entries",
+    "commit": "7fb3b39"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "claude",
+    "text": "Add Claude Opus 4.6 demo versions for compare page",
+    "commit": "41bde2a"
+  },
+  {
+    "date": "2026-02-10",
+    "ai": "gpt",
+    "text": "Embed AI support icons in menu",
+    "commit": "8c4e785"
+  }
+]

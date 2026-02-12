@@ -41,9 +41,9 @@ body::before {
 }
 
 .codex-page {
-	max-width: 1200px;
+	max-width: 1320px;
 	margin: 0 auto;
-	padding: 32px 24px 40px;
+	padding: 20px 20px 28px;
 	position: relative;
 	z-index: 1;
 }
@@ -98,13 +98,13 @@ body::before {
 .codex-layout {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) 320px;
-	gap: 24px;
+	gap: 16px;
 }
 
 .codex-stage {
 	background: var(--panel);
 	border-radius: var(--radius);
-	padding: 24px;
+	padding: 16px;
 	box-shadow: var(--shadow);
 	backdrop-filter: blur(16px);
 }
@@ -114,7 +114,7 @@ body::before {
 	justify-content: space-between;
 	align-items: center;
 	gap: 16px;
-	margin-bottom: 16px;
+	margin-bottom: 10px;
 }
 
 .stage-top h2 {
@@ -131,6 +131,8 @@ body::before {
 .stage-buttons {
 	display: flex;
 	gap: 10px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
 }
 
 .btn {
@@ -157,8 +159,8 @@ body::before {
 .hud {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-	gap: 12px;
-	margin-bottom: 18px;
+	gap: 8px;
+	margin-bottom: 10px;
 }
 
 .hud-card {
@@ -178,16 +180,18 @@ body::before {
 
 .canvas-frame {
 	position: relative;
-	padding: 16px;
+	padding: 10px;
 	border-radius: 16px;
 	background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
 	display: grid;
 	place-items: center;
 	overflow: hidden;
+	min-height: min(72vh, 720px);
 }
 
 #codexCanvas {
-	width: min(100%, 960px);
+	width: 100%;
+	max-width: 100%;
 	aspect-ratio: 16 / 9;
 	border-radius: 16px;
 	background: #030409;
@@ -196,7 +200,7 @@ body::before {
 
 .overlay {
 	position: absolute;
-	inset: 16px;
+	inset: 10px;
 	display: none;
 	align-items: center;
 	justify-content: center;
@@ -347,12 +351,42 @@ body::before {
 	.codex-panel {
 		order: -1;
 	}
+	.canvas-frame {
+		min-height: min(62vh, 600px);
+	}
 }
 
 @media (max-width: 720px) {
+	.codex-page {
+		padding: 12px 10px 16px;
+	}
 	.codex-header {
 		flex-direction: column;
 		align-items: flex-start;
+	}
+	.codex-stage {
+		padding: 10px;
+	}
+	.stage-top {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+	.stage-buttons {
+		width: 100%;
+		justify-content: flex-start;
+	}
+	.btn {
+		padding: 8px 12px;
+	}
+	.hud {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.canvas-frame {
+		padding: 8px;
+		min-height: min(56vh, 420px);
+	}
+	.overlay {
+		inset: 8px;
 	}
 	.touch-bar {
 		display: flex;

@@ -6,7 +6,9 @@
 		"test": "echo \"Error: no test specified\" && exit 1",
 		"format": "biome format --write .",
 		"lint": "biome lint --write .",
-		"check": "biome check --write ."
+		"check": "biome check --write .",
+		"changelog:update": "node scripts/update-changelog.js",
+		"hooks:setup": "git config core.hooksPath .githooks"
 	},
 	"keywords": [],
 	"author": "",

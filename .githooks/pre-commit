@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -e
+
+npm run --silent changelog:update
+git add updates.json

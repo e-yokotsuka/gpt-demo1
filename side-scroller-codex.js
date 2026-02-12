@@ -15,6 +15,7 @@ const hudLives = document.getElementById("hud-lives");
 
 const btnPause = document.getElementById("btn-codex-pause");
 const btnRestart = document.getElementById("btn-codex-restart");
+const btnFullscreen = document.getElementById("btn-codex-fullscreen");
 const btnStart = document.getElementById("btn-codex-start");
 const btnResume = document.getElementById("btn-codex-resume");
 const btnRetry = document.getElementById("btn-codex-retry");
@@ -107,13 +108,19 @@ function saveSettings() {
 
 function resizeCanvas() {
 	const rect = frame.getBoundingClientRect();
-	const scale = Math.min(rect.width / BASE_W, rect.height / BASE_H);
-	const width = Math.floor(BASE_W * scale);
-	const height = Math.floor(BASE_H * scale);
+	const availableW = Math.max(320, rect.width - 2);
+	const availableH = Math.max(220, window.innerHeight - rect.top - 20);
+	let width = Math.min(availableW, BASE_W);
+	let height = (width * BASE_H) / BASE_W;
+	if (height > availableH) {
+		height = availableH;
+		width = (height * BASE_W) / BASE_H;
+	}
+	const scale = width / BASE_W;
 	const dpr = window.devicePixelRatio || 1;
 
-	canvas.style.width = `${width}px`;
-	canvas.style.height = `${height}px`;
+	canvas.style.width = `${Math.floor(width)}px`;
+	canvas.style.height = `${Math.floor(height)}px`;
 	canvas.width = Math.floor(width * dpr);
 	canvas.height = Math.floor(height * dpr);
 	ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
@@ -217,11 +224,13 @@ function startRun() {
 	overlayStart.classList.remove("show");
 	overlayPause.classList.remove("show");
 	overlayOver.classList.remove("show");
+	btnPause.textContent = "Pause";
 }
 
 function setPaused(value) {
 	paused = value;
 	overlayPause.classList.toggle("show", paused);
+	btnPause.textContent = paused ? "Resume" : "Pause";
 }
 
 function endRun() {
@@ -631,10 +640,17 @@ function initPanels() {
 
 function initControls() {
 	document.addEventListener("keydown", (e) => {
+		if (["ArrowLeft", "ArrowRight", "ArrowUp", "Space", "ShiftLeft", "ShiftRight"].includes(e.code)) {
+			e.preventDefault();
+		}
 		if (!gameStarted) startRun();
+		if (e.code === "Escape" && !gameOver) {
+			setPaused(!paused);
+			return;
+		}
 		if (e.code === "KeyR") resetRun();
 		handleInput(e, true);
-	});
+	}, { passive: false });
 	document.addEventListener("keyup", (e) => handleInput(e, false));
 
 	btnPause.addEventListener("click", () => {
@@ -651,6 +667,17 @@ function initControls() {
 		resetRun();
 		startRun();
 	});
+	btnFullscreen.addEventListener("click", async () => {
+		try {
+			if (document.fullscreenElement) {
+				await document.exitFullscreen();
+			} else {
+				await frame.requestFullscreen();
+			}
+		} catch (_e) {
+			// Ignore unsupported fullscreen errors.
+		}
+	});
 
 	const touchMap = {
 		left: "left",
@@ -666,13 +693,22 @@ function initControls() {
 		btn.addEventListener("pointerdown", (e) => {
 			e.preventDefault();
 			if (!gameStarted) startRun();
-			if (key === "dashPressed") input.dashPressed = true;
-			else input[key] = true;
+			if (key === "dashPressed") {
+				input.dashPressed = true;
+			} else if (key === "jumpHeld") {
+				input.jumpHeld = true;
+				input.jumpPressed = true;
+			} else {
+				input[key] = true;
+			}
 		});
 		btn.addEventListener("pointerup", () => {
 			if (key !== "dashPressed") input[key] = false;
 		});
 		btn.addEventListener("pointerleave", () => {
+			if (key !== "dashPressed") input[key] = false;
+		});
+		btn.addEventListener("pointercancel", () => {
 			if (key !== "dashPressed") input[key] = false;
 		});
 	});
@@ -695,6 +731,7 @@ function initSettings() {
 }
 
 window.addEventListener("resize", resizeCanvas);
+document.addEventListener("fullscreenchange", resizeCanvas);
 
 loadSettings();
 initPanels();
