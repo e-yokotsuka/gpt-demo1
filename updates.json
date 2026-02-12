@@ -1,6 +1,12 @@
 [
   {
     "date": "2026-02-12",
+    "ai": "claude",
+    "text": "Rebuild Claude Shooting Game with full-featured gameplay",
+    "commit": "1c706bf"
+  },
+  {
+    "date": "2026-02-12",
     "ai": "codex",
     "text": "Add Codex Shooting Game and enable compare routing",
     "commit": "9a041af"
@@ -64,11 +70,5 @@
     "ai": "gpt",
     "text": "Enable ChatGPT5.3 icons only for supported pages",
     "commit": "7da2fd4"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Add compare reason tab and broaden Codex 5.3 coverage",
-    "commit": "fb9afd0"
   }
 ]
