@@ -2,6 +2,12 @@
   {
     "date": "2026-02-12",
     "ai": "codex",
+    "text": "Harden side-scroller controls against stale HTML cache",
+    "commit": "eeb1338"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
     "text": "Improve side-scroller UX and automate changelog updates",
     "commit": "ce3b6a1"
   },
@@ -64,11 +70,5 @@
     "ai": "claude",
     "text": "Enable C4.6 icons for all Claude demo entries",
     "commit": "7fb3b39"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "claude",
-    "text": "Add Claude Opus 4.6 demo versions for compare page",
-    "commit": "41bde2a"
   }
 ]

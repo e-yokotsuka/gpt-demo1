@@ -70,6 +70,7 @@ const player = {
 	distance: 0,
 	combo: 1,
 	comboTimer: 0,
+	checkpointX: 140,
 };
 
 const camera = { x: 0, shake: 0 };
@@ -202,6 +203,7 @@ function resetRun() {
 	player.distance = 0;
 	player.combo = 1;
 	player.comboTimer = 0;
+	player.checkpointX = 140;
 
 	camera.x = 0;
 	camera.shake = 0;
@@ -210,6 +212,9 @@ function resetRun() {
 	sentries.length = 0;
 	sparks.length = 0;
 	generated = -1;
+
+	// Always provide a guaranteed safe floor at run start.
+	platforms.push({ x: -260, y: world.groundY, w: 1320, h: 40, type: "ground" });
 
 	for (let i = 0; i < 5; i++) {
 		generated++;
@@ -326,10 +331,11 @@ function respawn() {
 		return;
 	}
 
-	player.x = camera.x + 140;
+	player.x = Math.max(120, player.checkpointX);
 	player.y = world.groundY - player.h - 20;
 	player.vx = 0;
 	player.vy = 0;
+	camera.x = Math.max(0, player.x - BASE_W * 0.35);
 }
 
 function updateHUD() {
@@ -431,6 +437,9 @@ function updateGame(dt) {
 	camera.shake = Math.max(0, camera.shake - dt * 30);
 
 	const overdrive = player.combo >= 5;
+	if (player.onGround) {
+		player.checkpointX = Math.max(player.checkpointX, player.x);
+	}
 	player.distance = Math.max(player.distance, Math.floor(player.x / 10));
 	player.score += dt * (overdrive ? 30 : 16) * player.combo;
 
