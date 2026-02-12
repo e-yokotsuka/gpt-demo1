@@ -117,12 +117,66 @@
 			padding-top: 20px;
 			border-top: 2px solid #d4a27f;
 		}
+		.changelog {
+			margin: 0 auto 24px;
+			padding: 12px 14px;
+			border: 1px solid rgba(255,255,255,0.14);
+			border-radius: 10px;
+			background: rgba(255,255,255,0.03);
+		}
+		.changelog-title {
+			font-size: 13px;
+			color: #a8b2d1;
+			margin-bottom: 8px;
+		}
+		.changelog-list {
+			display: flex;
+			flex-direction: column;
+			gap: 6px;
+		}
+		.changelog-item {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			font-size: 12px;
+			color: #c9d5ef;
+			line-height: 1.5;
+			flex-wrap: wrap;
+		}
+		.change-date {
+			color: #94a3b8;
+			font-variant-numeric: tabular-nums;
+		}
+		.change-ai {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			min-width: 64px;
+			height: 18px;
+			padding: 0 8px;
+			border-radius: 999px;
+			font-size: 10px;
+			font-weight: bold;
+			letter-spacing: 0.04em;
+			border: 1px solid rgba(255,255,255,0.2);
+		}
+		.change-ai.gpt { color: #8ff3d8; border-color: rgba(16,163,127,0.6); }
+		.change-ai.claude { color: #f2c19a; border-color: rgba(212,162,127,0.6); }
+		.change-ai.codex { color: #9ee7ff; border-color: rgba(56,189,248,0.6); }
 	</style>
 </head>
 <body>
 	<div class="container">
 		<h1>ChatGPT vs Claude コード生成デモ比較</h1>
 		<p class="subtitle">ChatGPTで生成されたデモをClaude Opus 4.6で作り直して比較できます</p>
+		<section class="changelog" aria-label="変更履歴">
+			<div class="changelog-title">最近の変更</div>
+			<div class="changelog-list">
+				<div class="changelog-item"><span class="change-date">2026-02-12</span><span class="change-ai codex">Codex</span><span>Space Travel Demo Part.1 の Codex 版を実装し、比較タブへ接続</span></div>
+				<div class="changelog-item"><span class="change-date">2026-02-12</span><span class="change-ai codex">Codex</span><span>Side-Scroller の ChatGPT タブを「存在しない」表示に修正</span></div>
+				<div class="changelog-item"><span class="change-date">2026-02-12</span><span class="change-ai claude">Claude</span><span>Side-Scroller Action Game の比較元（Claude版）を提供</span></div>
+			</div>
+		</section>
 
 		<h2>ゲーム / インタラクティブ</h2>
 		<div class="demo-list">
@@ -148,7 +202,7 @@
 			<a class="demo-link" href="./compare.html?demo=balls"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex">G5.3</span></span><span class="demo-name">Bouncing Colorful Balls</span></a>
 			<a class="demo-link" href="./compare.html?demo=lorenz-attractor-demo"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex is-disabled">G5.3</span></span><span class="demo-name">Lorenz Attractor Demo</span></a>
 			<a class="demo-link" href="./compare.html?demo=cubes"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex">G5.3</span></span><span class="demo-name">Rotating Cubes</span></a>
-			<a class="demo-link" href="./compare.html?demo=space-travel-demo"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex is-disabled">G5.3</span></span><span class="demo-name">Space Travel Demo Part.1</span></a>
+			<a class="demo-link" href="./compare.html?demo=space-travel-demo"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex">G5.3</span></span><span class="demo-name">Space Travel Demo Part.1</span></a>
 			<a class="demo-link" href="./compare.html?demo=space-travel-demo2"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex is-disabled">G5.3</span></span><span class="demo-name">Space Travel Demo Part.2</span></a>
 			<a class="demo-link" href="./compare.html?demo=stereogram-demo"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex is-disabled">G5.3</span></span><span class="demo-name">Stereogram Demo</span></a>
 			<a class="demo-link" href="./compare.html?demo=chaos-curve-demo"><span class="badge badge-compare">比較</span><span class="ai-icons"><span class="ai-icon ai-gpt">G</span><span class="ai-icon ai-claude">C4.6</span><span class="ai-icon ai-codex is-disabled">G5.3</span></span><span class="demo-name">Chaos Curve Demo</span></a>

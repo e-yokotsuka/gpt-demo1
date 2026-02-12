@@ -152,14 +152,14 @@
 		<button class="tab" id="tab-codex" onclick="switchTab('codex')">ChatGPT-5.3-Codex</button>
 		<button class="tab" id="tab-reason" onclick="switchTab('reason')">見送り理由</button>
 	</div>
-	<div class="iframe-container">
+		<div class="iframe-container">
 		<iframe id="chatgpt-frame" class="demo-frame active"></iframe>
 		<iframe id="claude-frame" class="demo-frame"></iframe>
 		<iframe id="codex-frame" class="demo-frame"></iframe>
 		<iframe id="reason-frame" class="demo-frame"></iframe>
 		<div id="coming-soon" class="coming-soon">
-			<div>準備中...</div>
-			<div style="font-size:14px;color:#666">このデモのClaude版はまだ作成されていません</div>
+			<div id="coming-soon-title">準備中...</div>
+			<div id="coming-soon-detail" style="font-size:14px;color:#666">このデモのClaude版はまだ作成されていません</div>
 		</div>
 	</div>
 	<script>
@@ -176,6 +176,12 @@
 			return `./codex-deferred.html?name=${encodeURIComponent(name)}&reason=${encodeURIComponent(reason)}`;
 		}
 
+		const MISSING_VERSION_MESSAGES = {
+			"side-scroller": {
+				chatgpt: "このデモのChatGPT版は存在しません",
+			},
+		};
+
 		const DEMO_CONFIG = {
 			"matrix": { title: "Digital Rain Matrix", chatgpt: "./matrix.html", claude: "./claude/matrix.html", codex: "./codex-matrix.html" },
 			"snow": { title: "Falling Snowflakes", chatgpt: "./snow.html", claude: "./claude/snow.html", codex: "./codex-snow.html" },
@@ -190,7 +196,7 @@
 			"balls": { title: "Bouncing Colorful Balls", chatgpt: "./balls.html", claude: "./claude/balls.html", codex: "./codex-balls.html" },
 			"cool-design": { title: "Cool Design Showcase", chatgpt: "./cool-design.html", claude: "./claude/cool-design.html" },
 			"retro-1980s-homepage": { title: "1980s Retro Homepage", chatgpt: "./retro-1980s-homepage.html", claude: "./claude/retro-1980s-homepage.html" },
-			"space-travel-demo": { title: "Space Travel Demo Part.1", chatgpt: "./space-travel-demo.html", claude: "./claude/space-travel-demo.html" },
+			"space-travel-demo": { title: "Space Travel Demo Part.1", chatgpt: "./space-travel-demo.html", claude: "./claude/space-travel-demo.html", codex: "./codex-space-travel-demo.html" },
 			"space-travel-demo2": { title: "Space Travel Demo Part.2", chatgpt: "./space-travel-demo2.html", claude: "./claude/space-travel-demo2.html" },
 			"stereogram-demo": { title: "Stereogram Demo", chatgpt: "./stereogram-demo.html", claude: "./claude/stereogram-demo.html" },
 			"chaos-curve-demo": { title: "Chaos Curve Demo", chatgpt: "./chaos-curve-demo.html", claude: "./claude/chaos-curve-demo.html" },
@@ -209,7 +215,7 @@
 			"cubes": { title: "Rotating Cubes", chatgpt: "./cubes.html", claude: "./claude/cubes.html", codex: "./codex-cubes.html" },
 			"side-scroller": {
 				title: "Side-Scroller Action Game",
-				chatgpt: "./side-scroller.html",
+				chatgpt: "",
 				claude: "./side-scroller.html",
 				codex: "./side-scroller-codex.html",
 			},
@@ -222,8 +228,18 @@
 		if (config) {
 			document.getElementById("demo-title").textContent = config.title;
 			document.title = config.title + " - ChatGPT vs Claude";
-			document.getElementById("chatgpt-frame").src = config.chatgpt;
-			document.getElementById("claude-frame").src = config.claude;
+			const chatgptFrame = document.getElementById("chatgpt-frame");
+			const claudeFrame = document.getElementById("claude-frame");
+			if (config.chatgpt) {
+				chatgptFrame.src = config.chatgpt;
+			} else {
+				chatgptFrame.removeAttribute("src");
+			}
+			if (config.claude) {
+				claudeFrame.src = config.claude;
+			} else {
+				claudeFrame.removeAttribute("src");
+			}
 			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex", quaternary: "見送り理由" };
 			document.getElementById("tab-chatgpt").textContent = labels.primary;
 			document.getElementById("tab-claude").textContent = labels.secondary;
@@ -241,6 +257,33 @@
 
 		let currentTab = "chatgpt";
 
+		function showComingSoon(message) {
+			const comingSoon = document.getElementById("coming-soon");
+			const title = document.getElementById("coming-soon-title");
+			const detail = document.getElementById("coming-soon-detail");
+			title.textContent = "未対応";
+			detail.textContent = message;
+			comingSoon.classList.add("active");
+		}
+
+		function hideComingSoon() {
+			document.getElementById("coming-soon").classList.remove("active");
+		}
+
+		function hasSource(tab) {
+			if (!config) return false;
+			if (tab === "chatgpt") return Boolean(config.chatgpt);
+			if (tab === "claude") return Boolean(config.claude);
+			if (tab === "codex") return Boolean(document.getElementById("codex-frame").getAttribute("src"));
+			if (tab === "reason") return true;
+			return false;
+		}
+
+		function getMissingMessage(tab) {
+			return MISSING_VERSION_MESSAGES[demoId]?.[tab]
+				|| `このデモの${tab === "chatgpt" ? "ChatGPT" : tab === "claude" ? "Claude" : "Codex"}版はまだ作成されていません`;
+		}
+
 		function switchTab(tab) {
 			currentTab = tab;
 			const chatgptFrame = document.getElementById("chatgpt-frame");
@@ -251,7 +294,6 @@
 			const tabClaude = document.getElementById("tab-claude");
 			const tabCodex = document.getElementById("tab-codex");
 			const tabReason = document.getElementById("tab-reason");
-			const comingSoon = document.getElementById("coming-soon");
 
 			// タブのスタイルをリセット
 			tabChatgpt.className = "tab";
@@ -260,41 +302,56 @@
 			tabReason.className = "tab";
 
 			if (tab === "chatgpt") {
-				chatgptFrame.classList.add("active");
 				claudeFrame.classList.remove("active");
 				codexFrame.classList.remove("active");
 				reasonFrame.classList.remove("active");
-				comingSoon.classList.remove("active");
+				if (hasSource("chatgpt")) {
+					chatgptFrame.classList.add("active");
+					hideComingSoon();
+					setTimeout(() => chatgptFrame.contentWindow?.focus(), 50);
+				} else {
+					chatgptFrame.classList.remove("active");
+					showComingSoon(getMissingMessage("chatgpt"));
+				}
 				tabChatgpt.classList.add("active-chatgpt");
-				// キーボードフォーカスをiframeに移動
-				setTimeout(() => chatgptFrame.contentWindow?.focus(), 50);
 			} else if (tab === "claude") {
 				chatgptFrame.classList.remove("active");
 				codexFrame.classList.remove("active");
 				reasonFrame.classList.remove("active");
 				tabClaude.classList.add("active-claude");
-				// Claude版のiframeが読み込めたか確認
-				claudeFrame.classList.add("active");
-				comingSoon.classList.remove("active");
-				setTimeout(() => claudeFrame.contentWindow?.focus(), 50);
+				if (hasSource("claude")) {
+					claudeFrame.classList.add("active");
+					hideComingSoon();
+					setTimeout(() => claudeFrame.contentWindow?.focus(), 50);
+				} else {
+					claudeFrame.classList.remove("active");
+					showComingSoon(getMissingMessage("claude"));
+				}
 			} else if (tab === "codex") {
 				chatgptFrame.classList.remove("active");
 				claudeFrame.classList.remove("active");
 				reasonFrame.classList.remove("active");
-				codexFrame.classList.add("active");
-				comingSoon.classList.remove("active");
 				tabCodex.classList.add("active-codex");
-				setTimeout(() => codexFrame.contentWindow?.focus(), 50);
+				if (hasSource("codex")) {
+					codexFrame.classList.add("active");
+					hideComingSoon();
+					setTimeout(() => codexFrame.contentWindow?.focus(), 50);
+				} else {
+					codexFrame.classList.remove("active");
+					showComingSoon(getMissingMessage("codex"));
+				}
 			} else {
 				chatgptFrame.classList.remove("active");
 				claudeFrame.classList.remove("active");
 				codexFrame.classList.remove("active");
 				reasonFrame.classList.add("active");
-				comingSoon.classList.remove("active");
+				hideComingSoon();
 				tabReason.classList.add("active-reason");
 				setTimeout(() => reasonFrame.contentWindow?.focus(), 50);
 			}
 		}
+
+		switchTab(currentTab);
 	</script>
 </body>
 </html>
