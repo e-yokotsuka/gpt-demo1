@@ -2,6 +2,12 @@
   {
     "date": "2026-02-12",
     "ai": "codex",
+    "text": "Add Codex Shooting Game and enable compare routing",
+    "commit": "9a041af"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
     "text": "Add safe spawn floor and checkpoint-based respawn",
     "commit": "9a25e83"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add compare reason tab and broaden Codex 5.3 coverage",
     "commit": "fb9afd0"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Add ChatGPT-5.3 Codex fallback page and routing",
-    "commit": "18cbb49"
   }
 ]
