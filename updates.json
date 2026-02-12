@@ -2,6 +2,12 @@
   {
     "date": "2026-02-12",
     "ai": "codex",
+    "text": "Improve side-scroller UX and automate changelog updates",
+    "commit": "ce3b6a1"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
     "text": "Add Codex Space Travel demo and recent updates panel",
     "commit": "f388a83"
   },
@@ -64,11 +70,5 @@
     "ai": "claude",
     "text": "Add Claude Opus 4.6 demo versions for compare page",
     "commit": "41bde2a"
-  },
-  {
-    "date": "2026-02-10",
-    "ai": "gpt",
-    "text": "Embed AI support icons in menu",
-    "commit": "8c4e785"
   }
 ]

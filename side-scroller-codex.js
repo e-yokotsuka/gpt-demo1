@@ -83,7 +83,7 @@ let lastTime = 0;
 let gameStarted = false;
 let paused = false;
 let gameOver = false;
-let generated = 0;
+let generated = -1;
 
 function seededRandom(seed) {
 	let s = seed >>> 0;
@@ -209,9 +209,9 @@ function resetRun() {
 	orbs.length = 0;
 	sentries.length = 0;
 	sparks.length = 0;
-	generated = 0;
+	generated = -1;
 
-	for (let i = 0; i < 4; i++) {
+	for (let i = 0; i < 5; i++) {
 		generated++;
 		generateChunk(generated);
 	}
@@ -224,13 +224,13 @@ function startRun() {
 	overlayStart.classList.remove("show");
 	overlayPause.classList.remove("show");
 	overlayOver.classList.remove("show");
-	btnPause.textContent = "Pause";
+	if (btnPause) btnPause.textContent = "Pause";
 }
 
 function setPaused(value) {
 	paused = value;
 	overlayPause.classList.toggle("show", paused);
-	btnPause.textContent = paused ? "Resume" : "Pause";
+	if (btnPause) btnPause.textContent = paused ? "Resume" : "Pause";
 }
 
 function endRun() {
@@ -653,21 +653,21 @@ function initControls() {
 	}, { passive: false });
 	document.addEventListener("keyup", (e) => handleInput(e, false));
 
-	btnPause.addEventListener("click", () => {
+	if (btnPause) btnPause.addEventListener("click", () => {
 		if (!gameStarted) return;
 		setPaused(!paused);
 	});
-	btnRestart.addEventListener("click", () => {
+	if (btnRestart) btnRestart.addEventListener("click", () => {
 		resetRun();
 		startRun();
 	});
-	btnStart.addEventListener("click", () => startRun());
-	btnResume.addEventListener("click", () => setPaused(false));
-	btnRetry.addEventListener("click", () => {
+	if (btnStart) btnStart.addEventListener("click", () => startRun());
+	if (btnResume) btnResume.addEventListener("click", () => setPaused(false));
+	if (btnRetry) btnRetry.addEventListener("click", () => {
 		resetRun();
 		startRun();
 	});
-	btnFullscreen.addEventListener("click", async () => {
+	if (btnFullscreen) btnFullscreen.addEventListener("click", async () => {
 		try {
 			if (document.fullscreenElement) {
 				await document.exitFullscreen();
