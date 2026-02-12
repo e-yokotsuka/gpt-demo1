@@ -136,7 +136,7 @@
 	<div class="tab-bar">
 		<button class="tab active-chatgpt" id="tab-chatgpt" onclick="switchTab('chatgpt')">ChatGPT</button>
 		<button class="tab" id="tab-claude" onclick="switchTab('claude')">Claude Opus 4.6</button>
-		<button class="tab" id="tab-codex" onclick="switchTab('codex')">GPT-5.2-Codex</button>
+		<button class="tab" id="tab-codex" onclick="switchTab('codex')">ChatGPT-5.3-Codex</button>
 	</div>
 	<div class="iframe-container">
 		<iframe id="chatgpt-frame" class="demo-frame active"></iframe>
@@ -148,6 +148,38 @@
 		</div>
 	</div>
 	<script>
+		const DEFAULT_CODEX_REASON = "実装対象が広く、検証工数も大きいため今回は見送りました。";
+		const DEFERRED_CODEX_DEMOS = {
+			"roaming-cockroaches": "挙動の見直し範囲が広く、体感品質の調整に時間を要するため今回は見送りました。",
+			"mandelbrot-slow": "計算最適化と操作性改善の両立に時間が必要なため、今回は見送りました。",
+			"mandelbrot-slow2": "高負荷描画の最適化検証が必要で、今回の作業時間では品質担保できないため見送りました。",
+			"mandelbrot-ol": "外部ライブラリ連携を含む再設計が必要で、短時間では安全に反映できないため見送りました。",
+			"cool-design": "見た目の刷新は可能ですが、優先度の高いインタラクティブ系対応を優先したため見送りました。",
+			"retro-1980s-homepage": "演出変更の工数に対して比較価値が低いため、今回は見送りました。",
+			"space-travel-demo": "演出品質の再調整に時間が必要なため、今回は見送りました。",
+			"space-travel-demo2": "連続演出の破綻確認に時間を要するため、今回は見送りました。",
+			"stereogram-demo": "視認性検証の反復が必要で、今回は見送りました。",
+			"chaos-curve-demo": "パラメータ探索と安定化に工数がかかるため、今回は見送りました。",
+			"megademo-style-demo": "演出要素が多く再実装範囲が広いため、今回は見送りました。",
+			"daisy-bell-music-demo": "音源生成とブラウザ再生差分の検証コストが高いため、今回は見送りました。",
+			"lorenz-attractor-demo": "数値安定性の確認が必要で、今回は見送りました。",
+			"picture-book": "素材と演出を含む総量が大きく、今回は見送りました。",
+			"tetris": "ゲームロジックと操作性の全面検証が必要で、今回は見送りました。",
+			"yaruo": "表示調整のみの優先度が低いため、今回は見送りました。",
+			"wiz": "ダンジョン探索要素の完成までに工数が大きく、今回は見送りました。",
+			"wiz2": "3Dダンジョン表現の再実装は大規模なため、今回は見送りました。",
+			"particles": "描画とパラメータ編集機構の再構築が大規模なため、今回は見送りました。",
+			"rpg": "マップ・戦闘・状態管理が絡むため、今回は見送りました。",
+			"tet": "既存実装との差分価値が低く、優先度の観点で見送りました。",
+			"shoot": "衝突判定と難易度調整の検証に時間が必要なため、今回は見送りました。",
+		};
+
+		function buildDeferredCodexUrl(config, demoId) {
+			const reason = DEFERRED_CODEX_DEMOS[demoId] || DEFAULT_CODEX_REASON;
+			const name = config?.title || demoId || "不明";
+			return `./codex-deferred.html?name=${encodeURIComponent(name)}&reason=${encodeURIComponent(reason)}`;
+		}
+
 		const DEMO_CONFIG = {
 			"matrix": { title: "Digital Rain Matrix", chatgpt: "./matrix.html", claude: "./claude/matrix.html", codex: "./codex-matrix.html" },
 			"snow": { title: "Falling Snowflakes", chatgpt: "./snow.html", claude: "./claude/snow.html", codex: "./codex-snow.html" },
@@ -184,7 +216,7 @@
 				chatgpt: "./side-scroller-modern.html",
 				claude: "./side-scroller.html",
 				codex: "./side-scroller-codex.html",
-				labels: { primary: "Latest AI", secondary: "Claude Opus 4.6", tertiary: "GPT-5.2-Codex" },
+				labels: { primary: "Latest AI", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex" },
 			},
 		};
 
@@ -197,18 +229,14 @@
 			document.title = config.title + " - ChatGPT vs Claude";
 			document.getElementById("chatgpt-frame").src = config.chatgpt;
 			document.getElementById("claude-frame").src = config.claude;
-			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "GPT-5.2-Codex" };
+			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex" };
 			document.getElementById("tab-chatgpt").textContent = labels.primary;
 			document.getElementById("tab-claude").textContent = labels.secondary;
-			document.getElementById("tab-codex").textContent = labels.tertiary || "GPT-5.2-Codex";
+			document.getElementById("tab-codex").textContent = labels.tertiary || "ChatGPT-5.3-Codex";
 			const codexTab = document.getElementById("tab-codex");
 			const codexFrame = document.getElementById("codex-frame");
-			if (config.codex) {
-				codexTab.style.display = "";
-				codexFrame.src = config.codex;
-			} else {
-				codexTab.style.display = "none";
-			}
+			codexTab.style.display = "";
+			codexFrame.src = config.codex || buildDeferredCodexUrl(config, demoId);
 		} else {
 			document.getElementById("demo-title").textContent = "デモが見つかりません";
 		}

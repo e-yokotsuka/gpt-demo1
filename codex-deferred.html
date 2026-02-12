@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatGPT-5.3-Codex 実装見送り</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: radial-gradient(circle at 20% 20%, #1f2a44 0%, #0f172a 40%, #020617 100%);
+      color: #e2e8f0;
+      padding: 24px;
+    }
+    .card {
+      width: min(760px, 100%);
+      background: rgba(15, 23, 42, 0.86);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 14px 42px rgba(2, 6, 23, 0.48);
+    }
+    h1 {
+      margin: 0 0 12px;
+      color: #7dd3fc;
+      font-size: 24px;
+    }
+    p {
+      margin: 0 0 12px;
+      line-height: 1.65;
+      color: #cbd5e1;
+    }
+    .demo-name {
+      color: #f8fafc;
+      font-weight: 700;
+    }
+    .reason {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-left: 4px solid #f59e0b;
+      background: rgba(245, 158, 11, 0.08);
+      border-radius: 8px;
+      color: #fde68a;
+      white-space: pre-wrap;
+    }
+    .footer {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>ChatGPT-5.3-Codex 実装見送り</h1>
+    <p>
+      デモ: <span id="demo-name" class="demo-name">不明</span>
+    </p>
+    <p>
+      このデモは今回の作業範囲では完成実装を見送りました。
+      実装規模と検証コストが大きく、短時間で品質担保ができないためです。
+    </p>
+    <div id="reason" class="reason">理由: 実装・検証の工数が大きいため、今回のスコープ外と判断しました。</div>
+    <div class="footer">比較タブで他モデル版の挙動は継続して確認できます。</div>
+  </main>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const demoName = params.get("name") || "不明";
+    const reason = params.get("reason") || "実装・検証の工数が大きいため、今回のスコープ外と判断しました。";
+    document.getElementById("demo-name").textContent = demoName;
+    document.getElementById("reason").textContent = "理由: " + reason;
+  </script>
+</body>
+</html>
