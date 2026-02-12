@@ -2,6 +2,12 @@
   {
     "date": "2026-02-12",
     "ai": "codex",
+    "text": "Add safe spawn floor and checkpoint-based respawn",
+    "commit": "9a25e83"
+  },
+  {
+    "date": "2026-02-12",
+    "ai": "codex",
     "text": "Harden side-scroller controls against stale HTML cache",
     "commit": "eeb1338"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add ChatGPT-5.3 Codex fallback page and routing",
     "commit": "18cbb49"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "claude",
-    "text": "Enable C4.6 icons for all Claude demo entries",
-    "commit": "7fb3b39"
   }
 ]
