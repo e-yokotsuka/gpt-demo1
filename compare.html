@@ -231,16 +231,10 @@
 			document.getElementById("tab-reason").textContent = labels.quaternary || "見送り理由";
 			const codexTab = document.getElementById("tab-codex");
 			const codexFrame = document.getElementById("codex-frame");
-			const reasonTab = document.getElementById("tab-reason");
-			const reasonFrame = document.getElementById("reason-frame");
 			codexTab.style.display = "";
 			codexFrame.src = config.codex || buildDeferredCodexUrl(config, demoId);
-			// Codex版が存在するデモでは見送り理由タブを非表示にする
-			if (config.codex) {
-				reasonTab.style.display = "none";
-			} else {
-				reasonFrame.src = buildDeferredCodexUrl(config, demoId);
-			}
+			// 見送り理由タブは常に非表示（Codexタブ自体が見送りページを兼ねるため不要）
+			document.getElementById("tab-reason").style.display = "none";
 		} else {
 			document.getElementById("demo-title").textContent = "デモが見つかりません";
 		}
