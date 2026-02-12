@@ -163,7 +163,7 @@
 		</div>
 	</div>
 	<script>
-		const DEFAULT_CODEX_REASON = "このデモは見送り対象ではありません。";
+		const DEFAULT_CODEX_REASON = "このデモのChatGPT-5.3-Codex版は未対応です。実装規模が大きいため、今回は見送りました。";
 		const DEFERRED_CODEX_DEMOS = {
 			"wiz2": "3Dダンジョン表現の再実装は大規模なため、今回は見送りました。",
 			"particles": "描画とパラメータ編集機構の再構築が大規模なため、今回は見送りました。",
@@ -209,10 +209,9 @@
 			"cubes": { title: "Rotating Cubes", chatgpt: "./cubes.html", claude: "./claude/cubes.html", codex: "./codex-cubes.html" },
 			"side-scroller": {
 				title: "Side-Scroller Action Game",
-				chatgpt: "./side-scroller-modern.html",
+				chatgpt: "./side-scroller.html",
 				claude: "./side-scroller.html",
 				codex: "./side-scroller-codex.html",
-				labels: { primary: "Latest AI", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex", quaternary: "見送り理由" },
 			},
 		};
 
@@ -234,7 +233,7 @@
 			const codexFrame = document.getElementById("codex-frame");
 			const reasonFrame = document.getElementById("reason-frame");
 			codexTab.style.display = "";
-			codexFrame.src = config.codex || config.chatgpt;
+			codexFrame.src = config.codex || buildDeferredCodexUrl(config, demoId);
 			reasonFrame.src = buildDeferredCodexUrl(config, demoId);
 		} else {
 			document.getElementById("demo-title").textContent = "デモが見つかりません";
