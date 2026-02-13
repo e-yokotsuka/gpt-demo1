@@ -2,6 +2,12 @@
   {
     "date": "2026-02-13",
     "ai": "codex",
+    "text": "Add Codex Lorenz Attractor demo and enable compare entry",
+    "commit": "f939904"
+  },
+  {
+    "date": "2026-02-13",
+    "ai": "codex",
     "text": "Add Codex Roaming Cockroaches with realistic sprite roaming",
     "commit": "f5564b2"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add Codex Space Travel demo and recent updates panel",
     "commit": "f388a83"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Hide redundant reason tab (Codex tab already shows deferral page)",
-    "commit": "996186b"
   }
 ]
