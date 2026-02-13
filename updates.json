@@ -2,6 +2,12 @@
   {
     "date": "2026-02-13",
     "ai": "codex",
+    "text": "Update changelog for Codex simple Tetris",
+    "commit": "92d884d"
+  },
+  {
+    "date": "2026-02-13",
+    "ai": "codex",
     "text": "Add Codex simple Tetris and include pending workspace files",
     "commit": "4184d6b"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add Codex yaruo page and enable Yaruo 5.3 icon",
     "commit": "00768b5"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Show deferred page in Codex tab when unsupported",
-    "commit": "7b817c9"
   }
 ]
