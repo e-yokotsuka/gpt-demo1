@@ -2,6 +2,12 @@
   {
     "date": "2026-02-13",
     "ai": "codex",
+    "text": "Add Codex Roaming Cockroaches with realistic sprite roaming",
+    "commit": "f5564b2"
+  },
+  {
+    "date": "2026-02-13",
+    "ai": "codex",
     "text": "Add Codex Wizardry Dungeon and enable compare entry",
     "commit": "9c88067"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Hide redundant reason tab (Codex tab already shows deferral page)",
     "commit": "996186b"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Restore ChatGPT originals and hide reason tab for supported Codex demos",
-    "commit": "3a85cbd"
   }
 ]
