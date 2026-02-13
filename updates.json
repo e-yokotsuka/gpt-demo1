@@ -1,6 +1,12 @@
 [
   {
     "date": "2026-02-12",
+    "ai": "codex",
+    "text": "Add Codex PixiJS Tetris and enable compare entry",
+    "commit": "397f6f9"
+  },
+  {
+    "date": "2026-02-12",
     "ai": "claude",
     "text": "Rebuild Claude Shooting Game with full-featured gameplay",
     "commit": "1c706bf"
@@ -64,11 +70,5 @@
     "ai": "gpt",
     "text": "Disable C4.6 icons for demos that were deferred (particles, rpg)",
     "commit": "dd8ecd2"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "gpt",
-    "text": "Enable ChatGPT5.3 icons only for supported pages",
-    "commit": "7da2fd4"
   }
 ]
