@@ -2,6 +2,12 @@
   {
     "date": "2026-02-13",
     "ai": "codex",
+    "text": "Add Codex Wizardry Dungeon and enable compare entry",
+    "commit": "9c88067"
+  },
+  {
+    "date": "2026-02-13",
+    "ai": "codex",
     "text": "Update changelog for Codex simple Tetris",
     "commit": "92d884d"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Restore ChatGPT originals and hide reason tab for supported Codex demos",
     "commit": "3a85cbd"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Add Codex yaruo page and enable Yaruo 5.3 icon",
-    "commit": "00768b5"
   }
 ]
