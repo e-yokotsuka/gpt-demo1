@@ -1,5 +1,11 @@
 [
   {
+    "date": "2026-02-13",
+    "ai": "codex",
+    "text": "Add Codex simple Tetris and include pending workspace files",
+    "commit": "4184d6b"
+  },
+  {
     "date": "2026-02-12",
     "ai": "codex",
     "text": "Add Codex PixiJS Tetris and enable compare entry",
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Show deferred page in Codex tab when unsupported",
     "commit": "7b817c9"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "gpt",
-    "text": "Disable C4.6 icons for demos that were deferred (particles, rpg)",
-    "commit": "dd8ecd2"
   }
 ]
