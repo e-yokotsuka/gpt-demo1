@@ -2,6 +2,12 @@
   {
     "date": "2026-02-13",
     "ai": "codex",
+    "text": "Add Codex Stereogram demo and enable compare entry",
+    "commit": "bfd4c8c"
+  },
+  {
+    "date": "2026-02-13",
+    "ai": "codex",
     "text": "Add Codex Lorenz Attractor demo and enable compare entry",
     "commit": "f939904"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Improve side-scroller UX and automate changelog updates",
     "commit": "ce3b6a1"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Add Codex Space Travel demo and recent updates panel",
-    "commit": "f388a83"
   }
 ]
