@@ -1,5 +1,11 @@
 [
   {
+    "date": "2026-06-12",
+    "ai": "claude",
+    "text": "Add Claude Fable 5 original Action RPG 遺跡の剣 (spec-driven contact-combat RPG)",
+    "commit": "8321281"
+  },
+  {
     "date": "2026-02-16",
     "ai": "codex",
     "text": "Update changelog for recent Codex demo completions",
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add Codex Shooting Game and enable compare routing",
     "commit": "9a041af"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Add safe spawn floor and checkpoint-based respawn",
-    "commit": "9a25e83"
   }
 ]
