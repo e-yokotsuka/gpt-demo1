@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>遺跡の剣 - Action RPG</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="frame">
+  <canvas id="game" width="960" height="672"></canvas>
+  <div id="overlay">
+    <!-- タイトル画面 -->
+    <div id="title-screen" class="screen">
+      <h1>遺跡の剣</h1>
+      <p class="subtitle">- Sword of the Ruins -</p>
+      <p class="byline">Built with Claude Fable 5</p>
+      <ul class="menu" id="title-menu">
+        <li data-action="new">はじめから</li>
+        <li data-action="continue">つづきから</li>
+      </ul>
+      <p class="hint">↑↓で選択 / Enterで決定</p>
+    </div>
+
+    <!-- ステータス画面 -->
+    <div id="status-screen" class="screen hidden">
+      <h2>ステータス</h2>
+      <div id="status-body"></div>
+      <p class="hint">C / Escで閉じる</p>
+    </div>
+
+    <!-- インベントリ画面 -->
+    <div id="inventory-screen" class="screen hidden">
+      <h2>インベントリ</h2>
+      <div class="inv-columns">
+        <div class="inv-left">
+          <h3>装備品</h3>
+          <ul id="inv-equip"></ul>
+        </div>
+        <div class="inv-right">
+          <h3>アイテム</h3>
+          <ul id="inv-items"></ul>
+          <h3>重要アイテム</h3>
+          <ul id="inv-keyitems"></ul>
+        </div>
+      </div>
+      <p class="hint">↑↓で選択 / Enterで装備・解除 / E / Escで閉じる</p>
+    </div>
+
+    <!-- 古文書画面 -->
+    <div id="docs-screen" class="screen hidden">
+      <h2>古代文書</h2>
+      <div id="docs-body"></div>
+      <p class="hint">↑↓で選択 / Enterで読む / B / Escで閉じる</p>
+    </div>
+
+    <!-- ショップ画面 -->
+    <div id="shop-screen" class="screen hidden">
+      <h2>武具屋</h2>
+      <div id="shop-gold"></div>
+      <ul id="shop-list"></ul>
+      <p class="hint">↑↓で選択 / Enterで購入 / Escで閉じる</p>
+    </div>
+
+    <!-- ダイアログ -->
+    <div id="dialog-box" class="hidden">
+      <div id="dialog-name"></div>
+      <div id="dialog-text"></div>
+      <div class="dialog-next">▼ Enter</div>
+    </div>
+
+    <!-- エンディング -->
+    <div id="ending-screen" class="screen hidden">
+      <div id="ending-body"></div>
+    </div>
+
+    <!-- トースト通知 -->
+    <div id="toast" class="hidden"></div>
+  </div>
+</div>
+<div id="help">
+  移動: ↑↓←→ / WASD　　アイテム使用: Space　　ステータス: C　　インベントリ: E　　古文書: B　　セーブ: K
+  <div class="credit">開発: Claude Fable 5 (Anthropic)　/　グラフィック素材: <a href="https://0x72.itch.io/dungeontileset-ii" target="_blank" rel="noopener">0x72 DungeonTileset II</a> (CC0 / 商用利用可)</div>
+</div>
+<script src="js/atlas_data.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/data.js"></script>
+<script src="js/maps.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

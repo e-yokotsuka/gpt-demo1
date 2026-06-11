@@ -1,0 +1,140 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #1a120c;
+  color: #e8d8b0;
+  font-family: "MS Gothic", "Hiragino Kaku Gothic ProN", monospace;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+/* 装飾フレーム */
+#frame {
+  position: relative;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, #6b4a2a 0%, #3d2a16 30%, #6b4a2a 50%, #3d2a16 70%, #6b4a2a 100%);
+  border: 4px solid #c9a05a;
+  outline: 3px solid #2a1c0e;
+  border-radius: 6px;
+  box-shadow: 0 0 30px rgba(0,0,0,.8), inset 0 0 12px rgba(0,0,0,.6);
+}
+#frame::before, #frame::after {
+  content: "◆";
+  position: absolute;
+  color: #c9a05a;
+  font-size: 18px;
+  text-shadow: 0 0 4px #000;
+}
+#frame::before { top: -4px; left: 10px; }
+#frame::after  { bottom: -4px; right: 10px; }
+
+#game {
+  display: block;
+  image-rendering: pixelated;
+  background: #000;
+  border: 2px solid #15100a;
+}
+
+#overlay {
+  position: absolute;
+  inset: 14px;
+  pointer-events: none;
+}
+#overlay > * { pointer-events: auto; }
+
+#help {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #a08c64;
+  text-align: center;
+}
+#help .credit { margin-top: 4px; font-size: 11px; color: #6e5c40; }
+#help .credit a { color: #8a7450; }
+
+/* スクリーン共通 */
+.screen {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 6, 2, .92);
+  border: 2px solid #c9a05a;
+  padding: 28px 36px;
+  overflow-y: auto;
+}
+.hidden { display: none !important; }
+
+.screen h1 { font-size: 44px; text-align: center; margin-top: 110px; color: #ffd980; text-shadow: 3px 3px 0 #4a2a00; letter-spacing: .3em; }
+.subtitle { text-align: center; color: #a08c64; margin: 8px 0 12px; }
+.byline { text-align: center; color: #6e5c40; font-size: 13px; letter-spacing: .15em; margin-bottom: 38px; }
+.screen h2 { color: #ffd980; border-bottom: 2px solid #6b4a2a; padding-bottom: 8px; margin-bottom: 16px; letter-spacing: .2em; }
+.screen h3 { color: #d9b86a; margin: 12px 0 6px; font-size: 15px; }
+.hint { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; color: #8a7450; font-size: 13px; }
+
+.menu { list-style: none; text-align: center; font-size: 24px; }
+.menu li { padding: 10px; cursor: pointer; }
+.menu li.selected::before { content: "▶ "; color: #ffd980; }
+.menu li.disabled { color: #5a4a30; }
+
+/* ステータス */
+#status-body table { margin: 0 auto; font-size: 20px; border-collapse: collapse; }
+#status-body td { padding: 8px 24px; }
+#status-body td:first-child { color: #d9b86a; }
+
+/* インベントリ */
+.inv-columns { display: flex; gap: 28px; }
+.inv-left, .inv-right { flex: 1; }
+.inv-columns ul { list-style: none; font-size: 15px; }
+.inv-columns li { padding: 4px 8px; }
+.inv-columns li.selected { background: #4a3318; outline: 1px solid #c9a05a; }
+.inv-columns li .equipped-mark { color: #7ddc7d; }
+.inv-columns li .item-desc { color: #8a7450; font-size: 12px; display: block; margin-left: 1.2em; }
+
+/* ショップ */
+#shop-gold { font-size: 16px; color: #ffd980; margin-bottom: 10px; }
+#shop-list { list-style: none; font-size: 15px; }
+#shop-list li { padding: 5px 8px; display: flex; justify-content: space-between; }
+#shop-list li.selected { background: #4a3318; outline: 1px solid #c9a05a; }
+#shop-list li.owned { color: #5a4a30; }
+#shop-list .price { color: #ffd980; }
+
+/* 古文書 */
+#docs-body ul { list-style: none; font-size: 16px; }
+#docs-body li { padding: 6px 8px; }
+#docs-body li.selected { background: #4a3318; outline: 1px solid #c9a05a; }
+#docs-body li.locked { color: #5a4a30; }
+#docs-body .doc-content { margin-top: 16px; padding: 14px; border: 1px solid #6b4a2a; background: #1c130a; line-height: 1.9; font-size: 15px; white-space: pre-wrap; }
+
+/* ダイアログ */
+#dialog-box {
+  position: absolute;
+  left: 40px; right: 40px; bottom: 110px;
+  background: rgba(10, 6, 2, .94);
+  border: 2px solid #c9a05a;
+  border-radius: 4px;
+  padding: 14px 20px 22px;
+  min-height: 90px;
+}
+#dialog-name { color: #ffd980; font-size: 14px; margin-bottom: 6px; }
+#dialog-text { font-size: 17px; line-height: 1.8; white-space: pre-wrap; }
+.dialog-next { position: absolute; right: 14px; bottom: 6px; font-size: 12px; color: #8a7450; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+
+/* エンディング */
+#ending-screen { display: flex; align-items: center; justify-content: center; text-align: center; }
+#ending-body { font-size: 18px; line-height: 2.2; white-space: pre-wrap; color: #ffd980; }
+
+/* トースト */
+#toast {
+  position: absolute;
+  top: 18px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 6, 2, .92);
+  border: 1px solid #c9a05a;
+  padding: 8px 22px;
+  font-size: 15px;
+  border-radius: 4px;
+  white-space: pre;
+}

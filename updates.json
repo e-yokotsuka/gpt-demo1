@@ -2,6 +2,12 @@
   {
     "date": "2026-02-16",
     "ai": "codex",
+    "text": "Update changelog for recent Codex demo completions",
+    "commit": "3aebb4e"
+  },
+  {
+    "date": "2026-02-16",
+    "ai": "codex",
     "text": "Complete deferred Codex demos for visual, static, and audio categories",
     "commit": "528a5b2"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add safe spawn floor and checkpoint-based respawn",
     "commit": "9a25e83"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Harden side-scroller controls against stale HTML cache",
-    "commit": "eeb1338"
   }
 ]
