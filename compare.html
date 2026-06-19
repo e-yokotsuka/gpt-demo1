@@ -108,6 +108,19 @@
 			height: 3px;
 			background: #f59e0b;
 		}
+		.tab.active-claude48 {
+			color: #f0a868;
+			background: rgba(240, 168, 104, 0.12);
+		}
+		.tab.active-claude48::after {
+			content: "";
+			position: absolute;
+			bottom: -2px;
+			left: 0;
+			right: 0;
+			height: 3px;
+			background: #f0a868;
+		}
 		.iframe-container {
 			flex: 1;
 			position: relative;
@@ -150,12 +163,14 @@
 		<button class="tab active-chatgpt" id="tab-chatgpt" onclick="switchTab('chatgpt')">ChatGPT</button>
 		<button class="tab" id="tab-claude" onclick="switchTab('claude')">Claude Opus 4.6</button>
 		<button class="tab" id="tab-codex" onclick="switchTab('codex')">ChatGPT-5.3-Codex</button>
+		<button class="tab" id="tab-claude48" onclick="switchTab('claude48')">Claude Opus 4.8</button>
 		<button class="tab" id="tab-reason" onclick="switchTab('reason')">見送り理由</button>
 	</div>
 		<div class="iframe-container">
 		<iframe id="chatgpt-frame" class="demo-frame active"></iframe>
 		<iframe id="claude-frame" class="demo-frame"></iframe>
 		<iframe id="codex-frame" class="demo-frame"></iframe>
+		<iframe id="claude48-frame" class="demo-frame"></iframe>
 		<iframe id="reason-frame" class="demo-frame"></iframe>
 		<div id="coming-soon" class="coming-soon">
 			<div id="coming-soon-title">準備中...</div>
@@ -183,7 +198,7 @@
 		};
 
 		const DEMO_CONFIG = {
-			"matrix": { title: "Digital Rain Matrix", chatgpt: "./matrix.html", claude: "./claude/matrix.html", codex: "./codex-matrix.html" },
+			"matrix": { title: "Digital Rain Matrix", chatgpt: "./matrix.html", claude: "./claude/matrix.html", codex: "./codex-matrix.html", claude48: "./claude48/matrix.html" },
 			"snow": { title: "Falling Snowflakes", chatgpt: "./snow.html", claude: "./claude/snow.html", codex: "./codex-snow.html" },
 			"roaming-cockroaches": { title: "Roaming Cockroaches", chatgpt: "./roaming-cockroaches.html", claude: "./claude/roaming-cockroaches.html", codex: "./codex-roaming-cockroaches.html" },
 			"mandelbrot-slow": { title: "Mandelbrot Explorer Part.1", chatgpt: "./mandelbrot-slow.html", claude: "./claude/mandelbrot-slow.html", codex: "./codex-mandelbrot-slow.html" },
@@ -240,10 +255,17 @@
 			} else {
 				claudeFrame.removeAttribute("src");
 			}
-			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex", quaternary: "見送り理由" };
+			const claude48Frame = document.getElementById("claude48-frame");
+			if (config.claude48) {
+				claude48Frame.src = config.claude48;
+			} else {
+				claude48Frame.removeAttribute("src");
+			}
+			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex", quaternary: "見送り理由", quinary: "Claude Opus 4.8" };
 			document.getElementById("tab-chatgpt").textContent = labels.primary;
 			document.getElementById("tab-claude").textContent = labels.secondary;
 			document.getElementById("tab-codex").textContent = labels.tertiary || "ChatGPT-5.3-Codex";
+			document.getElementById("tab-claude48").textContent = labels.quinary || "Claude Opus 4.8";
 			document.getElementById("tab-reason").textContent = labels.quaternary || "見送り理由";
 			const codexTab = document.getElementById("tab-codex");
 			const codexFrame = document.getElementById("codex-frame");
@@ -274,80 +296,48 @@
 			if (!config) return false;
 			if (tab === "chatgpt") return Boolean(config.chatgpt);
 			if (tab === "claude") return Boolean(config.claude);
+			if (tab === "claude48") return Boolean(config.claude48);
 			if (tab === "codex") return Boolean(document.getElementById("codex-frame").getAttribute("src"));
 			if (tab === "reason") return true;
 			return false;
 		}
 
 		function getMissingMessage(tab) {
+			const names = { chatgpt: "ChatGPT", claude: "Claude Opus 4.6", claude48: "Claude Opus 4.8", codex: "ChatGPT-5.3-Codex" };
 			return MISSING_VERSION_MESSAGES[demoId]?.[tab]
-				|| `このデモの${tab === "chatgpt" ? "ChatGPT" : tab === "claude" ? "Claude" : "Codex"}版はまだ作成されていません`;
+				|| `このデモの${names[tab] || tab}版はまだ作成されていません`;
 		}
+
+		// タブ定義（フレーム・タブ要素・アクティブ時のクラスを一元管理）
+		const TAB_DEFS = {
+			chatgpt: { frame: "chatgpt-frame", tab: "tab-chatgpt", activeClass: "active-chatgpt" },
+			claude: { frame: "claude-frame", tab: "tab-claude", activeClass: "active-claude" },
+			claude48: { frame: "claude48-frame", tab: "tab-claude48", activeClass: "active-claude48" },
+			codex: { frame: "codex-frame", tab: "tab-codex", activeClass: "active-codex" },
+			reason: { frame: "reason-frame", tab: "tab-reason", activeClass: "active-reason" },
+		};
 
 		function switchTab(tab) {
 			currentTab = tab;
-			const chatgptFrame = document.getElementById("chatgpt-frame");
-			const claudeFrame = document.getElementById("claude-frame");
-			const codexFrame = document.getElementById("codex-frame");
-			const reasonFrame = document.getElementById("reason-frame");
-			const tabChatgpt = document.getElementById("tab-chatgpt");
-			const tabClaude = document.getElementById("tab-claude");
-			const tabCodex = document.getElementById("tab-codex");
-			const tabReason = document.getElementById("tab-reason");
 
-			// タブのスタイルをリセット
-			tabChatgpt.className = "tab";
-			tabClaude.className = "tab";
-			tabCodex.className = "tab";
-			tabReason.className = "tab";
+			// すべてのフレーム・タブを非アクティブ化
+			for (const def of Object.values(TAB_DEFS)) {
+				document.getElementById(def.frame).classList.remove("active");
+				document.getElementById(def.tab).className = "tab";
+			}
 
-			if (tab === "chatgpt") {
-				claudeFrame.classList.remove("active");
-				codexFrame.classList.remove("active");
-				reasonFrame.classList.remove("active");
-				if (hasSource("chatgpt")) {
-					chatgptFrame.classList.add("active");
-					hideComingSoon();
-					setTimeout(() => chatgptFrame.contentWindow?.focus(), 50);
-				} else {
-					chatgptFrame.classList.remove("active");
-					showComingSoon(getMissingMessage("chatgpt"));
-				}
-				tabChatgpt.classList.add("active-chatgpt");
-			} else if (tab === "claude") {
-				chatgptFrame.classList.remove("active");
-				codexFrame.classList.remove("active");
-				reasonFrame.classList.remove("active");
-				tabClaude.classList.add("active-claude");
-				if (hasSource("claude")) {
-					claudeFrame.classList.add("active");
-					hideComingSoon();
-					setTimeout(() => claudeFrame.contentWindow?.focus(), 50);
-				} else {
-					claudeFrame.classList.remove("active");
-					showComingSoon(getMissingMessage("claude"));
-				}
-			} else if (tab === "codex") {
-				chatgptFrame.classList.remove("active");
-				claudeFrame.classList.remove("active");
-				reasonFrame.classList.remove("active");
-				tabCodex.classList.add("active-codex");
-				if (hasSource("codex")) {
-					codexFrame.classList.add("active");
-					hideComingSoon();
-					setTimeout(() => codexFrame.contentWindow?.focus(), 50);
-				} else {
-					codexFrame.classList.remove("active");
-					showComingSoon(getMissingMessage("codex"));
-				}
-			} else {
-				chatgptFrame.classList.remove("active");
-				claudeFrame.classList.remove("active");
-				codexFrame.classList.remove("active");
-				reasonFrame.classList.add("active");
+			const def = TAB_DEFS[tab];
+			if (!def) return;
+			document.getElementById(def.tab).classList.add(def.activeClass);
+
+			const frame = document.getElementById(def.frame);
+			// 見送り理由タブは常に表示。それ以外はソースの有無で判定
+			if (tab === "reason" || hasSource(tab)) {
+				frame.classList.add("active");
 				hideComingSoon();
-				tabReason.classList.add("active-reason");
-				setTimeout(() => reasonFrame.contentWindow?.focus(), 50);
+				setTimeout(() => frame.contentWindow?.focus(), 50);
+			} else {
+				showComingSoon(getMissingMessage(tab));
 			}
 		}
 

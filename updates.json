@@ -2,6 +2,12 @@
   {
     "date": "2026-06-19",
     "ai": "gpt",
+    "text": "Fix standup countdown to target 11:00 JST regardless of viewer timezone",
+    "commit": "780da5e"
+  },
+  {
+    "date": "2026-06-19",
+    "ai": "gpt",
     "text": "Change standup countdown target to 11:00 AM (疑問符つき)",
     "commit": "5ff5f92"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Update changelog for Codex simple Tetris",
     "commit": "92d884d"
-  },
-  {
-    "date": "2026-02-13",
-    "ai": "codex",
-    "text": "Add Codex simple Tetris and include pending workspace files",
-    "commit": "4184d6b"
   }
 ]
