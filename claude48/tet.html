@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- このファイルは Claude Opus 4.8 が生成したオリジナル版テトリスです -->
+  <meta name="ai.author" content="Claude Opus 4.8" />
+  <meta name="ai.model" content="claude-opus-4-8" />
+  <meta name="ai.note" content="Tetris (Simple) original edition by Claude Opus 4.8." />
+  <title>Tetris (シンプル版) - Claude Opus 4.8版</title>
+  <style>
+    :root {
+      --bg0: #05060d;
+      --bg1: #0c1024;
+      --panel: rgba(18, 24, 50, 0.66);
+      --line: rgba(120, 160, 255, 0.16);
+      --text: #e6edff;
+      --muted: #8fa3d4;
+      --accent: #5ad7ff;
+      --accent2: #b78cff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; }
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: "Segoe UI", "Hiragino Sans", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 600px at 18% 12%, rgba(90, 215, 255, 0.16), transparent 55%),
+        radial-gradient(900px 700px at 85% 88%, rgba(183, 140, 255, 0.16), transparent 55%),
+        linear-gradient(160deg, var(--bg1), var(--bg0));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ステージ全体。横並び（盤面 + サイドパネル） */
+    .stage {
+      display: flex;
+      gap: clamp(12px, 2.2vmin, 28px);
+      align-items: stretch;
+      padding: clamp(10px, 2vmin, 24px);
+      max-width: 100vw;
+      max-height: 100vh;
+    }
+
+    .board-shell {
+      position: relative;
+      border-radius: 14px;
+      padding: 10px;
+      background: var(--panel);
+      border: 1px solid rgba(120, 160, 255, 0.28);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(40, 80, 180, 0.12);
+      backdrop-filter: blur(6px);
+    }
+    canvas { display: block; border-radius: 8px; }
+    #board { background: rgba(3, 5, 14, 0.92); }
+
+    /* サイドパネル */
+    .side {
+      display: flex;
+      flex-direction: column;
+      gap: clamp(8px, 1.6vmin, 16px);
+      width: clamp(140px, 22vmin, 210px);
+      justify-content: space-between;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid rgba(120, 160, 255, 0.22);
+      border-radius: 12px;
+      padding: clamp(8px, 1.5vmin, 14px);
+      backdrop-filter: blur(6px);
+    }
+    .title {
+      font-weight: 800;
+      letter-spacing: 2px;
+      font-size: clamp(15px, 2.4vmin, 22px);
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-align: center;
+    }
+    .sub { font-size: clamp(9px, 1.3vmin, 11px); color: var(--muted); text-align: center; margin-top: 2px; }
+    .label { font-size: clamp(9px, 1.3vmin, 11px); color: var(--muted); letter-spacing: 1px; }
+    .value { font-size: clamp(18px, 3vmin, 30px); font-weight: 800; line-height: 1.1; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; }
+    .preview-wrap { display: flex; gap: 8px; }
+    .preview-box { flex: 1; }
+    .preview-box canvas { width: 100%; height: auto; background: rgba(3, 5, 14, 0.6); border-radius: 6px; }
+    .help { font-size: clamp(9px, 1.35vmin, 12px); color: var(--muted); line-height: 1.75; }
+    .help b { color: var(--text); font-weight: 700; }
+    kbd {
+      display: inline-block;
+      min-width: 1.1em;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(120, 160, 255, 0.16);
+      border: 1px solid rgba(120, 160, 255, 0.3);
+      font-size: 0.92em;
+      color: var(--text);
+    }
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border: 1px solid rgba(120, 160, 255, 0.4);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(90, 215, 255, 0.22), rgba(183, 140, 255, 0.2));
+      color: var(--text);
+      font-weight: 700;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: transform 0.08s ease, filter 0.15s ease;
+    }
+    .btn:hover { filter: brightness(1.18); }
+    .btn:active { transform: translateY(1px); }
+
+    /* オーバーレイ（開始 / ポーズ / ゲームオーバー） */
+    .overlay {
+      position: absolute;
+      inset: 10px;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      text-align: center;
+      background: rgba(5, 7, 16, 0.78);
+      backdrop-filter: blur(3px);
+      transition: opacity 0.25s ease;
+      z-index: 5;
+    }
+    .overlay.hidden { opacity: 0; pointer-events: none; }
+    .overlay h2 {
+      font-size: clamp(22px, 5vmin, 44px);
+      letter-spacing: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .overlay p { color: var(--muted); font-size: clamp(11px, 1.8vmin, 15px); }
+    .overlay .big { font-size: clamp(16px, 3vmin, 26px); color: var(--text); }
+
+    @media (max-width: 560px) {
+      .stage { flex-direction: column; align-items: center; gap: 10px; }
+      .side { width: min(92vw, 360px); flex-direction: row; flex-wrap: wrap; }
+      .side .card { flex: 1 1 auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="board-shell">
+      <canvas id="board"></canvas>
+      <!-- 状態オーバーレイ -->
+      <div class="overlay" id="overlay">
+        <h2 id="ovTitle">TETRIS</h2>
+        <p class="big" id="ovMsg">Claude Opus 4.8 版</p>
+        <p id="ovHint">スペース / クリックで開始</p>
+        <button class="btn" id="ovBtn" style="width:auto;padding:9px 22px">▶ START</button>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <div class="title">TETRIS</div>
+        <div class="sub">Claude Opus 4.8版</div>
+      </div>
+
+      <div class="card">
+        <div class="row"><span class="label">SCORE</span></div>
+        <div class="value" id="score">0</div>
+        <div class="row" style="margin-top:6px">
+          <div><div class="label">LINES</div><div class="value" id="lines" style="font-size:clamp(13px,2vmin,18px)">0</div></div>
+          <div style="text-align:right"><div class="label">LEVEL</div><div class="value" id="level" style="font-size:clamp(13px,2vmin,18px)">1</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-bottom:6px"><span class="label">HOLD</span><span class="label">NEXT</span></div>
+        <div class="preview-wrap">
+          <div class="preview-box"><canvas id="hold"></canvas></div>
+          <div class="preview-box"><canvas id="next"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card help">
+        <b>操作方法</b><br />
+        <kbd>←</kbd><kbd>→</kbd> 移動 / <kbd>↓</kbd> ソフトドロップ<br />
+        <kbd>↑</kbd> または <kbd>X</kbd> 右回転 / <kbd>Z</kbd> 左回転<br />
+        <kbd>Space</kbd> ハードドロップ<br />
+        <kbd>C</kbd> ホールド / <kbd>P</kbd> ポーズ<br />
+        <kbd>R</kbd> リスタート
+      </div>
+    </div>
+  </div>
+
+  <script>
+    "use strict";
+    /* =====================================================================
+       Tetris (シンプル版) - Claude Opus 4.8 オリジナル
+       - 7-bag ランダマイザ / SRS風キック / ゴースト / ホールド / ネクスト
+       - ハードドロップ / ソフトドロップ加点 / レベル&スピード上昇
+       - ライン消去アニメ / ハードドロップ着地のシェイク演出
+       - requestAnimationFrame + デルタタイムでフレームレート非依存
+       ===================================================================== */
+
+    // ---- 盤面サイズ定数 ----
+    const COLS = 10;
+    const ROWS = 20;
+
+    // ---- 色（テトリミノ index 1..7 = I,J,L,O,S,T,Z）----
+    const COLORS = [
+      null,
+      "#39e6ff", // I シアン
+      "#4b7bff", // J ブルー
+      "#ff9d3a", // L オレンジ
+      "#ffe14d", // O イエロー
+      "#4dff7a", // S グリーン
+      "#c07bff", // T パープル
+      "#ff5d6e", // Z レッド
+    ];
+
+    // ---- テトリミノ定義 ----
+    const SHAPES = {
+      I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+      J: [[2,0,0],[2,2,2],[0,0,0]],
+      L: [[0,0,3],[3,3,3],[0,0,0]],
+      O: [[4,4],[4,4]],
+      S: [[0,5,5],[5,5,0],[0,0,0]],
+      T: [[0,6,0],[6,6,6],[0,0,0]],
+      Z: [[7,7,0],[0,7,7],[0,0,0]],
+    };
+    const TYPES = "IJLOSTZ";
+
+    // ---- DOM ----
+    const boardCv = document.getElementById("board");
+    const bctx = boardCv.getContext("2d");
+    const nextCv = document.getElementById("next");
+    const nctx = nextCv.getContext("2d");
+    const holdCv = document.getElementById("hold");
+    const hctx = holdCv.getContext("2d");
+    const elScore = document.getElementById("score");
+    const elLines = document.getElementById("lines");
+    const elLevel = document.getElementById("level");
+    const overlay = document.getElementById("overlay");
+    const ovTitle = document.getElementById("ovTitle");
+    const ovMsg = document.getElementById("ovMsg");
+    const ovHint = document.getElementById("ovHint");
+    const ovBtn = document.getElementById("ovBtn");
+
+    // ---- ゲーム状態 ----
+    let cell = 22;          // 1マスの描画サイズ(px)。リサイズで更新
+    let arena;              // 盤面 [ROWS][COLS]
+    let player;             // 操作中ピース { matrix, pos, type }
+    let bag = [];           // 7-bag
+    let nextType = null;    // 次のピース種別
+    let holdType = null;    // ホールド中の種別
+    let holdUsed = false;   // このピースで既にホールドしたか
+    let score = 0, lines = 0, level = 1;
+    let dropInterval = 1000; // 自然落下間隔(ms)
+    let dropCounter = 0;
+    let lastTime = 0;
+    let state = "ready";    // ready | playing | paused | over
+    let shake = 0;          // 着地時のシェイク量
+    let clearing = null;    // ライン消去アニメ情報 { rows:[], t:0 }
+
+    // ===================== 行列ユーティリティ =====================
+    function createMatrix(w, h) {
+      return Array.from({ length: h }, () => new Array(w).fill(0));
+    }
+    function cloneMatrix(m) { return m.map((r) => r.slice()); }
+
+    // 時計回り(dir=1) / 反時計回り(dir=-1) に回転した新しい行列を返す
+    function rotated(matrix, dir) {
+      const N = matrix.length;
+      const res = createMatrix(N, N);
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+          if (dir > 0) res[x][N - 1 - y] = matrix[y][x];
+          else res[N - 1 - x][y] = matrix[y][x];
+        }
+      }
+      return res;
+    }
+
+    // ===================== 7-bag ランダマイザ =====================
+    function refillBag() {
+      bag = TYPES.split("");
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0;
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
+    }
+    function nextFromBag() {
+      if (bag.length === 0) refillBag();
+      return bag.pop();
+    }
+
+    // ===================== 衝突判定 =====================
+    function collide(matrix, pos) {
+      for (let y = 0; y < matrix.length; y++) {
+        for (let x = 0; x < matrix[y].length; x++) {
+          if (!matrix[y][x]) continue;
+          const nx = x + pos.x;
+          const ny = y + pos.y;
+          if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+          if (ny >= 0 && arena[ny][nx]) return true;
+        }
+      }
+      return false;
+    }
+
+    // ===================== ピース生成 =====================
+    function spawn(type) {
+      const matrix = cloneMatrix(SHAPES[type]);
+      const pos = { x: ((COLS - matrix[0].length) / 2) | 0, y: type === "I" ? -1 : 0 };
+      player = { matrix, pos, type };
+      holdUsed = false;
+      // 出現位置で既に衝突＝ゲームオーバー
+      if (collide(matrix, pos)) {
+        gameOver();
+      }
+    }
+    function newPiece() {
+      const t = nextType ?? nextFromBag();
+      nextType = nextFromBag();
+      spawn(t);
+    }
+
+    // ===================== 盤面操作 =====================
+    function merge() {
+      player.matrix.forEach((row, y) => {
+        row.forEach((v, x) => {
+          if (!v) return;
+          const by = y + player.pos.y;
+          const bx = x + player.pos.x;
+          if (by >= 0 && by < ROWS && bx >= 0 && bx < COLS) arena[by][bx] = v;
+        });
+      });
+    }
+
+    // 揃った行を検出（アニメ用に行番号を返す）
+    function findFullRows() {
+      const rows = [];
+      for (let y = ROWS - 1; y >= 0; y--) {
+        if (arena[y].every((v) => v !== 0)) rows.push(y);
+      }
+      return rows;
+    }
+
+    function removeRows(rows) {
+      // 大きい行番号から削除すればインデックスがずれない
+      rows.sort((a, b) => a - b);
+      for (const y of rows) {
+        arena.splice(y, 1);
+        arena.unshift(new Array(COLS).fill(0));
+      }
+      const cleared = rows.length;
+      const points = [0, 100, 300, 500, 800];
+      score += (points[cleared] || 800) * level;
+      lines += cleared;
+      level = Math.floor(lines / 10) + 1;
+      // レベルに応じて落下速度を上げる（下限あり）
+      dropInterval = Math.max(80, 1000 - (level - 1) * 80);
+      updateHud();
+    }
+
+    // ===================== 移動・回転 =====================
+    function move(dx) {
+      const pos = { x: player.pos.x + dx, y: player.pos.y };
+      if (!collide(player.matrix, pos)) player.pos = pos;
+    }
+
+    function softDrop() {
+      const pos = { x: player.pos.x, y: player.pos.y + 1 };
+      if (!collide(player.matrix, pos)) {
+        player.pos = pos;
+        score += 1; // ソフトドロップ加点
+        updateHud();
+        return true;
+      }
+      lockPiece();
+      return false;
+    }
+
+    function hardDrop() {
+      let dist = 0;
+      while (!collide(player.matrix, { x: player.pos.x, y: player.pos.y + 1 })) {
+        player.pos.y++;
+        dist++;
+      }
+      score += dist * 2; // ハードドロップ加点
+      shake = Math.min(10, 4 + dist * 0.4);
+      lockPiece();
+    }
+
+    // SRS風のウォールキック（簡易版オフセット）
+    const KICKS = [0, -1, 1, -2, 2];
+    function rotate(dir) {
+      const rot = rotated(player.matrix, dir);
+      for (const k of KICKS) {
+        const pos = { x: player.pos.x + k, y: player.pos.y };
+        if (!collide(rot, pos)) {
+          player.matrix = rot;
+          player.pos = pos;
+          return;
+        }
+        // 上方向の蹴り上げも一度試す（I型などの救済）
+        const posUp = { x: player.pos.x + k, y: player.pos.y - 1 };
+        if (!collide(rot, posUp)) {
+          player.matrix = rot;
+          player.pos = posUp;
+          return;
+        }
+      }
+    }
+
+    // ホールド
+    function hold() {
+      if (holdUsed) return;
+      holdUsed = true;
+      if (holdType == null) {
+        holdType = player.type;
+        newPiece();
+      } else {
+        const t = holdType;
+        holdType = player.type;
+        spawn(t);
+      }
+    }
+
+    // ピース確定 → ライン消去 → 次へ
+    function lockPiece() {
+      merge();
+      const rows = findFullRows();
+      if (rows.length > 0) {
+        clearing = { rows, t: 0 };
+      } else {
+        newPiece();
+      }
+      dropCounter = 0;
+    }
+
+    // ゴースト（落下予測位置）の y を計算
+    function ghostY() {
+      let gy = player.pos.y;
+      while (!collide(player.matrix, { x: player.pos.x, y: gy + 1 })) gy++;
+      return gy;
+    }
+
+    // ===================== HUD =====================
+    function updateHud() {
+      elScore.textContent = score;
+      elLines.textContent = lines;
+      elLevel.textContent = level;
+    }
+
+    // ===================== 描画 =====================
+    function roundedCell(ctx, px, py, size, color) {
+      const g = ctx.createLinearGradient(px, py, px, py + size);
+      g.addColorStop(0, lighten(color, 0.35));
+      g.addColorStop(1, color);
+      ctx.fillStyle = g;
+      ctx.fillRect(px, py, size, size);
+      // 上面ハイライト
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(px, py, size, size * 0.18);
+      // 縁取り
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + 0.5, py + 0.5, size - 1, size - 1);
+    }
+
+    function lighten(hex, amt) {
+      const n = parseInt(hex.slice(1), 16);
+      let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      r = Math.min(255, r + (255 - r) * amt);
+      g = Math.min(255, g + (255 - g) * amt);
+      b = Math.min(255, b + (255 - b) * amt);
+      return `rgb(${r | 0},${g | 0},${b | 0})`;
+    }
+
+    function drawGrid() {
+      bctx.strokeStyle = "rgba(120,160,255,0.10)";
+      bctx.lineWidth = 1;
+      for (let x = 0; x <= COLS; x++) {
+        bctx.beginPath();
+        bctx.moveTo(x * cell + 0.5, 0);
+        bctx.lineTo(x * cell + 0.5, ROWS * cell);
+        bctx.stroke();
+      }
+      for (let y = 0; y <= ROWS; y++) {
+        bctx.beginPath();
+        bctx.moveTo(0, y * cell + 0.5);
+        bctx.lineTo(COLS * cell, y * cell + 0.5);
+        bctx.stroke();
+      }
+    }
+
+    function drawBoard() {
+      bctx.save();
+      // シェイク演出
+      if (shake > 0) {
+        const dx = (Math.random() - 0.5) * shake;
+        const dy = (Math.random() - 0.5) * shake;
+        bctx.translate(dx, dy);
+      }
+      bctx.fillStyle = "rgba(3,5,14,0.92)";
+      bctx.fillRect(-12, -12, boardCv.width + 24, boardCv.height + 24);
+      drawGrid();
+
+      // 固定ブロック（消去アニメ中は対象行を点滅）
+      const flashing = clearing ? clearing.rows : [];
+      const flashOn = clearing ? Math.floor(clearing.t / 60) % 2 === 0 : false;
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const v = arena[y][x];
+          if (!v) continue;
+          if (flashing.includes(y)) {
+            if (flashOn) {
+              bctx.fillStyle = "rgba(255,255,255,0.95)";
+              bctx.fillRect(x * cell, y * cell, cell - 1, cell - 1);
+            }
+          } else {
+            roundedCell(bctx, x * cell, y * cell, cell - 1, COLORS[v]);
+          }
+        }
+      }
+
+      // プレイ中のみ ゴースト + 操作ピース
+      if (player && state === "playing" && !clearing) {
+        const gy = ghostY();
+        player.matrix.forEach((row, y) => {
+          row.forEach((v, x) => {
+            if (!v) return;
+            const px = (x + player.pos.x) * cell;
+            const py = (y + gy) * cell;
+            if (py >= 0) {
+              bctx.fillStyle = "rgba(255,255,255,0.10)";
+              bctx.fillRect(px, py, cell - 1, cell - 1);
+              bctx.strokeStyle = "rgba(255,255,255,0.35)";
+              bctx.strokeRect(px + 0.5, py + 0.5, cell - 2, cell - 2);
+            }
+          });
+        });
+      }
+      if (player && (state === "playing" || state === "paused")) {
+        player.matrix.forEach((row, y) => {
+          row.forEach((v, x) => {
+            if (!v) return;
+            const py = (y + player.pos.y);
+            if (py < 0) return;
+            roundedCell(bctx, (x + player.pos.x) * cell, py * cell, cell - 1, COLORS[v]);
+          });
+        });
+      }
+      bctx.restore();
+    }
+
+    // プレビュー（next / hold）にピースを中央描画
+    function drawPreview(ctx, cv, type, dimmed) {
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = "rgba(3,5,14,0.5)";
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      if (!type) return;
+      const m = SHAPES[type];
+      // 実際に埋まっている範囲を求めて中央寄せ
+      let minX = 9, maxX = -1, minY = 9, maxY = -1;
+      m.forEach((row, y) => row.forEach((v, x) => {
+        if (v) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+      }));
+      const w = maxX - minX + 1, h = maxY - minY + 1;
+      const c = Math.min(cv.width / 4.5, cv.height / 4.5);
+      const ox = (cv.width - w * c) / 2 - minX * c;
+      const oy = (cv.height - h * c) / 2 - minY * c;
+      m.forEach((row, y) => row.forEach((v, x) => {
+        if (!v) return;
+        if (dimmed) {
+          ctx.globalAlpha = 0.4;
+        }
+        roundedCell(ctx, ox + x * c, oy + y * c, c - 2, COLORS[v]);
+        ctx.globalAlpha = 1;
+      }));
+    }
+
+    function render() {
+      drawBoard();
+      drawPreview(nctx, nextCv, nextType, false);
+      drawPreview(hctx, holdCv, holdType, holdUsed);
+    }
+
+    // ===================== リサイズ =====================
+    function resize() {
+      // 利用可能な高さからセルサイズを決定（盤面が常に画面内に収まる）
+      const isNarrow = window.innerWidth <= 560;
+      const availH = window.innerHeight - (isNarrow ? 240 : 60);
+      const availW = isNarrow ? window.innerWidth - 40 : window.innerWidth - 260;
+      let c = Math.floor(Math.min(availH / ROWS, availW / COLS));
+      c = Math.max(12, Math.min(c, 40));
+      cell = c;
+      boardCv.width = COLS * cell;
+      boardCv.height = ROWS * cell;
+      // プレビューキャンバスの内部解像度
+      const pv = Math.max(64, Math.floor(cell * 4));
+      nextCv.width = pv; nextCv.height = pv;
+      holdCv.width = pv; holdCv.height = pv;
+      render();
+    }
+    window.addEventListener("resize", resize);
+
+    // ===================== ゲームフロー =====================
+    function startGame() {
+      arena = createMatrix(COLS, ROWS);
+      score = 0; lines = 0; level = 1;
+      dropInterval = 1000; dropCounter = 0;
+      bag = []; nextType = null; holdType = null; holdUsed = false;
+      clearing = null; shake = 0;
+      updateHud();
+      newPiece();
+      state = "playing";
+      hideOverlay();
+      lastTime = performance.now();
+    }
+
+    function gameOver() {
+      state = "over";
+      showOverlay("GAME OVER", `SCORE ${score}`, "スペース / クリックでもう一度", "↻ RETRY");
+    }
+
+    function togglePause() {
+      if (state === "playing") {
+        state = "paused";
+        showOverlay("PAUSED", "", "P / クリックで再開", "▶ RESUME");
+      } else if (state === "paused") {
+        state = "playing";
+        hideOverlay();
+        lastTime = performance.now();
+      }
+    }
+
+    function showOverlay(title, msg, hint, btn) {
+      ovTitle.textContent = title;
+      ovMsg.textContent = msg;
+      ovMsg.style.display = msg ? "" : "none";
+      ovHint.textContent = hint;
+      ovBtn.textContent = btn;
+      overlay.classList.remove("hidden");
+    }
+    function hideOverlay() { overlay.classList.add("hidden"); }
+
+    // オーバーレイのボタン / クリックで状態遷移
+    function onPrimaryAction() {
+      if (state === "ready" || state === "over") startGame();
+      else if (state === "paused") togglePause();
+    }
+    ovBtn.addEventListener("click", onPrimaryAction);
+    boardCv.addEventListener("click", () => {
+      if (state === "ready" || state === "over") startGame();
+      else if (state === "paused") togglePause();
+    });
+
+    // ===================== メインループ =====================
+    function loop(time) {
+      const dt = time - lastTime;
+      lastTime = time;
+
+      // シェイク減衰（フレームレート非依存）
+      if (shake > 0) shake = Math.max(0, shake - dt * 0.03);
+
+      if (state === "playing") {
+        if (clearing) {
+          // ライン消去アニメ進行
+          clearing.t += dt;
+          if (clearing.t >= 240) {
+            removeRows(clearing.rows);
+            clearing = null;
+            newPiece();
+          }
+        } else {
+          dropCounter += dt;
+          if (dropCounter >= dropInterval) {
+            dropCounter = 0;
+            // 自然落下：1段下げて、無理なら確定
+            const pos = { x: player.pos.x, y: player.pos.y + 1 };
+            if (!collide(player.matrix, pos)) player.pos = pos;
+            else lockPiece();
+          }
+        }
+      }
+
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    // ===================== 入力 =====================
+    document.addEventListener("keydown", (e) => {
+      const k = e.key;
+      // ゲーム用キーのスクロール抑制
+      if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(k)) e.preventDefault();
+
+      // どの状態でも効くキー
+      if (k === "r" || k === "R") { startGame(); return; }
+      if (k === "p" || k === "P") { togglePause(); return; }
+      if (k === " " && (state === "ready" || state === "over")) { startGame(); return; }
+
+      if (state !== "playing" || clearing) return;
+
+      switch (k) {
+        case "ArrowLeft": move(-1); break;
+        case "ArrowRight": move(1); break;
+        case "ArrowDown": softDrop(); break;
+        case "ArrowUp":
+        case "x": case "X": rotate(1); break;
+        case "z": case "Z": rotate(-1); break;
+        case " ": hardDrop(); break;
+        case "c": case "C": hold(); break;
+      }
+      render();
+    }, { passive: false });
+
+    // ===================== 起動 =====================
+    resize();
+    showOverlay("TETRIS", "Claude Opus 4.8 版", "スペース / クリックで開始", "▶ START");
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

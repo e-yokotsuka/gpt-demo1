@@ -2,6 +2,12 @@
   {
     "date": "2026-06-19",
     "ai": "claude",
+    "text": "Add Claude Opus 4.8 versions of 22 visual/static/audio demos",
+    "commit": "bacb528"
+  },
+  {
+    "date": "2026-06-19",
+    "ai": "claude",
     "text": "Add Claude Opus 4.8 comparison tab and Matrix demo",
     "commit": "7437c7a"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add Codex Roaming Cockroaches with realistic sprite roaming",
     "commit": "f5564b2"
-  },
-  {
-    "date": "2026-02-13",
-    "ai": "codex",
-    "text": "Add Codex Wizardry Dungeon and enable compare entry",
-    "commit": "9c88067"
   }
 ]
