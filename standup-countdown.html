@@ -137,7 +137,7 @@
     </div>
 
     <div class="meta">
-      <p class="target">Starts at <b>11:00 AM?</b></p>
+      <p class="target">Starts at <b>11:00 AM JST?</b></p>
       <div class="bar"><i id="bar"></i></div>
     </div>
   </main>
@@ -151,9 +151,16 @@
 (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* ---- target: today at 11:00 local time (日本時間 午前11時) ---- */
-  const target = new Date();
-  target.setHours(11, 0, 0, 0);
+  /* ---- target: 日本時間(JST=UTC+9)の今日 11:00 をタイムゾーン固定で指す ---- */
+  /* 閲覧者のローカルTZに依存しないよう、JSTの今日の日付を求め、 */
+  /* その日の 11:00 JST(=02:00 UTC) を目標時刻にする */
+  const nowJst = new Date(Date.now() + 9 * 3600 * 1000);
+  const target = new Date(Date.UTC(
+    nowJst.getUTCFullYear(),
+    nowJst.getUTCMonth(),
+    nowJst.getUTCDate(),
+    2, 0, 0, 0
+  ));
 
   const start = Date.now();
   const startRemaining = Math.max(1, target.getTime() - start);

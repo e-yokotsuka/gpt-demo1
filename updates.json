@@ -1,6 +1,12 @@
 [
   {
     "date": "2026-06-19",
+    "ai": "gpt",
+    "text": "Change standup countdown target to 11:00 AM (疑問符つき)",
+    "commit": "5ff5f92"
+  },
+  {
+    "date": "2026-06-19",
     "ai": "claude",
     "text": "Add Claude Opus 4.8 original Daily Standup Countdown demo",
     "commit": "633bfba"
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add Codex simple Tetris and include pending workspace files",
     "commit": "4184d6b"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Add Codex PixiJS Tetris and enable compare entry",
-    "commit": "397f6f9"
   }
 ]
