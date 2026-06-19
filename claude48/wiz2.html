@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<!-- 作者・モデル情報（必須メタ） -->
+<meta name="ai.author" content="Claude Opus 4.8" />
+<meta name="ai.model" content="claude-opus-4-8" />
+<meta name="ai.note" content="単一HTML自己完結のレイキャスト式3DダンジョンRPG。外部CDN不使用。" />
+<title>Wizardry 3D Dungeon - Claude Opus 4.8版</title>
+<style>
+  /* ===== 全体レイアウト ===== */
+  :root{
+    --gold:#d8b15a;
+    --ink:#0a0a12;
+    --panel:rgba(14,12,22,0.82);
+    --panel2:rgba(22,18,34,0.92);
+    --edge:#6b5a36;
+    --txt:#e7e0c8;
+    --hp:#d24d4d;
+    --mp:#4d7fd2;
+    --xp:#5ad27a;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; width:100vw; height:100vh; overflow:hidden;
+    background:#000; color:var(--txt);
+    font-family: "Times New Roman", "Yu Mincho", "MS Mincho", serif;
+    user-select:none; touch-action:none;
+  }
+  #app{ position:fixed; inset:0; }
+  canvas{ display:block; width:100%; height:100%; image-rendering:pixelated; }
+
+  /* ===== オーバーレイ共通 ===== */
+  .overlay{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:18px; text-align:center;
+    background:radial-gradient(ellipse at center, rgba(20,16,30,0.7), rgba(0,0,0,0.95));
+    z-index:50; padding:24px;
+  }
+  .overlay h1{
+    font-size:clamp(28px,6vw,64px); margin:0; letter-spacing:3px;
+    color:var(--gold); text-shadow:0 0 18px rgba(216,177,90,0.5), 0 3px 0 #000;
+  }
+  .overlay h2{ font-size:clamp(18px,3vw,30px); margin:0; color:var(--txt); }
+  .overlay p{ max-width:640px; line-height:1.8; color:#c7bfa6; font-size:clamp(13px,2vw,16px); }
+  .btn{
+    background:linear-gradient(180deg,#3a3050,#211a32);
+    color:var(--gold); border:2px solid var(--edge);
+    padding:14px 38px; font-size:clamp(16px,2.4vw,22px); letter-spacing:2px;
+    border-radius:8px; cursor:pointer; font-family:inherit;
+    box-shadow:0 6px 18px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08);
+    transition:transform .08s, box-shadow .15s;
+  }
+  .btn:hover{ transform:translateY(-2px); box-shadow:0 10px 24px rgba(0,0,0,0.7); }
+  .btn:active{ transform:translateY(1px); }
+  .hidden{ display:none !important; }
+  .help-grid{
+    display:grid; grid-template-columns:auto 1fr; gap:6px 18px;
+    text-align:left; font-size:clamp(12px,2vw,15px); color:#cfc6ab;
+    background:var(--panel); border:1px solid var(--edge); border-radius:10px; padding:16px 22px;
+  }
+  .help-grid b{ color:var(--gold); }
+
+  /* ===== HUD ===== */
+  #hud{ position:fixed; inset:0; pointer-events:none; z-index:20; }
+  .frame{
+    position:absolute; pointer-events:auto;
+    background:var(--panel); border:1px solid var(--edge); border-radius:10px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.4);
+    backdrop-filter:blur(2px);
+  }
+  /* ステータス（左上） */
+  #status{ top:10px; left:10px; padding:10px 14px; min-width:200px; }
+  #status .name{ color:var(--gold); font-size:18px; letter-spacing:1px; margin-bottom:6px; }
+  .bar{ height:14px; border-radius:7px; background:#000; overflow:hidden; margin:5px 0; position:relative; border:1px solid #000; }
+  .bar > i{ display:block; height:100%; transition:width .25s; }
+  .bar > span{ position:absolute; inset:0; font-size:11px; line-height:14px; text-align:center; color:#fff; text-shadow:0 1px 2px #000; }
+  .barHP > i{ background:linear-gradient(180deg,#ff6b6b,var(--hp)); }
+  .barMP > i{ background:linear-gradient(180deg,#6ba0ff,var(--mp)); }
+  .barXP > i{ background:linear-gradient(180deg,#8df0a8,var(--xp)); }
+  #status .row{ display:flex; gap:12px; font-size:13px; color:#cfc6ab; margin-top:6px; }
+  #status .row b{ color:var(--gold); }
+
+  /* フロア表示（上中央） */
+  #floorInfo{ top:10px; left:50%; transform:translateX(-50%); padding:8px 18px; font-size:15px; color:var(--gold); letter-spacing:2px; }
+
+  /* ミニマップ（右上） */
+  #mapWrap{ top:10px; right:10px; padding:8px; }
+  #mapWrap .ttl{ font-size:12px; color:var(--gold); text-align:center; margin-bottom:4px; letter-spacing:2px; }
+  #minimap{ display:block; image-rendering:pixelated; border-radius:4px; }
+
+  /* メッセージログ（左下） */
+  #log{ bottom:10px; left:10px; width:min(46vw,420px); height:118px; padding:8px 12px; overflow:hidden; font-size:13px; line-height:1.5; }
+  #log .l{ opacity:0; animation:fadein .3s forwards; }
+  #log .sys{ color:#9fd3ff; } #log .dmg{ color:#ff8b8b; } #log .good{ color:#8df0a8; } #log .gold{ color:var(--gold); }
+  @keyframes fadein{ to{ opacity:1; } }
+
+  /* コンパス（中央上） */
+  #compass{ top:54px; left:50%; transform:translateX(-50%); padding:4px 14px; font-size:20px; color:var(--gold); letter-spacing:3px; }
+
+  /* 操作ボタン（右下・モバイル/共通） */
+  #pad{ bottom:14px; right:14px; display:grid; grid-template-columns:repeat(3,58px); grid-template-rows:repeat(3,58px); gap:6px; pointer-events:auto; z-index:21; }
+  #pad button{
+    pointer-events:auto; font-size:22px; color:var(--gold);
+    background:linear-gradient(180deg,#2c2540,#181226); border:1px solid var(--edge);
+    border-radius:10px; cursor:pointer; font-family:inherit;
+    box-shadow:0 3px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  #pad button:active{ background:#3a3258; transform:translateY(1px); }
+  #pad .sp{ visibility:hidden; }
+
+  /* ===== 戦闘UI ===== */
+  #battle{ position:fixed; inset:0; z-index:30; pointer-events:none; display:flex; align-items:flex-end; justify-content:center; }
+  #battlePanel{
+    pointer-events:auto; width:min(92vw,520px); margin-bottom:14px;
+    background:var(--panel2); border:2px solid var(--edge); border-radius:12px; padding:14px 16px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.7);
+  }
+  #battlePanel .enemyName{ color:#ff9c6b; font-size:20px; letter-spacing:1px; text-align:center; }
+  #battlePanel .ebar{ height:16px; }
+  #battlePanel .ebar > i{ background:linear-gradient(180deg,#ff7a4d,#c0392b); }
+  #battleCmds{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:12px; }
+  #battleCmds .btn{ padding:12px 0; font-size:16px; }
+
+  /* ヒントトースト */
+  #toast{ position:fixed; bottom:140px; left:50%; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--edge); border-radius:8px; padding:8px 16px; color:var(--gold); z-index:40; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #toast.show{ opacity:1; }
+
+  @media (max-width:560px){
+    #log{ width:54vw; height:90px; }
+    #status{ min-width:150px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"><canvas id="screen"></canvas></div>
+
+<!-- ===== HUD ===== -->
+<div id="hud">
+  <div id="status" class="frame">
+    <div class="name" id="heroName">放浪の剣士</div>
+    <div class="bar barHP"><i id="hpFill"></i><span id="hpTxt"></span></div>
+    <div class="bar barMP"><i id="mpFill"></i><span id="mpTxt"></span></div>
+    <div class="bar barXP"><i id="xpFill"></i><span id="xpTxt"></span></div>
+    <div class="row"><span>Lv <b id="lvTxt">1</b></span><span>ATK <b id="atkTxt">0</b></span><span>DEF <b id="defTxt">0</b></span></div>
+    <div class="row"><span>金貨 <b id="goldTxt">0</b></span><span>薬 <b id="potTxt">0</b></span></div>
+  </div>
+
+  <div id="floorInfo" class="frame">地下 1 階</div>
+  <div id="compass" class="frame">北</div>
+
+  <div id="mapWrap" class="frame">
+    <div class="ttl">M A P</div>
+    <canvas id="minimap" width="130" height="130"></canvas>
+  </div>
+
+  <div id="log" class="frame"></div>
+
+  <div id="pad">
+    <span class="sp"></span><button data-k="up">▲</button><span class="sp"></span>
+    <button data-k="tl">↺</button><button data-k="down">▼</button><button data-k="tr">↻</button>
+    <button data-k="sl">◄</button><button data-k="act">⚷</button><button data-k="sr">►</button>
+  </div>
+</div>
+
+<!-- ===== 戦闘 ===== -->
+<div id="battle" class="hidden">
+  <div id="battlePanel">
+    <div class="enemyName" id="enemyName">モンスター</div>
+    <div class="bar ebar"><i id="enemyFill"></i><span id="enemyTxt"></span></div>
+    <div id="battleCmds">
+      <button class="btn" data-c="attack">攻撃</button>
+      <button class="btn" data-c="spell">呪文</button>
+      <button class="btn" data-c="potion">薬</button>
+      <button class="btn" data-c="run">逃走</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ===== タイトル ===== -->
+<div id="title" class="overlay">
+  <h1>WIZARDRY 3D DUNGEON</h1>
+  <h2 style="color:var(--gold)">― 遺されし黄金の護符 ―</h2>
+  <p>狂王トレボーの迷宮に潜り、最深部に眠る<b style="color:var(--gold)">黄金の護符</b>を持ち帰れ。<br>
+     迷宮は3層。各階の階段を下り、待ち受ける魔物を退けて深淵を目指せ。</p>
+  <div class="help-grid">
+    <b>↑ / W</b><span>前進</span>
+    <b>↓ / S</b><span>後退</span>
+    <b>← → / A D</b><span>左右に回転</span>
+    <b>Q / E</b><span>左右に平行移動</span>
+    <b>Space / Enter</b><span>調べる・階段を降りる</span>
+    <b>戦闘中 1〜4</b><span>攻撃 / 呪文 / 薬 / 逃走</span>
+  </div>
+  <button class="btn" id="startBtn">迷宮へ降りる</button>
+</div>
+
+<!-- ===== 結果 ===== -->
+<div id="result" class="overlay hidden">
+  <h1 id="resultTitle"></h1>
+  <p id="resultText"></p>
+  <button class="btn" id="restartBtn">もう一度挑む</button>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   Wizardry 3D Dungeon - Claude Opus 4.8 版
+   - 純粋なCanvas 2Dによるレイキャスト式の擬似3D描画（外部CDN不使用）
+   - 一人称グリッド移動 / ターン制戦闘 / レベルアップ / アイテム / 3層攻略
+   - requestAnimationFrame + デルタタイムでフレームレート非依存
+   ===================================================================== */
+
+(() => {
+  // ---------- DOM参照 ----------
+  const cv = document.getElementById('screen');
+  const ctx = cv.getContext('2d');
+  const mini = document.getElementById('minimap');
+  const mctx = mini.getContext('2d');
+
+  const el = (id) => document.getElementById(id);
+  const titleEl = el('title'), resultEl = el('result'), battleEl = el('battle');
+
+  // ---------- 画面サイズ ----------
+  // レイキャストはバッファ解像度を固定し、CSSで拡大（パフォーマンスと手触りの両立）
+  let RW = 480, RH = 320;             // レンダリング解像度
+  let buf = ctx.createImageData(RW, RH);
+  let zbuf = new Float32Array(RW);     // 壁の深度バッファ（スプライト前後判定用）
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    // アスペクトに合わせてバッファ解像度を調整（高すぎない範囲で）
+    const targetH = 320;
+    RW = Math.max(240, Math.round(targetH * (w / h)));
+    RH = targetH;
+    cv.width = RW; cv.height = RH;
+    cv.style.width = w + 'px';
+    cv.style.height = h + 'px';
+    buf = ctx.createImageData(RW, RH);
+    zbuf = new Float32Array(RW);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- マップ定義 ----------
+  // 1=壁, 0=床, 2=下り階段, 3=宝箱, 9=ゴール(護符)
+  // 各フロアは固定マップ（15x11）。'S'=スタート床。
+  const FLOORS = [
+    {
+      name: '地下 1 階 ― 入口の回廊',
+      map: [
+        "111111111111111",
+        "1S0001000010001",
+        "101011101110101",
+        "100010000001001",
+        "101110111011101",
+        "100001000001001",
+        "101011111110101",
+        "100000003000001",
+        "101111101111101",
+        "100010000000201",
+        "111111111111111",
+      ],
+      start: {x:1,y:1,dir:1},
+      tint: [70,80,110],
+    },
+    {
+      name: '地下 2 階 ― 捻れた迷路',
+      map: [
+        "111111111111111",
+        "1S0000010003001",
+        "111110010111101",
+        "100000010000001",
+        "101111111110101",
+        "100000000010101",
+        "101111110010101",
+        "101000010010001",
+        "101011110111101",
+        "100010000000201",
+        "111111111111111",
+      ],
+      start: {x:1,y:1,dir:1},
+      tint: [90,70,90],
+    },
+    {
+      name: '地下 3 階 ― 護符の祭壇',
+      map: [
+        "111111111111111",
+        "1S0001000030001",
+        "101110111110101",
+        "100010000000101",
+        "111011111010101",
+        "100000000010001",
+        "101111101011101",
+        "101000001000101",
+        "101011111110101",
+        "100010000090001",
+        "111111111111111",
+      ],
+      start: {x:1,y:1,dir:1},
+      tint: [110,80,60],
+    },
+  ];
+
+  const MAPH = 11, MAPW = 15;
+
+  // ---------- ゲーム状態 ----------
+  const game = {
+    floor: 0,
+    grid: null,          // 現在フロアの数値マップ
+    treasures: null,     // 宝箱の取得済みフラグ
+    visited: null,       // 探索済みタイル
+    px: 1.5, py: 1.5,    // プレイヤー位置（中心座標）
+    pa: Math.PI / 2,     // 視線角度（ラジアン）
+    targetA: Math.PI/2,  // 回転目標
+    targetX: 1.5, targetY: 1.5, // 移動目標（補間）
+    moving: false, turning: false,
+    state: 'title',      // title / explore / battle / result
+    encounterCD: 0,      // エンカウント抑制歩数
+    bossDefeated: false,
+  };
+
+  // ---------- プレイヤーパラメータ ----------
+  const hero = {
+    name: '放浪の剣士',
+    lv: 1, hp: 30, maxhp: 30, mp: 10, maxmp: 10,
+    atk: 8, def: 4, xp: 0, next: 20, gold: 0, potions: 2,
+  };
+
+  // ---------- モンスター定義 ----------
+  const MONSTERS = [
+    { n:'コボルド',   hp:14, atk:6,  def:1, xp:8,  gold:6,  col:'#9ac44a', body:0 },
+    { n:'スケルトン', hp:20, atk:9,  def:3, xp:14, gold:10, col:'#dcd7c0', body:1 },
+    { n:'オーク',     hp:30, atk:12, def:4, xp:22, gold:16, col:'#7aa05a', body:0 },
+    { n:'ワイト',     hp:38, atk:15, def:6, xp:34, gold:24, col:'#7fa8d0', body:1 },
+    { n:'ガーゴイル', hp:48, atk:18, def:8, xp:48, gold:34, col:'#9a8f7a', body:2 },
+  ];
+  const BOSS = { n:'護符の番人 グレーターデーモン', hp:120, atk:24, def:10, xp:200, gold:300, col:'#d24d4d', body:3, boss:true };
+
+  let enemy = null;        // 現在の戦闘相手
+  let battleBusy = false;  // 入力ロック
+
+  // ---------- ログ ----------
+  const logEl = el('log');
+  function log(msg, cls='') {
+    const d = document.createElement('div');
+    d.className = 'l ' + cls;
+    d.textContent = msg;
+    logEl.appendChild(d);
+    while (logEl.children.length > 6) logEl.removeChild(logEl.firstChild);
+  }
+  function clearLog() { while (logEl.firstChild) logEl.removeChild(logEl.firstChild); }
+
+  // ---------- トースト ----------
+  let toastT = 0;
+  function toast(msg) {
+    const t = el('toast'); t.textContent = msg; t.classList.add('show'); toastT = 1.6;
+  }
+
+  // ---------- フロア読み込み ----------
+  function loadFloor(idx) {
+    const f = FLOORS[idx];
+    game.floor = idx;
+    game.grid = [];
+    game.treasures = {};
+    game.visited = [];
+    for (let y = 0; y < MAPH; y++) {
+      const row = [];
+      const vrow = [];
+      const s = (f.map[y] || '').padEnd(MAPW, '1');
+      for (let x = 0; x < MAPW; x++) {
+        let c = s[x];
+        if (c === 'S') c = '0';                 // スタートは床扱い
+        const n = parseInt(c, 10);
+        row.push(isNaN(n) ? 1 : n);
+        vrow.push(false);
+      }
+      game.grid.push(row);
+      game.visited.push(vrow);
+    }
+    game.px = f.start.x + 0.5;
+    game.py = f.start.y + 0.5;
+    game.targetX = game.px; game.targetY = game.py;
+    game.pa = f.start.dir * (Math.PI / 2);
+    game.targetA = game.pa;
+    game.encounterCD = 4;
+    el('floorInfo').textContent = f.name;
+    markVisited();
+  }
+
+  // ---------- ユーティリティ ----------
+  function tileAt(x, y) {
+    const gx = Math.floor(x), gy = Math.floor(y);
+    if (gx < 0 || gy < 0 || gx >= MAPW || gy >= MAPH) return 1;
+    return game.grid[gy][gx];
+  }
+  function isWall(x, y) { return tileAt(x, y) === 1; }
+  function markVisited() {
+    const gx = Math.floor(game.px), gy = Math.floor(game.py);
+    for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++){
+      const x=gx+dx, y=gy+dy;
+      if (x>=0&&y>=0&&x<MAPW&&y<MAPH) game.visited[y][x] = true;
+    }
+  }
+
+  const DIRNAMES = ['東','南','西','北'];
+  function dirIndex() {
+    // pa: 0=東(+x), PI/2=南(+y)
+    let a = ((game.targetA % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+    return Math.round(a / (Math.PI/2)) % 4;
+  }
+
+  // ---------- 入力 ----------
+  const keys = {};
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+    handleKey(e.key.toLowerCase());
+  });
+
+  function handleKey(k) {
+    if (game.state === 'battle') {
+      if (k === '1') battleCommand('attack');
+      else if (k === '2') battleCommand('spell');
+      else if (k === '3') battleCommand('potion');
+      else if (k === '4') battleCommand('run');
+      return;
+    }
+    if (game.state !== 'explore') return;
+    if (k === 'arrowup' || k === 'w') queueMove('fwd');
+    else if (k === 'arrowdown' || k === 's') queueMove('back');
+    else if (k === 'arrowleft' || k === 'a') queueTurn(-1);
+    else if (k === 'arrowright' || k === 'd') queueTurn(1);
+    else if (k === 'q') queueMove('left');
+    else if (k === 'e') queueMove('right');
+    else if (k === ' ' || k === 'enter') interact();
+  }
+
+  // パッドボタン
+  document.querySelectorAll('#pad button').forEach(b => {
+    const fire = (ev) => {
+      ev.preventDefault();
+      const k = b.dataset.k;
+      if (k==='up') queueMove('fwd');
+      else if (k==='down') queueMove('back');
+      else if (k==='tl') queueTurn(-1);
+      else if (k==='tr') queueTurn(1);
+      else if (k==='sl') queueMove('left');
+      else if (k==='sr') queueMove('right');
+      else if (k==='act') interact();
+    };
+    b.addEventListener('click', fire);
+    b.addEventListener('touchstart', fire, {passive:false});
+  });
+  // 戦闘コマンドボタン
+  document.querySelectorAll('#battleCmds button').forEach(b => {
+    b.addEventListener('click', () => battleCommand(b.dataset.c));
+  });
+
+  // ---------- 移動・回転（グリッドへ補間） ----------
+  function queueTurn(dir) {
+    if (game.state !== 'explore' || game.turning || game.moving) return;
+    game.targetA += dir * (Math.PI / 2);
+    game.turning = true;
+  }
+  function queueMove(kind) {
+    if (game.state !== 'explore' || game.turning || game.moving) return;
+    const idx = dirIndex();
+    // 方向ベクトル（idx: 0東1南2西3北）
+    const fx = [1,0,-1,0][idx], fy = [0,1,0,-1][idx];
+    let mx = 0, my = 0;
+    if (kind === 'fwd') { mx = fx; my = fy; }
+    else if (kind === 'back') { mx = -fx; my = -fy; }
+    else if (kind === 'left') { mx = fy; my = -fx; }   // 左手側
+    else if (kind === 'right') { mx = -fy; my = fx; }  // 右手側
+    const nx = game.px + mx, ny = game.py + my;
+    if (isWall(nx, ny)) { bump(); return; }
+    game.targetX = nx; game.targetY = ny; game.moving = true;
+  }
+  let bumpT = 0;
+  function bump() { bumpT = 0.18; log('…石壁に阻まれた。', 'sys'); }
+
+  // ---------- 調べる/階段 ----------
+  function interact() {
+    const t = tileAt(game.px, game.py);
+    const gx = Math.floor(game.px), gy = Math.floor(game.py);
+    if (t === 3 && !game.treasures[gx+','+gy]) { openChest(gx, gy); return; }
+    if (t === 2) { descend(); return; }
+    if (t === 9) { checkGoalTile(); return; }
+    log('…石壁が冷たく沈黙している。', 'sys');
+  }
+
+  function openChest(gx, gy) {
+    game.treasures[gx+','+gy] = true;
+    game.grid[gy][gx] = 0;
+    const r = Math.random();
+    if (r < 0.4) {
+      const g = 20 + Math.floor(Math.random()*40) + game.floor*15;
+      hero.gold += g; log('宝箱から金貨 '+g+' 枚を得た！', 'gold');
+    } else if (r < 0.75) {
+      hero.potions += 1; log('宝箱から癒しの霊薬を見つけた！', 'good');
+    } else {
+      hero.atk += 1; hero.def += 1;
+      log('宝箱に古の武具が！ ATK/DEF が上昇した。', 'good');
+    }
+    updateStatus();
+  }
+
+  function descend() {
+    if (game.floor < FLOORS.length - 1) {
+      log('階段を降りた。空気が一層重くなる…', 'sys');
+      loadFloor(game.floor + 1);
+      flash(0.5);
+    }
+  }
+
+  // ---------- エンカウント ----------
+  function maybeEncounter() {
+    if (game.encounterCD > 0) { game.encounterCD--; return; }
+    const t = tileAt(game.px, game.py);
+    if (t === 9) return;
+    const base = 0.16 + game.floor * 0.04;
+    if (Math.random() < base) startBattle(false);
+  }
+
+  // ---------- 戦闘 ----------
+  function startBattle(forceBoss) {
+    let m;
+    if (forceBoss) m = BOSS;
+    else {
+      const lo = Math.max(0, game.floor);
+      const pool = MONSTERS.slice(lo, Math.min(MONSTERS.length, lo+3));
+      m = pool[Math.floor(Math.random()*pool.length)] || MONSTERS[0];
+    }
+    enemy = Object.assign({}, m, { maxhp: m.hp, shake:0, flash:0 });
+    game.state = 'battle';
+    battleBusy = false;
+    battleEl.classList.remove('hidden');
+    el('enemyName').textContent = enemy.n;
+    updateEnemyBar();
+    log(enemy.n + (enemy.boss?' が立ちはだかった！':' が現れた！'), 'dmg');
+    flash(0.4);
+  }
+
+  function updateEnemyBar() {
+    if (!enemy) return;
+    const p = Math.max(0, enemy.hp) / enemy.maxhp * 100;
+    el('enemyFill').style.width = p + '%';
+    el('enemyTxt').textContent = Math.max(0, enemy.hp) + ' / ' + enemy.maxhp;
+  }
+
+  function battleCommand(cmd) {
+    if (game.state !== 'battle' || battleBusy || !enemy) return;
+    battleBusy = true;
+    if (cmd === 'attack') {
+      const dmg = Math.max(1, hero.atk + rnd(-2,3) - enemy.def + rnd(0,2));
+      const crit = Math.random() < 0.12;
+      const total = crit ? Math.round(dmg*1.8) : dmg;
+      enemy.hp -= total; enemy.flash = 0.3; enemy.shake = 0.3;
+      log((crit?'会心の一撃！ ':'') + enemy.n + 'に ' + total + ' のダメージ。', 'dmg');
+      updateEnemyBar();
+      afterPlayerAct();
+    } else if (cmd === 'spell') {
+      if (hero.mp < 5) { log('魔力が足りない…', 'sys'); battleBusy=false; return; }
+      hero.mp -= 5;
+      const dmg = 14 + hero.lv*2 + rnd(0,6);
+      enemy.hp -= dmg; enemy.flash = 0.4; enemy.shake = 0.4;
+      log('火炎の呪文！ ' + enemy.n + 'に ' + dmg + ' の魔法ダメージ。', 'good');
+      updateStatus(); updateEnemyBar();
+      afterPlayerAct();
+    } else if (cmd === 'potion') {
+      if (hero.potions <= 0) { log('霊薬を持っていない。', 'sys'); battleBusy=false; return; }
+      hero.potions--; const heal = 25 + hero.lv*3;
+      hero.hp = Math.min(hero.maxhp, hero.hp + heal);
+      log('霊薬で HP を ' + heal + ' 回復した。', 'good');
+      updateStatus();
+      afterPlayerAct();
+    } else if (cmd === 'run') {
+      if (enemy.boss) { log('番人からは逃げられない！', 'dmg'); enemyTurn(); return; }
+      if (Math.random() < 0.55) {
+        log('うまく逃げ延びた。', 'sys');
+        endBattle();
+      } else {
+        log('逃げ損ねた！', 'dmg');
+        enemyTurn();
+      }
+    }
+  }
+
+  function afterPlayerAct() {
+    if (enemy.hp <= 0) setTimeout(victory, 350);
+    else setTimeout(enemyTurn, 420);
+  }
+
+  function enemyTurn() {
+    if (!enemy) return;
+    if (enemy.hp <= 0) { victory(); return; }
+    const dmg = Math.max(1, enemy.atk + rnd(-2,3) - hero.def + rnd(0,2));
+    hero.hp -= dmg;
+    flash(0.25, '255,40,40');
+    log(enemy.n + 'の攻撃！ ' + dmg + ' のダメージを受けた。', 'dmg');
+    updateStatus();
+    if (hero.hp <= 0) { hero.hp = 0; updateStatus(); setTimeout(loseGame, 500); return; }
+    battleBusy = false;
+  }
+
+  function victory() {
+    if (!enemy) return;
+    const wasBoss = !!enemy.boss;
+    const gained = enemy.xp, goldGet = enemy.gold, nm = enemy.n;
+    log(nm + 'を倒した！', 'good');
+    hero.xp += gained; hero.gold += goldGet;
+    log('経験値 ' + gained + ' と 金貨 ' + goldGet + ' を得た。', 'gold');
+    endBattle();
+    checkLevel();
+    if (wasBoss) { game.bossDefeated = true; setTimeout(winGame, 700); }
+  }
+
+  function endBattle() {
+    enemy = null;
+    battleEl.classList.add('hidden');
+    game.state = 'explore';
+    battleBusy = false;
+    game.encounterCD = 3; // 連戦防止
+    updateStatus();
+  }
+
+  function checkLevel() {
+    while (hero.xp >= hero.next) {
+      hero.xp -= hero.next;
+      hero.lv++;
+      hero.maxhp += 8 + rnd(0,4); hero.maxmp += 3;
+      hero.atk += 2; hero.def += 1;
+      hero.hp = hero.maxhp; hero.mp = hero.maxmp;
+      hero.next = Math.round(hero.next * 1.6);
+      log('レベルアップ！ Lv ' + hero.lv + ' になった。', 'good');
+      toast('LEVEL UP!  Lv ' + hero.lv);
+      flash(0.5, '90,210,120');
+    }
+    updateStatus();
+  }
+
+  // ---------- 勝敗 ----------
+  function setResult(title, color, lines) {
+    el('resultTitle').textContent = title;
+    el('resultTitle').style.color = color;
+    const box = el('resultText');
+    while (box.firstChild) box.removeChild(box.firstChild);
+    lines.forEach((ln, i) => {
+      if (i>0) box.appendChild(document.createElement('br'));
+      box.appendChild(document.createTextNode(ln));
+    });
+    resultEl.classList.remove('hidden');
+  }
+  function winGame() {
+    if (game.state === 'result') return;
+    game.state = 'result';
+    battleEl.classList.add('hidden');
+    setResult('― 凱旋 ―', 'var(--gold)', [
+      '黄金の護符を手にし、迷宮を脱した！',
+      '到達 Lv ' + hero.lv + ' ／ 金貨 ' + hero.gold + ' 枚',
+      '狂王トレボーの伝説は、汝の名と共に語り継がれるだろう。',
+    ]);
+  }
+  function loseGame() {
+    game.state = 'result';
+    battleEl.classList.add('hidden');
+    setResult('― 全滅 ―', 'var(--hp)', [
+      '剣士は迷宮の闇に呑まれた…',
+      '到達 Lv ' + hero.lv + ' ／ 地下 ' + (game.floor+1) + ' 階。',
+      '無数の冒険者がそうしたように、その骨は石畳に還る。',
+    ]);
+  }
+
+  // ---------- ゴール判定（護符タイル） ----------
+  function checkGoalTile() {
+    const t = tileAt(game.px, game.py);
+    if (t === 9 && game.state === 'explore' && !enemy) {
+      if (!game.bossDefeated) startBattle(true);
+      else winGame();
+    }
+  }
+
+  // ---------- 演出: フラッシュ ----------
+  let flashV = 0, flashColor = '255,255,255';
+  function flash(v, color) { flashV = Math.max(flashV, v); flashColor = color || '255,255,255'; }
+
+  // ---------- 乱数 ----------
+  function rnd(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+
+  // ---------- ステータス更新 ----------
+  function updateStatus() {
+    el('heroName').textContent = hero.name;
+    el('hpFill').style.width = Math.max(0,hero.hp)/hero.maxhp*100 + '%';
+    el('hpTxt').textContent = 'HP ' + Math.max(0,Math.round(hero.hp)) + ' / ' + hero.maxhp;
+    el('mpFill').style.width = hero.mp/hero.maxmp*100 + '%';
+    el('mpTxt').textContent = 'MP ' + Math.round(hero.mp) + ' / ' + hero.maxmp;
+    el('xpFill').style.width = hero.xp/hero.next*100 + '%';
+    el('xpTxt').textContent = 'EXP ' + hero.xp + ' / ' + hero.next;
+    el('lvTxt').textContent = hero.lv;
+    el('atkTxt').textContent = hero.atk;
+    el('defTxt').textContent = hero.def;
+    el('goldTxt').textContent = hero.gold;
+    el('potTxt').textContent = hero.potions;
+    el('compass').textContent = DIRNAMES[dirIndex()];
+  }
+
+  // =====================================================================
+  //  レイキャスティング描画
+  // =====================================================================
+  function render() {
+    const data = buf.data;
+    const f = FLOORS[game.floor] || FLOORS[0];
+    const tint = f.tint;
+
+    const posX = game.px, posY = game.py;
+    const dirX = Math.cos(game.pa), dirY = Math.sin(game.pa);
+    const fov = 0.66;
+    const planeX = -dirY * fov, planeY = dirX * fov;
+    const half = RH >> 1;
+
+    // --- 天井と床のグラデーション ---
+    for (let y = 0; y < RH; y++) {
+      let r, g, b;
+      if (y < half) {
+        const t = y / half;
+        r = (tint[0]*0.10 + 6) * (0.3 + t*0.5);
+        g = (tint[1]*0.10 + 6) * (0.3 + t*0.5);
+        b = (tint[2]*0.12 + 10) * (0.3 + t*0.5);
+      } else {
+        const t = (y - half) / half;
+        r = (tint[0]*0.18 + 8) * (0.35 + t*0.7);
+        g = (tint[1]*0.18 + 8) * (0.35 + t*0.7);
+        b = (tint[2]*0.16 + 10) * (0.35 + t*0.7);
+      }
+      const row = y * RW * 4;
+      for (let x = 0; x < RW; x++) {
+        const i = row + x*4;
+        data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 255;
+      }
+    }
+
+    // --- 壁 ---
+    for (let x = 0; x < RW; x++) {
+      const cameraX = 2 * x / RW - 1;
+      const rayDirX = dirX + planeX * cameraX;
+      const rayDirY = dirY + planeY * cameraX;
+
+      let mapX = Math.floor(posX), mapY = Math.floor(posY);
+      const deltaX = Math.abs(1 / (rayDirX || 1e-9));
+      const deltaY = Math.abs(1 / (rayDirY || 1e-9));
+      let stepX, stepY, sideX, sideY;
+      if (rayDirX < 0) { stepX = -1; sideX = (posX - mapX) * deltaX; }
+      else { stepX = 1; sideX = (mapX + 1 - posX) * deltaX; }
+      if (rayDirY < 0) { stepY = -1; sideY = (posY - mapY) * deltaY; }
+      else { stepY = 1; sideY = (mapY + 1 - posY) * deltaY; }
+
+      let hit = 0, side = 0, guard = 0;
+      while (hit === 0 && guard++ < 64) {
+        if (sideX < sideY) { sideX += deltaX; mapX += stepX; side = 0; }
+        else { sideY += deltaY; mapY += stepY; side = 1; }
+        if (mapX<0||mapY<0||mapX>=MAPW||mapY>=MAPH) { hit=1; break; }
+        if (game.grid[mapY][mapX] === 1) hit = 1;
+      }
+
+      let perp = side === 0 ? (sideX - deltaX) : (sideY - deltaY);
+      if (perp < 0.01) perp = 0.01;
+      zbuf[x] = perp;
+
+      let lineH = Math.round(RH / perp);
+      const ds = Math.max(0, (-lineH/2 + half)|0);
+      const de = Math.min(RH-1, (lineH/2 + half)|0);
+
+      let shade = side === 1 ? 0.68 : 1.0;
+      const lightR = 7.5;
+      let lum = Math.max(0.06, 1 - perp / lightR);
+      lum = lum * lum;
+      const wallHitX = side===0 ? posY + perp*rayDirY : posX + perp*rayDirX;
+      const tx = wallHitX - Math.floor(wallHitX);
+      const grain = 0.85 + 0.15 * Math.sin(tx * Math.PI);
+
+      const r = tint[0] * shade * lum * grain + 4;
+      const g = tint[1] * shade * lum * grain + 4;
+      const b = tint[2] * shade * lum * grain + 6;
+
+      for (let y = ds; y <= de; y++) {
+        const i = (y * RW + x) * 4;
+        data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 255;
+      }
+    }
+
+    ctx.putImageData(buf, 0, 0);
+
+    drawSprites(posX, posY, dirX, dirY, planeX, planeY);
+    drawVignette();
+
+    if (flashV > 0) {
+      ctx.fillStyle = 'rgba(' + flashColor + ',' + (flashV*0.5) + ')';
+      ctx.fillRect(0,0,RW,RH);
+    }
+  }
+
+  // オブジェクト系スプライト描画
+  function drawSprites(posX, posY, dirX, dirY, planeX, planeY) {
+    const sprites = [];
+    for (let y=0;y<MAPH;y++) for (let x=0;x<MAPW;x++){
+      const t = game.grid[y][x];
+      if (t===2||t===3||t===9) sprites.push({x:x+0.5,y:y+0.5,t});
+    }
+    sprites.forEach(s => s.d = (s.x-posX)**2 + (s.y-posY)**2);
+    sprites.sort((a,b)=>b.d-a.d);
+
+    const invDet = 1 / (planeX*dirY - dirX*planeY);
+    const half = RH>>1;
+    for (const s of sprites) {
+      const dx = s.x - posX, dy = s.y - posY;
+      const transformX = invDet * (dirY*dx - dirX*dy);
+      const transformY = invDet * (-planeY*dx + planeX*dy);
+      if (transformY <= 0.1) continue;
+      const screenX = Math.round((RW/2) * (1 + transformX / transformY));
+      const sh = Math.abs(Math.round(RH / transformY));
+      drawIcon(s.t, screenX, half, sh, transformY, Math.max(0.15, 1 - transformY/8));
+    }
+  }
+
+  // アイコン的スプライト
+  function drawIcon(type, sx, cy, sh, depth, lum) {
+    const colStart = Math.max(0, sx - (sh>>2));
+    const colEnd = Math.min(RW-1, sx + (sh>>2));
+    let visible = false;
+    for (let x=colStart;x<=colEnd;x++){ if (depth < zbuf[x]) { visible=true; break; } }
+    if (!visible) return;
+
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, lum+0.2);
+    const size = sh*0.5;
+    const y = cy + sh*0.18;
+    if (type === 2) {
+      for (let i=0;i<4;i++){
+        const w = size*(1-i*0.18);
+        ctx.fillStyle = `rgb(${60*lum|0},${55*lum|0},${70*lum|0})`;
+        ctx.fillRect(sx-w/2, y + i*size*0.13, w, size*0.12);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(sx-w/2, y + i*size*0.13 + size*0.11, w, size*0.03);
+      }
+      ctx.fillStyle = `rgba(216,177,90,${0.7*lum})`;
+      ctx.font = `${Math.max(8,size*0.3)|0}px serif`;
+      ctx.textAlign='center';
+      ctx.fillText('▼', sx, y - size*0.05);
+    } else if (type === 3) {
+      const w = size*0.7, h = size*0.5;
+      ctx.fillStyle = `rgb(${110*lum|0},${70*lum|0},${30*lum|0})`;
+      ctx.fillRect(sx-w/2, y-h*0.2, w, h);
+      ctx.fillStyle = `rgb(${140*lum|0},${95*lum|0},${40*lum|0})`;
+      ctx.fillRect(sx-w/2, y-h*0.45, w, h*0.35);
+      ctx.fillStyle = `rgb(${220*lum|0},${180*lum|0},${80*lum|0})`;
+      ctx.fillRect(sx-w*0.08, y-h*0.25, w*0.16, h*0.5);
+    } else if (type === 9) {
+      const r = size*0.4;
+      const grd = ctx.createRadialGradient(sx, y, 0, sx, y, r);
+      grd.addColorStop(0, `rgba(255,240,160,${lum})`);
+      grd.addColorStop(0.6, `rgba(216,177,90,${0.8*lum})`);
+      grd.addColorStop(1, 'rgba(120,80,20,0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath(); ctx.arc(sx, y, r, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = `rgba(255,230,150,${lum})`;
+      ctx.lineWidth = Math.max(1,r*0.08);
+      ctx.beginPath(); ctx.arc(sx, y, r*0.55, 0, Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // たいまつのビネット
+  function drawVignette() {
+    const g = ctx.createRadialGradient(RW/2, RH*0.55, RH*0.12, RW/2, RH/2, RH*0.85);
+    g.addColorStop(0, 'rgba(255,180,90,0.06)');
+    g.addColorStop(0.5, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.72)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,RW,RH);
+  }
+
+  // 戦闘中の敵スプライト
+  function drawBattleEnemy(dt) {
+    if (!enemy) return;
+    const sxc = RW/2, syc = RH*0.46;
+    const sz = RH*0.42;
+    enemy.shake = Math.max(0, enemy.shake - dt);
+    enemy.flash = Math.max(0, enemy.flash - dt);
+    const shake = enemy.shake>0 ? Math.sin(performance.now()*0.06)*RH*0.02 : 0;
+    const bob = Math.sin(performance.now()*0.002) * RH*0.012;
+    ctx.save();
+    ctx.translate(sxc + shake, syc + bob);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(0, sz*0.62, sz*0.5, sz*0.12, 0,0,Math.PI*2); ctx.fill();
+    const col = enemy.flash>0 ? '#ffffff' : enemy.col;
+    drawCreature(enemy.body, sz, col, enemy.boss);
+    ctx.restore();
+  }
+
+  // 種別ごとのモンスター図形
+  function drawCreature(body, sz, col, boss) {
+    ctx.lineWidth = Math.max(1, sz*0.02);
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    if (boss) {
+      ctx.fillStyle = 'rgba(40,8,8,0.9)';
+      ctx.beginPath();
+      ctx.moveTo(-sz*0.5,0); ctx.lineTo(-sz*0.9,-sz*0.5); ctx.lineTo(-sz*0.45,-sz*0.2);
+      ctx.moveTo(sz*0.5,0); ctx.lineTo(sz*0.9,-sz*0.5); ctx.lineTo(sz*0.45,-sz*0.2);
+      ctx.fill();
+    }
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    if (body===0){ ctx.ellipse(0, sz*0.1, sz*0.34, sz*0.42, 0,0,Math.PI*2); }
+    else if (body===1){ ctx.moveTo(0,-sz*0.45); ctx.lineTo(sz*0.3, sz*0.4); ctx.lineTo(-sz*0.3, sz*0.4); ctx.closePath(); }
+    else if (body===2){ ctx.rect(-sz*0.3,-sz*0.3, sz*0.6, sz*0.7); }
+    else { ctx.ellipse(0, sz*0.05, sz*0.4, sz*0.48, 0,0,Math.PI*2); }
+    ctx.fill(); ctx.stroke();
+    // 頭
+    ctx.beginPath(); ctx.arc(0, -sz*0.4, sz*0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    // 角
+    if (body!==0){
+      ctx.fillStyle = 'rgba(20,20,24,0.9)';
+      ctx.beginPath();
+      ctx.moveTo(-sz*0.16,-sz*0.5); ctx.lineTo(-sz*0.26,-sz*0.66); ctx.lineTo(-sz*0.08,-sz*0.54);
+      ctx.moveTo(sz*0.16,-sz*0.5); ctx.lineTo(sz*0.26,-sz*0.66); ctx.lineTo(sz*0.08,-sz*0.54);
+      ctx.fill();
+    }
+    // 目
+    ctx.fillStyle = boss ? '#ffdd33' : '#ff3b3b';
+    ctx.beginPath();
+    ctx.arc(-sz*0.07,-sz*0.4, sz*0.04,0,Math.PI*2);
+    ctx.arc(sz*0.07,-sz*0.4, sz*0.04,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  // =====================================================================
+  //  ミニマップ
+  // =====================================================================
+  function drawMinimap() {
+    const cs = Math.floor(Math.min(mini.width/MAPW, mini.height/MAPH));
+    const ox = (mini.width - cs*MAPW)/2, oy = (mini.height - cs*MAPH)/2;
+    mctx.fillStyle = '#05050a'; mctx.fillRect(0,0,mini.width,mini.height);
+    for (let y=0;y<MAPH;y++) for (let x=0;x<MAPW;x++){
+      if (!game.visited[y][x]) continue;
+      const t = game.grid[y][x];
+      let c = '#1a1a2a';
+      if (t===1) c = '#454058';
+      else if (t===2) c = '#4d9be0';
+      else if (t===3) c = '#d8b15a';
+      else if (t===9) c = '#ffd966';
+      mctx.fillStyle = c;
+      mctx.fillRect(ox+x*cs, oy+y*cs, cs-0.5, cs-0.5);
+    }
+    const pxm = ox + game.px*cs, pym = oy + game.py*cs;
+    mctx.fillStyle = '#ff5555';
+    mctx.beginPath(); mctx.arc(pxm, pym, cs*0.4, 0, Math.PI*2); mctx.fill();
+    mctx.strokeStyle = '#ffd966'; mctx.lineWidth = 1.5;
+    mctx.beginPath(); mctx.moveTo(pxm,pym);
+    mctx.lineTo(pxm + Math.cos(game.pa)*cs*0.9, pym + Math.sin(game.pa)*cs*0.9); mctx.stroke();
+  }
+
+  // =====================================================================
+  //  メインループ（デルタタイム）
+  // =====================================================================
+  let last = performance.now();
+  const MOVE_SPEED = 5.5;   // タイル/秒
+  const TURN_SPEED = 7.0;   // ラジアン/秒
+
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+
+    // 回転補間
+    if (game.turning) {
+      const diff = game.targetA - game.pa;
+      const step = TURN_SPEED * dt;
+      if (Math.abs(diff) <= step) { game.pa = game.targetA; game.turning = false; }
+      else game.pa += Math.sign(diff) * step;
+      updateStatus();
+    }
+    // 移動補間
+    if (game.moving) {
+      const dx = game.targetX - game.px, dy = game.targetY - game.py;
+      const dist = Math.hypot(dx, dy);
+      const step = MOVE_SPEED * dt;
+      if (dist <= step) {
+        game.px = game.targetX; game.py = game.targetY; game.moving = false;
+        markVisited();
+        const t = tileAt(game.px, game.py);
+        if (t === 9) checkGoalTile();
+        else maybeEncounter();
+        if (game.state==='explore') {
+          if (t===2) toast('階段だ。Space で降りる');
+          else if (t===3 && !game.treasures[Math.floor(game.px)+','+Math.floor(game.py)]) toast('宝箱がある。Space で開ける');
+        }
+      } else {
+        game.px += dx/dist*step; game.py += dy/dist*step;
+      }
+    }
+
+    if (flashV>0) flashV = Math.max(0, flashV - dt*1.8);
+    if (bumpT>0) bumpT = Math.max(0, bumpT - dt);
+    if (toastT>0){ toastT-=dt; if (toastT<=0) el('toast').classList.remove('show'); }
+
+    if (game.state !== 'title') {
+      render();
+      if (game.state === 'battle') drawBattleEnemy(dt);
+      drawMinimap();
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  // =====================================================================
+  //  開始・リスタート
+  // =====================================================================
+  function newGame() {
+    Object.assign(hero, {
+      name:'放浪の剣士', lv:1, hp:30, maxhp:30, mp:10, maxmp:10,
+      atk:8, def:4, xp:0, next:20, gold:0, potions:2,
+    });
+    game.bossDefeated = false;
+    enemy = null;
+    battleBusy = false;
+    battleEl.classList.add('hidden');
+    resultEl.classList.add('hidden');
+    titleEl.classList.add('hidden');
+    clearLog();
+    loadFloor(0);
+    game.state = 'explore';
+    updateStatus();
+    log('迷宮の探索を開始した。', 'sys');
+    log('Space で階段・宝箱を調べよ。', 'sys');
+  }
+
+  el('startBtn').addEventListener('click', newGame);
+  el('restartBtn').addEventListener('click', newGame);
+
+  updateStatus();
+  requestAnimationFrame((t)=>{ last=t; loop(t); });
+})();
+</script>
+</body>
+</html>

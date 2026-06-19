@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- AIメタ情報（必須） -->
+<meta name="ai.author" content="Claude Opus 4.8">
+<meta name="ai.model" content="claude-opus-4-8">
+<meta name="ai.note" content="Particle Editor - 単一自己完結HTML。Canvas 2D製のリアルタイム・パーティクル・エディター。">
+<title>Particle Editor - Claude Opus 4.8版</title>
+<style>
+	/* ===== 全体リセット & 基本レイアウト ===== */
+	* { margin: 0; padding: 0; box-sizing: border-box; }
+	html, body {
+		width: 100%; height: 100%;
+		overflow: hidden;
+		background: #05060d;
+		color: #dfe6ff;
+		font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+		user-select: none;
+		-webkit-tap-highlight-color: transparent;
+	}
+	#stage { display: block; width: 100vw; height: 100vh; }
+
+	/* 背景の星空っぽいグラデ（canvasの下） */
+	#bg {
+		position: fixed; inset: 0; z-index: 0;
+		background:
+			radial-gradient(1200px 800px at 70% 20%, #14213d 0%, rgba(20,33,61,0) 60%),
+			radial-gradient(1000px 700px at 20% 80%, #2a103d 0%, rgba(42,16,61,0) 60%),
+			linear-gradient(160deg, #05060d 0%, #0a0d1a 50%, #05060d 100%);
+	}
+	canvas { position: fixed; inset: 0; z-index: 1; }
+
+	/* ===== パネル（操作UI） ===== */
+	#panel {
+		position: fixed; top: 0; right: 0; z-index: 10;
+		width: 320px; max-width: 86vw; height: 100vh;
+		background: rgba(10, 13, 26, 0.78);
+		backdrop-filter: blur(14px) saturate(140%);
+		-webkit-backdrop-filter: blur(14px) saturate(140%);
+		border-left: 1px solid rgba(120,160,255,0.18);
+		box-shadow: -20px 0 60px rgba(0,0,0,0.55);
+		display: flex; flex-direction: column;
+		transform: translateX(0);
+		transition: transform 0.35s cubic-bezier(.2,.9,.2,1);
+		overflow: hidden;
+	}
+	#panel.collapsed { transform: translateX(calc(100% - 0px)); }
+
+	.panel-head {
+		padding: 16px 18px 12px;
+		border-bottom: 1px solid rgba(120,160,255,0.14);
+		flex: 0 0 auto;
+	}
+	.panel-head h1 {
+		font-size: 17px; font-weight: 700; letter-spacing: .04em;
+		background: linear-gradient(90deg,#7fd4ff,#c79bff,#ff9bce);
+		-webkit-background-clip: text; background-clip: text; color: transparent;
+	}
+	.panel-head .sub { font-size: 11px; color:#8a93b8; margin-top: 3px; }
+	.panel-body { flex: 1 1 auto; overflow-y: auto; padding: 14px 18px 90px; }
+	.panel-body::-webkit-scrollbar { width: 8px; }
+	.panel-body::-webkit-scrollbar-thumb { background: rgba(120,160,255,0.25); border-radius: 8px; }
+
+	.section-title {
+		font-size: 11px; text-transform: uppercase; letter-spacing: .12em;
+		color: #6f7aa8; margin: 18px 0 8px;
+	}
+	.section-title:first-child { margin-top: 0; }
+
+	/* プリセット選択 */
+	.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+	.preset-btn {
+		display: flex; align-items: center; gap: 8px;
+		padding: 9px 10px; border-radius: 10px;
+		background: rgba(255,255,255,0.04);
+		border: 1px solid rgba(120,160,255,0.14);
+		color: #cdd6ff; font-size: 13px; cursor: pointer;
+		transition: all .15s ease;
+	}
+	.preset-btn:hover { background: rgba(120,160,255,0.12); transform: translateY(-1px); }
+	.preset-btn.active {
+		background: linear-gradient(135deg, rgba(127,212,255,0.22), rgba(199,155,255,0.22));
+		border-color: rgba(160,200,255,0.55);
+		box-shadow: 0 4px 18px rgba(120,160,255,0.25);
+	}
+	.preset-btn .emo { font-size: 16px; }
+
+	/* スライダー行 */
+	.ctrl { margin: 12px 0; }
+	.ctrl label {
+		display: flex; justify-content: space-between; align-items: baseline;
+		font-size: 12px; color: #aab3dd; margin-bottom: 5px;
+	}
+	.ctrl label .val { color: #7fd4ff; font-variant-numeric: tabular-nums; font-weight: 600; }
+	input[type=range] {
+		width: 100%; height: 5px; appearance: none; -webkit-appearance: none;
+		background: rgba(120,160,255,0.18); border-radius: 5px; outline: none; cursor: pointer;
+	}
+	input[type=range]::-webkit-slider-thumb {
+		-webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+		background: linear-gradient(135deg,#7fd4ff,#c79bff);
+		box-shadow: 0 0 10px rgba(127,212,255,0.7); cursor: pointer;
+	}
+	input[type=range]::-moz-range-thumb {
+		width: 16px; height: 16px; border: none; border-radius: 50%;
+		background: linear-gradient(135deg,#7fd4ff,#c79bff);
+		box-shadow: 0 0 10px rgba(127,212,255,0.7); cursor: pointer;
+	}
+
+	/* カラー2連 */
+	.colors { display: flex; gap: 10px; }
+	.color-item { flex: 1; }
+	.color-item span { display:block; font-size: 11px; color:#8a93b8; margin-bottom: 4px; }
+	input[type=color] {
+		width: 100%; height: 34px; border: 1px solid rgba(120,160,255,0.2);
+		border-radius: 8px; background: none; cursor: pointer; padding: 2px;
+	}
+
+	/* トグル行 */
+	.toggle-row { display: flex; gap: 8px; flex-wrap: wrap; }
+	.toggle {
+		flex: 1 1 auto; min-width: 90px; text-align: center;
+		padding: 8px; border-radius: 9px; font-size: 12px; cursor: pointer;
+		background: rgba(255,255,255,0.04); border: 1px solid rgba(120,160,255,0.14);
+		color: #cdd6ff; transition: all .15s ease;
+	}
+	.toggle.on { background: rgba(127,212,255,0.18); border-color: rgba(127,212,255,0.5); color:#dff0ff; }
+
+	/* アクションボタン */
+	.actions { display: flex; gap: 8px; margin-top: 16px; }
+	.btn {
+		flex: 1; padding: 11px; border-radius: 10px; font-size: 13px; font-weight: 600;
+		cursor: pointer; border: 1px solid rgba(120,160,255,0.2);
+		background: rgba(255,255,255,0.05); color: #dfe6ff; transition: all .15s ease;
+	}
+	.btn:hover { background: rgba(120,160,255,0.16); }
+	.btn.primary {
+		background: linear-gradient(135deg,#7fd4ff,#c79bff); color:#0a0d1a; border: none;
+		box-shadow: 0 6px 20px rgba(127,212,255,0.35);
+	}
+
+	/* ===== HUD（左上ステータス） ===== */
+	#hud {
+		position: fixed; top: 14px; left: 14px; z-index: 9;
+		background: rgba(10,13,26,0.55); backdrop-filter: blur(8px);
+		border: 1px solid rgba(120,160,255,0.16); border-radius: 12px;
+		padding: 10px 14px; font-size: 12px; line-height: 1.6; color:#aab3dd;
+		pointer-events: none; min-width: 150px;
+	}
+	#hud b { color: #7fd4ff; font-variant-numeric: tabular-nums; }
+	#hud .title { font-size: 13px; color:#dfe6ff; font-weight:700; margin-bottom: 4px; }
+
+	/* ===== 操作ヘルプ（左下） ===== */
+	#help {
+		position: fixed; bottom: 14px; left: 14px; z-index: 9;
+		background: rgba(10,13,26,0.5); backdrop-filter: blur(8px);
+		border: 1px solid rgba(120,160,255,0.14); border-radius: 12px;
+		padding: 10px 14px; font-size: 11.5px; line-height: 1.7; color:#9aa3cc;
+		pointer-events: none; max-width: 280px;
+	}
+	#help kbd {
+		display:inline-block; padding: 1px 6px; margin: 0 1px;
+		background: rgba(120,160,255,0.16); border:1px solid rgba(120,160,255,0.25);
+		border-radius: 5px; font-size: 10.5px; color:#cdd6ff; font-family: inherit;
+	}
+
+	/* パネル開閉トグルボタン */
+	#panelToggle {
+		position: fixed; top: 14px; right: 14px; z-index: 11;
+		width: 42px; height: 42px; border-radius: 11px;
+		background: rgba(10,13,26,0.7); border:1px solid rgba(120,160,255,0.2);
+		color:#cdd6ff; font-size: 18px; cursor:pointer; display:none;
+		align-items:center; justify-content:center; transition: all .15s;
+	}
+	#panelToggle:hover { background: rgba(120,160,255,0.18); }
+	#panel.collapsed ~ #panelToggle { display: flex; }
+
+	@media (max-width: 720px) {
+		#help { display: none; }
+	}
+</style>
+</head>
+<body>
+	<div id="bg"></div>
+	<canvas id="stage"></canvas>
+
+	<!-- 左上：ステータス -->
+	<div id="hud">
+		<div class="title">Particle Editor</div>
+		<div>FPS: <b id="hFps">0</b></div>
+		<div>パーティクル: <b id="hCount">0</b></div>
+		<div>プリセット: <b id="hPreset">-</b></div>
+	</div>
+
+	<!-- 操作パネル -->
+	<aside id="panel">
+		<div class="panel-head">
+			<h1>✨ Particle Editor</h1>
+			<div class="sub">Claude Opus 4.8版 — リアルタイム編集</div>
+		</div>
+		<div class="panel-body">
+			<div class="section-title">プリセット</div>
+			<div class="presets" id="presets"></div>
+
+			<div class="section-title">エミッター</div>
+			<div class="ctrl">
+				<label>放出量 / 秒 <span class="val" id="vRate">0</span></label>
+				<input type="range" id="rate" min="0" max="800" step="5">
+			</div>
+			<div class="ctrl">
+				<label>寿命（秒）<span class="val" id="vLife">0</span></label>
+				<input type="range" id="life" min="0.2" max="6" step="0.1">
+			</div>
+			<div class="ctrl">
+				<label>初速 <span class="val" id="vSpeed">0</span></label>
+				<input type="range" id="speed" min="0" max="600" step="5">
+			</div>
+			<div class="ctrl">
+				<label>拡散角度（度）<span class="val" id="vSpread">0</span></label>
+				<input type="range" id="spread" min="0" max="360" step="1">
+			</div>
+			<div class="ctrl">
+				<label>射出方向（度）<span class="val" id="vDir">0</span></label>
+				<input type="range" id="dir" min="0" max="360" step="1">
+			</div>
+
+			<div class="section-title">物理</div>
+			<div class="ctrl">
+				<label>重力 <span class="val" id="vGrav">0</span></label>
+				<input type="range" id="grav" min="-400" max="600" step="10">
+			</div>
+			<div class="ctrl">
+				<label>抵抗 <span class="val" id="vDrag">0</span></label>
+				<input type="range" id="drag" min="0" max="0.98" step="0.01">
+			</div>
+			<div class="ctrl">
+				<label>乱気流 <span class="val" id="vTurb">0</span></label>
+				<input type="range" id="turb" min="0" max="300" step="5">
+			</div>
+
+			<div class="section-title">見た目</div>
+			<div class="ctrl">
+				<label>開始サイズ <span class="val" id="vSize">0</span></label>
+				<input type="range" id="size" min="1" max="60" step="1">
+			</div>
+			<div class="ctrl">
+				<label>終了スケール <span class="val" id="vEndScale">0</span></label>
+				<input type="range" id="endScale" min="0" max="3" step="0.05">
+			</div>
+			<div class="ctrl">
+				<label>回転速度 <span class="val" id="vSpin">0</span></label>
+				<input type="range" id="spin" min="-360" max="360" step="5">
+			</div>
+			<div class="colors">
+				<div class="color-item">
+					<span>開始色</span>
+					<input type="color" id="col1">
+				</div>
+				<div class="color-item">
+					<span>終了色</span>
+					<input type="color" id="col2">
+				</div>
+			</div>
+
+			<div class="section-title">形 / 合成</div>
+			<div class="toggle-row" id="shapeRow">
+				<div class="toggle" data-shape="circle">● 円</div>
+				<div class="toggle" data-shape="star">✦ 星</div>
+				<div class="toggle" data-shape="square">◼ 四角</div>
+				<div class="toggle" data-shape="spark">✶ 火花</div>
+			</div>
+			<div class="toggle-row" style="margin-top:8px">
+				<div class="toggle on" id="blendToggle">加算合成 ON</div>
+				<div class="toggle on" id="trailToggle">残像 ON</div>
+			</div>
+
+			<div class="actions">
+				<button class="btn primary" id="burstBtn">💥 バースト</button>
+				<button class="btn" id="resetBtn">↺ リセット</button>
+			</div>
+			<div class="actions">
+				<button class="btn" id="randomBtn">🎲 ランダム</button>
+				<button class="btn" id="pauseBtn">⏸ 一時停止</button>
+			</div>
+		</div>
+	</aside>
+	<button id="panelToggle" title="パネルを開く">⚙</button>
+
+	<!-- 操作ヘルプ -->
+	<div id="help">
+		<b>操作：</b>
+		<kbd>クリック/ドラッグ</kbd> エミッターを移動・放出
+		<kbd>ダブルクリック</kbd> バースト
+		<kbd>Space</kbd> 一時停止
+		<kbd>R</kbd> リセット
+		<kbd>H</kbd> パネル開閉
+		<kbd>1〜7</kbd> プリセット切替
+	</div>
+
+<script>
+"use strict";
+(() => {
+	/* ============================================================
+	   Particle Editor — Claude Opus 4.8版
+	   Canvas 2D による自己完結パーティクルシステム。
+	   元のPixiJS製エディター（fire/waterfall等のエミッター設定編集）を
+	   踏襲しつつ、複数プリセット・ライブ編集・物理を強化。
+	   ============================================================ */
+
+	const canvas = document.getElementById("stage");
+	const ctx = canvas.getContext("2d", { alpha: true });
+
+	// 高解像度対応
+	let DPR = Math.min(window.devicePixelRatio || 1, 2);
+	let W = 0, H = 0;
+	function resize() {
+		DPR = Math.min(window.devicePixelRatio || 1, 2);
+		W = window.innerWidth; H = window.innerHeight;
+		canvas.width = Math.floor(W * DPR);
+		canvas.height = Math.floor(H * DPR);
+		canvas.style.width = W + "px";
+		canvas.style.height = H + "px";
+		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+	}
+	window.addEventListener("resize", resize);
+	resize();
+
+	/* ---------- ユーティリティ ---------- */
+	const rand = (a, b) => a + Math.random() * (b - a);
+	const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+	const TAU = Math.PI * 2;
+	const DEG = Math.PI / 180;
+
+	// #rrggbb -> {r,g,b}
+	function hexToRgb(hex) {
+		const n = parseInt(hex.slice(1), 16);
+		return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+	}
+
+	/* ---------- エミッター設定（編集対象の状態） ---------- */
+	const config = {
+		rate: 200,        // 1秒あたりの放出数
+		life: 1.6,        // 寿命（秒）
+		speed: 180,       // 初速
+		spread: 60,       // 拡散角（度）
+		dir: 270,         // 射出方向（度, 0=右, 270=上）
+		grav: 120,        // 重力（px/s^2）
+		drag: 0.02,       // 抵抗（毎秒の減衰係数）
+		turb: 40,         // 乱気流の強さ
+		size: 14,         // 開始サイズ
+		endScale: 0.0,    // 終了時スケール
+		spin: 0,          // 回転速度（度/秒）
+		col1: "#ffd34d",  // 開始色
+		col2: "#ff2d2d",  // 終了色
+		shape: "circle",  // 形
+		blend: true,      // 加算合成
+		trail: true,      // 残像
+	};
+
+	/* ---------- プリセット定義 ---------- */
+	const PRESETS = {
+		fire:      { emo:"🔥", name:"ファイア",     cfg:{ rate:300, life:1.4, speed:140, spread:36, dir:270, grav:-160, drag:0.04, turb:60, size:22, endScale:0.0, spin:0, col1:"#fff1a8", col2:"#ff2d00", shape:"circle", blend:true, trail:true } },
+		waterfall: { emo:"💧", name:"滝",           cfg:{ rate:420, life:1.8, speed:90,  spread:24, dir:90,  grav:520, drag:0.01, turb:30, size:9,  endScale:0.4, spin:0, col1:"#cdeaff", col2:"#2a6cff", shape:"circle", blend:true, trail:true } },
+		fountain:  { emo:"⛲", name:"噴水",         cfg:{ rate:280, life:2.4, speed:340, spread:30, dir:270, grav:380, drag:0.01, turb:10, size:8,  endScale:0.3, spin:0, col1:"#a8f0ff", col2:"#1e90ff", shape:"circle", blend:true, trail:true } },
+		smoke:     { emo:"💨", name:"スモーク",     cfg:{ rate:90,  life:3.2, speed:60,  spread:50, dir:270, grav:-40, drag:0.06, turb:50, size:34, endScale:2.4, spin:30, col1:"#cfcfd8", col2:"#3a3a48", shape:"circle", blend:false, trail:false } },
+		snow:      { emo:"❄️", name:"スノー",       cfg:{ rate:120, life:5.0, speed:50,  spread:40, dir:90,  grav:30,  drag:0.02, turb:90, size:6,  endScale:1.0, spin:90, col1:"#ffffff", col2:"#bcd6ff", shape:"star", blend:true, trail:false } },
+		fireworks: { emo:"🎆", name:"花火",         cfg:{ rate:0,   life:2.2, speed:380, spread:360,dir:0,   grav:140, drag:0.04, turb:20, size:7,  endScale:0.2, spin:0, col1:"#fff0a8", col2:"#ff3da0", shape:"spark", blend:true, trail:true } },
+		galaxy:    { emo:"🌌", name:"ギャラクシー", cfg:{ rate:200, life:4.0, speed:120, spread:360,dir:0,   grav:0,   drag:0.0,  turb:0,  size:5,  endScale:1.4, spin:0, col1:"#a8d0ff", col2:"#c79bff", shape:"star", blend:true, trail:true } },
+	};
+	const PRESET_KEYS = Object.keys(PRESETS);
+	let currentPreset = "fire";
+
+	/* ---------- パーティクルプール（GC削減のため使い回し） ---------- */
+	const MAX = 4000;
+	const pool = [];
+	const particles = [];
+	function getParticle() {
+		return pool.length ? pool.pop() : {};
+	}
+
+	function spawn(x, y, p) {
+		if (particles.length >= MAX) return;
+		const part = getParticle();
+		const dirRad = p.dir * DEG;
+		const half = (p.spread * DEG) / 2;
+		const ang = dirRad + rand(-half, half);
+		const sp = p.speed * rand(0.6, 1.0);
+		part.x = x; part.y = y;
+		part.vx = Math.cos(ang) * sp;
+		part.vy = Math.sin(ang) * sp;
+		part.life = p.life * rand(0.7, 1.0);
+		part.age = 0;
+		part.size = p.size * rand(0.7, 1.1);
+		part.endScale = p.endScale;
+		part.rot = rand(0, TAU);
+		part.spin = p.spin * DEG * rand(0.5, 1.0) * (Math.random() < 0.5 ? -1 : 1);
+		part.c1 = rgb1; part.c2 = rgb2;
+		part.shape = p.shape;
+		particles.push(part);
+	}
+
+	// 色をキャッシュ（毎フレーム parseInt しない）
+	let rgb1 = hexToRgb(config.col1);
+	let rgb2 = hexToRgb(config.col2);
+
+	/* ---------- 入力（マウス/タッチ） ---------- */
+	const emitter = { x: W / 2, y: H / 2, active: false };
+	let pointerDown = false;
+
+	function pointerPos(e) {
+		const t = e.touches ? e.touches[0] : e;
+		return { x: t.clientX, y: t.clientY };
+	}
+	function onDown(e) {
+		// パネル上は無視
+		if (e.target.closest && e.target.closest("#panel, #panelToggle, #help")) return;
+		pointerDown = true;
+		const p = pointerPos(e);
+		emitter.x = p.x; emitter.y = p.y; emitter.active = true;
+	}
+	function onMove(e) {
+		if (!pointerDown) return;
+		const p = pointerPos(e);
+		emitter.x = p.x; emitter.y = p.y;
+	}
+	function onUp() { pointerDown = false; }
+
+	canvas.addEventListener("mousedown", onDown);
+	window.addEventListener("mousemove", onMove);
+	window.addEventListener("mouseup", onUp);
+	canvas.addEventListener("touchstart", (e) => { onDown(e); e.preventDefault(); }, { passive: false });
+	canvas.addEventListener("touchmove", (e) => { onMove(e); e.preventDefault(); }, { passive: false });
+	window.addEventListener("touchend", onUp);
+	canvas.addEventListener("dblclick", (e) => {
+		const p = pointerPos(e);
+		burst(p.x, p.y);
+	});
+
+	// バースト（花火的な一斉放出）
+	function burst(x, y, n) {
+		n = n || 220;
+		for (let i = 0; i < n; i++) spawn(x, y, config);
+	}
+
+	/* ---------- 描画：形ごとのスプライト ---------- */
+	// パーティクル1個を描画
+	function drawParticle(p) {
+		const t = p.age / p.life;           // 0→1
+		const inv = 1 - t;
+		// 色補間
+		const r = (p.c1.r + (p.c2.r - p.c1.r) * t) | 0;
+		const g = (p.c1.g + (p.c2.g - p.c1.g) * t) | 0;
+		const b = (p.c1.b + (p.c2.b - p.c1.b) * t) | 0;
+		// アルファ：出現で立ち上がり、終盤でフェード
+		const a = clamp(Math.min(t * 6, 1) * inv * 1.0, 0, 1);
+		// スケール：開始サイズ→終了スケール
+		const sc = 1 + (p.endScale - 1) * t;
+		const sz = Math.max(0.3, p.size * sc);
+
+		ctx.save();
+		ctx.translate(p.x, p.y);
+		ctx.rotate(p.rot);
+		ctx.globalAlpha = a;
+
+		const col = `rgb(${r},${g},${b})`;
+		switch (p.shape) {
+			case "square":
+				ctx.fillStyle = col;
+				ctx.fillRect(-sz / 2, -sz / 2, sz, sz);
+				break;
+			case "star":
+				drawStar(0, 0, sz * 0.6, sz * 0.28, 5, col);
+				break;
+			case "spark":
+				// 細長い火花（速度方向に伸びる）
+				ctx.strokeStyle = col;
+				ctx.lineWidth = Math.max(1, sz * 0.35);
+				ctx.lineCap = "round";
+				ctx.beginPath();
+				ctx.moveTo(0, 0);
+				ctx.lineTo(sz * 1.4, 0);
+				ctx.stroke();
+				break;
+			default: { // circle（ソフトなグロー）
+				const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, sz);
+				grd.addColorStop(0, col);
+				grd.addColorStop(0.4, `rgba(${r},${g},${b},0.8)`);
+				grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+				ctx.fillStyle = grd;
+				ctx.beginPath();
+				ctx.arc(0, 0, sz, 0, TAU);
+				ctx.fill();
+			}
+		}
+		ctx.restore();
+	}
+
+	function drawStar(cx, cy, outer, inner, points, col) {
+		ctx.fillStyle = col;
+		ctx.beginPath();
+		for (let i = 0; i < points * 2; i++) {
+			const rr = i % 2 === 0 ? outer : inner;
+			const a = (i / (points * 2)) * TAU - Math.PI / 2;
+			const x = cx + Math.cos(a) * rr;
+			const y = cy + Math.sin(a) * rr;
+			i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+		}
+		ctx.closePath();
+		ctx.fill();
+	}
+
+	/* ---------- メインループ（デルタタイム） ---------- */
+	let last = performance.now();
+	let spawnAcc = 0;          // 放出の小数蓄積
+	let paused = false;
+	let fwTimer = 0;           // 花火の自動打ち上げ
+	let fpsSmooth = 60, fpsAcc = 0, fpsFrames = 0, fpsTimer = 0;
+	let turbTime = 0;
+
+	function loop(now) {
+		let dt = (now - last) / 1000;
+		last = now;
+		if (dt > 0.05) dt = 0.05;   // タブ復帰などで暴れないようクランプ
+		turbTime += dt;
+
+		// FPS計測
+		fpsAcc += dt; fpsFrames++;
+		if (fpsAcc >= 0.5) {
+			fpsSmooth = fpsFrames / fpsAcc;
+			fpsAcc = 0; fpsFrames = 0;
+			hFps.textContent = Math.round(fpsSmooth);
+		}
+
+		if (!paused) update(dt);
+		render();
+
+		hCount.textContent = particles.length;
+		requestAnimationFrame(loop);
+	}
+
+	function update(dt) {
+		// --- 放出 ---
+		if (currentPreset === "fireworks") {
+			// 花火モード：一定間隔で空中に打ち上げ爆発
+			fwTimer -= dt;
+			if (fwTimer <= 0) {
+				fwTimer = rand(0.6, 1.3);
+				const fx = rand(W * 0.2, W * 0.8);
+				const fy = rand(H * 0.15, H * 0.5);
+				// 爆発色をランダムに
+				config.col1 = randomHue(70);
+				config.col2 = randomHue(50);
+				rgb1 = hexToRgb(config.col1);
+				rgb2 = hexToRgb(config.col2);
+				burst(fx, fy, 180);
+			}
+		}
+		if (config.rate > 0 && emitter.active) {
+			spawnAcc += config.rate * dt;
+			const n = spawnAcc | 0;
+			spawnAcc -= n;
+			for (let i = 0; i < n; i++) {
+				spawn(emitter.x + rand(-3, 3), emitter.y + rand(-3, 3), config);
+			}
+		}
+
+		// --- 更新 ---
+		const dragF = Math.pow(1 - config.drag, dt * 60);
+		for (let i = particles.length - 1; i >= 0; i--) {
+			const p = particles[i];
+			p.age += dt;
+			if (p.age >= p.life) {
+				// プールに戻す
+				particles.splice(i, 1);
+				pool.push(p);
+				continue;
+			}
+			// 物理
+			p.vy += config.grav * dt;
+			if (config.turb > 0) {
+				// 疑似乱流（sin/cosノイズ）
+				const nx = Math.sin((p.y * 0.01) + turbTime * 1.3 + p.x * 0.003);
+				const ny = Math.cos((p.x * 0.01) + turbTime * 1.1 + p.y * 0.003);
+				p.vx += nx * config.turb * dt;
+				p.vy += ny * config.turb * dt;
+			}
+			p.vx *= dragF;
+			p.vy *= dragF;
+			p.x += p.vx * dt;
+			p.y += p.vy * dt;
+			// spark は速度方向を向く、それ以外は自転
+			if (p.shape === "spark") {
+				p.rot = Math.atan2(p.vy, p.vx);
+			} else {
+				p.rot += p.spin * dt;
+			}
+		}
+	}
+
+	function render() {
+		// 残像：半透明黒で塗る / OFF：完全クリア
+		if (config.trail) {
+			ctx.globalCompositeOperation = "source-over";
+			ctx.fillStyle = "rgba(5,6,13,0.22)";
+			ctx.fillRect(0, 0, W, H);
+		} else {
+			ctx.clearRect(0, 0, W, H);
+		}
+		ctx.globalCompositeOperation = config.blend ? "lighter" : "source-over";
+		for (let i = 0; i < particles.length; i++) drawParticle(particles[i]);
+		ctx.globalCompositeOperation = "source-over";
+		ctx.globalAlpha = 1;
+	}
+
+	function randomHue(light) {
+		const h = Math.random() * 360;
+		// HSL→簡易RGB
+		const c = (1 - Math.abs(2 * (light / 100) - 1)) * 1;
+		const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+		const m = (light / 100) - c / 2;
+		let r, g, b;
+		if (h < 60) [r, g, b] = [c, x, 0];
+		else if (h < 120) [r, g, b] = [x, c, 0];
+		else if (h < 180) [r, g, b] = [0, c, x];
+		else if (h < 240) [r, g, b] = [0, x, c];
+		else if (h < 300) [r, g, b] = [x, 0, c];
+		else [r, g, b] = [c, 0, x];
+		const to = (v) => ("0" + Math.round((v + m) * 255).toString(16)).slice(-2);
+		return "#" + to(r) + to(g) + to(b);
+	}
+
+	requestAnimationFrame(loop);
+
+	/* ============================================================
+	   UI バインディング
+	   ============================================================ */
+	const $ = (id) => document.getElementById(id);
+
+	// スライダー定義：[id, configキー, 値表示id, フォーマッタ]
+	const sliders = [
+		["rate", "rate", "vRate", (v) => v + "/s"],
+		["life", "life", "vLife", (v) => v.toFixed(1) + "s"],
+		["speed", "speed", "vSpeed", (v) => Math.round(v)],
+		["spread", "spread", "vSpread", (v) => Math.round(v) + "°"],
+		["dir", "dir", "vDir", (v) => Math.round(v) + "°"],
+		["grav", "grav", "vGrav", (v) => Math.round(v)],
+		["drag", "drag", "vDrag", (v) => v.toFixed(2)],
+		["turb", "turb", "vTurb", (v) => Math.round(v)],
+		["size", "size", "vSize", (v) => Math.round(v)],
+		["endScale", "endScale", "vEndScale", (v) => v.toFixed(2) + "×"],
+		["spin", "spin", "vSpin", (v) => Math.round(v) + "°/s"],
+	];
+
+	sliders.forEach(([id, key, vid, fmt]) => {
+		const el = $(id);
+		el.addEventListener("input", () => {
+			config[key] = parseFloat(el.value);
+			$(vid).textContent = fmt(config[key]);
+		});
+	});
+
+	$("col1").addEventListener("input", (e) => { config.col1 = e.target.value; rgb1 = hexToRgb(config.col1); });
+	$("col2").addEventListener("input", (e) => { config.col2 = e.target.value; rgb2 = hexToRgb(config.col2); });
+
+	// 形トグル
+	document.querySelectorAll("#shapeRow .toggle").forEach((t) => {
+		t.addEventListener("click", () => {
+			document.querySelectorAll("#shapeRow .toggle").forEach((x) => x.classList.remove("on"));
+			t.classList.add("on");
+			config.shape = t.dataset.shape;
+		});
+	});
+
+	// 合成・残像トグル
+	$("blendToggle").addEventListener("click", function () {
+		config.blend = !config.blend;
+		this.classList.toggle("on", config.blend);
+		this.textContent = "加算合成 " + (config.blend ? "ON" : "OFF");
+	});
+	$("trailToggle").addEventListener("click", function () {
+		config.trail = !config.trail;
+		this.classList.toggle("on", config.trail);
+		this.textContent = "残像 " + (config.trail ? "ON" : "OFF");
+	});
+
+	// スライダー等にconfigの現在値を反映
+	function syncUI() {
+		sliders.forEach(([id, key, vid, fmt]) => {
+			$(id).value = config[key];
+			$(vid).textContent = fmt(config[key]);
+		});
+		$("col1").value = config.col1;
+		$("col2").value = config.col2;
+		document.querySelectorAll("#shapeRow .toggle").forEach((t) =>
+			t.classList.toggle("on", t.dataset.shape === config.shape));
+		$("blendToggle").classList.toggle("on", config.blend);
+		$("blendToggle").textContent = "加算合成 " + (config.blend ? "ON" : "OFF");
+		$("trailToggle").classList.toggle("on", config.trail);
+		$("trailToggle").textContent = "残像 " + (config.trail ? "ON" : "OFF");
+	}
+
+	/* ---------- プリセットボタン生成 ---------- */
+	const presetsEl = $("presets");
+	function buildPresets() {
+		presetsEl.innerHTML = "";
+		PRESET_KEYS.forEach((k) => {
+			const p = PRESETS[k];
+			const btn = document.createElement("div");
+			btn.className = "preset-btn" + (k === currentPreset ? " active" : "");
+			btn.dataset.key = k;
+			btn.innerHTML = `<span class="emo">${p.emo}</span><span>${p.name}</span>`;
+			btn.addEventListener("click", () => applyPreset(k));
+			presetsEl.appendChild(btn);
+		});
+	}
+
+	function applyPreset(k) {
+		const p = PRESETS[k];
+		if (!p) return;
+		currentPreset = k;
+		Object.assign(config, p.cfg);
+		rgb1 = hexToRgb(config.col1);
+		rgb2 = hexToRgb(config.col2);
+		// クリア & 中央放出
+		clearParticles();
+		emitter.x = W / 2; emitter.y = H * 0.55; emitter.active = true;
+		fwTimer = 0;
+		// UI更新
+		document.querySelectorAll(".preset-btn").forEach((b) =>
+			b.classList.toggle("active", b.dataset.key === k));
+		$("hPreset").textContent = p.name;
+		syncUI();
+		// galaxy は中央で渦巻く感じに
+	}
+
+	function clearParticles() {
+		while (particles.length) pool.push(particles.pop());
+		ctx.clearRect(0, 0, W, H);
+	}
+
+	/* ---------- ボタン ---------- */
+	$("burstBtn").addEventListener("click", () => burst(emitter.x, emitter.y, 220));
+	$("resetBtn").addEventListener("click", () => applyPreset(currentPreset));
+	$("randomBtn").addEventListener("click", () => {
+		config.rate = rand(80, 600) | 0;
+		config.life = rand(0.6, 4);
+		config.speed = rand(40, 500) | 0;
+		config.spread = rand(10, 360) | 0;
+		config.dir = rand(0, 360) | 0;
+		config.grav = rand(-300, 500) | 0;
+		config.drag = rand(0, 0.1);
+		config.turb = rand(0, 200) | 0;
+		config.size = rand(4, 40) | 0;
+		config.endScale = rand(0, 2.5);
+		config.spin = rand(-200, 200) | 0;
+		config.col1 = randomHue(65);
+		config.col2 = randomHue(45);
+		config.shape = ["circle", "star", "square", "spark"][rand(0, 4) | 0];
+		rgb1 = hexToRgb(config.col1);
+		rgb2 = hexToRgb(config.col2);
+		currentPreset = "random";
+		document.querySelectorAll(".preset-btn").forEach((b) => b.classList.remove("active"));
+		$("hPreset").textContent = "ランダム";
+		emitter.active = true;
+		syncUI();
+	});
+	const pauseBtn = $("pauseBtn");
+	function togglePause() {
+		paused = !paused;
+		pauseBtn.textContent = paused ? "▶ 再生" : "⏸ 一時停止";
+	}
+	pauseBtn.addEventListener("click", togglePause);
+
+	/* ---------- パネル開閉 ---------- */
+	const panel = $("panel");
+	function togglePanel() { panel.classList.toggle("collapsed"); }
+	$("panelToggle").addEventListener("click", togglePanel);
+
+	/* ---------- キーボード ---------- */
+	window.addEventListener("keydown", (e) => {
+		if (e.code === "Space") { e.preventDefault(); togglePause(); }
+		else if (e.key === "r" || e.key === "R") applyPreset(currentPreset);
+		else if (e.key === "h" || e.key === "H") togglePanel();
+		else if (e.key === "b" || e.key === "B") burst(emitter.x, emitter.y, 220);
+		else if (e.key >= "1" && e.key <= "7") {
+			const idx = parseInt(e.key, 10) - 1;
+			if (PRESET_KEYS[idx]) applyPreset(PRESET_KEYS[idx]);
+		}
+	});
+
+	/* ---------- 初期化 ---------- */
+	buildPresets();
+	applyPreset("fire");
+	$("hPreset").textContent = PRESETS.fire.name;
+})();
+</script>
+</body>
+</html>

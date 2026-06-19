@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- AIメタ情報 -->
+<meta name="ai.author" content="Claude Opus 4.8">
+<meta name="ai.model" content="claude-opus-4-8">
+<meta name="ai.note" content="単一HTML自己完結のローグライクRPG。外部アセット不使用。">
+<title>Retro RPG - 地下迷宮の剣 - Claude Opus 4.8版</title>
+<style>
+	/* ===== 全体レイアウト ===== */
+	* { margin: 0; padding: 0; box-sizing: border-box; }
+	html, body {
+		width: 100vw; height: 100vh; overflow: hidden;
+		background: #05060a;
+		font-family: 'Courier New', monospace;
+		color: #d8dce8;
+		-webkit-user-select: none; user-select: none;
+		touch-action: none;
+	}
+	#game {
+		position: relative;
+		width: 100vw; height: 100vh;
+		display: block;
+		background: radial-gradient(ellipse at center, #0e1020 0%, #05060a 80%);
+	}
+	canvas { position: absolute; inset: 0; display: block; }
+
+	/* ===== HUD ===== */
+	#hud {
+		position: absolute; top: 0; left: 0; right: 0;
+		display: flex; justify-content: space-between; align-items: center;
+		gap: 12px; padding: 8px 14px;
+		background: linear-gradient(180deg, rgba(8,10,20,.92), rgba(8,10,20,0));
+		pointer-events: none; z-index: 5; flex-wrap: wrap;
+	}
+	.stat { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+	.stat b { color: #ffd66b; }
+	.bar { width: 120px; height: 12px; border: 1px solid #3a4060; border-radius: 6px; overflow: hidden; background: #11131f; }
+	.bar > i { display: block; height: 100%; transition: width .18s ease; }
+	.hp > i { background: linear-gradient(90deg, #ff4d5e, #ff8a5b); }
+	.xp > i { background: linear-gradient(90deg, #4db4ff, #7af0c0); }
+	.tag { color: #8e96b4; }
+
+	/* ===== ログ ===== */
+	#log {
+		position: absolute; left: 14px; bottom: 70px; max-width: 46vw;
+		display: flex; flex-direction: column; gap: 2px;
+		font-size: 13px; line-height: 1.35; z-index: 5; pointer-events: none;
+		text-shadow: 0 1px 2px #000;
+	}
+	#log div { opacity: .92; }
+	.l-info { color: #c7cde0; }
+	.l-good { color: #7af0c0; }
+	.l-bad  { color: #ff8a8a; }
+	.l-warn { color: #ffd66b; }
+	.l-sys  { color: #9ea7ff; }
+
+	/* ===== 操作ヘルプ ===== */
+	#help {
+		position: absolute; right: 14px; bottom: 12px; z-index: 5;
+		font-size: 12px; color: #8e96b4; text-align: right; line-height: 1.5;
+		text-shadow: 0 1px 2px #000; pointer-events: none;
+	}
+	#help b { color: #d8dce8; }
+
+	/* ===== モバイル方向パッド ===== */
+	#pad {
+		position: absolute; left: 14px; bottom: 12px; z-index: 6;
+		display: none; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 46px); gap: 4px;
+	}
+	#pad button {
+		font-size: 18px; color: #d8dce8; background: rgba(30,34,54,.85);
+		border: 1px solid #3a4060; border-radius: 8px; touch-action: manipulation;
+	}
+	#pad button:active { background: rgba(70,80,120,.9); }
+	#pad .blank { visibility: hidden; }
+
+	/* ===== オーバーレイ（タイトル/結果） ===== */
+	#overlay {
+		position: absolute; inset: 0; z-index: 10;
+		display: flex; flex-direction: column; justify-content: center; align-items: center;
+		gap: 18px; text-align: center; padding: 24px;
+		background: radial-gradient(ellipse at center, rgba(10,12,28,.82), rgba(2,3,8,.96));
+		backdrop-filter: blur(2px);
+	}
+	#overlay.hidden { display: none; }
+	#overlay h1 { font-size: clamp(28px, 6vw, 64px); letter-spacing: 3px;
+		background: linear-gradient(180deg, #ffe39a, #ff8a5b); -webkit-background-clip: text; background-clip: text; color: transparent;
+		text-shadow: 0 0 30px rgba(255,160,90,.35); }
+	#overlay p { max-width: 560px; color: #aeb6d4; line-height: 1.7; font-size: 14px; white-space: pre-line; }
+	#overlay .controls { color: #8e96b4; font-size: 13px; line-height: 1.8; }
+	#overlay .controls b { color: #d8dce8; }
+	#startBtn {
+		margin-top: 6px; padding: 12px 34px; font-family: inherit; font-size: 16px; letter-spacing: 2px;
+		color: #0b0c14; cursor: pointer; border: none; border-radius: 10px;
+		background: linear-gradient(180deg, #ffe39a, #ffb05b);
+		box-shadow: 0 6px 20px rgba(255,160,90,.35), inset 0 1px 0 rgba(255,255,255,.4);
+		transition: transform .1s ease;
+	}
+	#startBtn:hover { transform: translateY(-2px); }
+	#startBtn:active { transform: translateY(0); }
+	.subtle { color: #6a7196; font-size: 11px; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<div id="game">
+	<canvas id="cv"></canvas>
+
+	<!-- HUD -->
+	<div id="hud">
+		<div class="stat"><span class="tag">勇者</span> <b id="lvl">Lv.1</b></div>
+		<div class="stat hp"><span class="tag">HP</span><div class="bar"><i id="hpBar"></i></div><span id="hpTxt">20/20</span></div>
+		<div class="stat xp"><span class="tag">EXP</span><div class="bar"><i id="xpBar"></i></div></div>
+		<div class="stat"><span class="tag">ATK</span> <b id="atk">4</b></div>
+		<div class="stat"><span class="tag">DEF</span> <b id="def">1</b></div>
+		<div class="stat"><span class="tag">薬草</span> <b id="potion">0</b></div>
+		<div class="stat"><span class="tag">金貨</span> <b id="gold">0</b></div>
+		<div class="stat"><span class="tag">地下</span> <b id="floor">1F</b></div>
+	</div>
+
+	<!-- 戦闘・出来事ログ -->
+	<div id="log"></div>
+
+	<!-- 操作ヘルプ -->
+	<div id="help">
+		<div><b>移動/攻撃</b> 矢印 / WASD / HJKL</div>
+		<div><b>その場で待機</b> .（ピリオド） / Space</div>
+		<div><b>薬草を飲む</b> Q　　<b>階段を降りる</b> &gt;</div>
+		<div>敵に向かって進むと攻撃</div>
+	</div>
+
+	<!-- モバイル用十字キー -->
+	<div id="pad">
+		<button class="blank"></button><button data-dir="up">▲</button><button class="blank"></button>
+		<button data-dir="left">◀</button><button data-dir="wait">●</button><button data-dir="right">▶</button>
+		<button data-dir="potion">薬</button><button data-dir="down">▼</button><button data-dir="stair">&gt;</button>
+	</div>
+
+	<!-- タイトル/結果オーバーレイ -->
+	<div id="overlay">
+		<div class="subtle">CLAUDE OPUS 4.8 ORIGINAL ROGUELIKE</div>
+		<h1>地下迷宮の剣</h1>
+		<p id="ovText">闇に沈む地下迷宮の最深部に、世界を救う「光の剣」が眠るという。
+勇者よ、罠と魔物をかいくぐり、地下10階を踏破せよ。</p>
+		<div class="controls">
+			<div><b>矢印キー / WASD / HJKL</b> … 移動・敵に向かえば攻撃</div>
+			<div><b>. または Space</b> … その場で待機（敵だけ動く）</div>
+			<div><b>Q</b> … 薬草を飲んで回復　　<b>&gt;</b> … 階段「&gt;」で次の階へ</div>
+		</div>
+		<button id="startBtn">冒険を始める</button>
+		<div class="subtle" id="ovHint">タップ操作対応 / 全画面表示</div>
+	</div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   地下迷宮の剣 — Claude Opus 4.8 オリジナル・ローグライクRPG
+   単一HTML完結。Canvas描画・手続き生成ダンジョン・ターン制戦闘。
+   ========================================================================= */
+
+(() => {
+	// ---- 定数 ----
+	const MAP_W = 48, MAP_H = 34;          // ダンジョンのタイル数
+	const MAX_FLOOR = 10;                   // 最深部
+	const TILE = { WALL: 0, FLOOR: 1, DOOR: 2, STAIR: 3 };
+
+	// ---- DOM ----
+	const cv = document.getElementById('cv');
+	const ctx = cv.getContext('2d');
+	const ui = {
+		lvl: document.getElementById('lvl'), hpBar: document.getElementById('hpBar'),
+		hpTxt: document.getElementById('hpTxt'), xpBar: document.getElementById('xpBar'),
+		atk: document.getElementById('atk'), def: document.getElementById('def'),
+		potion: document.getElementById('potion'), gold: document.getElementById('gold'),
+		floor: document.getElementById('floor'), log: document.getElementById('log'),
+		overlay: document.getElementById('overlay'), ovText: document.getElementById('ovText'),
+		ovHint: document.getElementById('ovHint'), startBtn: document.getElementById('startBtn'),
+		pad: document.getElementById('pad')
+	};
+
+	// ---- 表示・カメラ ----
+	let DPR = 1, viewW = 0, viewH = 0;
+	let cssW = 0, cssH = 0;
+	let tilePx = 32;                         // 1タイルの描画ピクセル
+	const cam = { x: 0, y: 0 };              // カメラ（タイル単位の中心）
+
+	// ---- 乱数ユーティリティ ----
+	const rnd = (n) => Math.floor(Math.random() * n);
+	const chance = (p) => Math.random() < p;
+	const pick = (arr) => arr[rnd(arr.length)];
+	const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+	// ---- ゲーム状態 ----
+	let state = 'title';                     // title | play | dead | win
+	let map, rooms, floor, stairPos;
+	let player, monsters, items;
+	let turnLock = false;                    // アニメ中の入力ロック（予約）
+	let particles = [];                      // 演出パーティクル
+	let floats = [];                         // ダメージ等のフロートテキスト
+	let shake = 0;                           // 画面シェイク量
+	let animTime = 0;                        // 経過時間（演出用）
+	let transition = 0;                      // 階移動の閃光
+
+	// =====================================================================
+	//  ダンジョン生成（部屋＋通路）
+	// =====================================================================
+	const idx = (x, y) => y * MAP_W + x;
+	const get = (x, y) => (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) ? TILE.WALL : map[idx(x, y)];
+	const set = (x, y, t) => { if (x >= 0 && y >= 0 && x < MAP_W && y < MAP_H) map[idx(x, y)] = t; };
+	const walkable = (x, y) => { const t = get(x, y); return t === TILE.FLOOR || t === TILE.DOOR || t === TILE.STAIR; };
+
+	function genDungeon() {
+		map = new Array(MAP_W * MAP_H).fill(TILE.WALL);
+		rooms = [];
+		const tryRooms = 60;
+		for (let i = 0; i < tryRooms && rooms.length < 11; i++) {
+			const w = 4 + rnd(7), h = 3 + rnd(5);
+			const x = 1 + rnd(MAP_W - w - 2), y = 1 + rnd(MAP_H - h - 2);
+			const nr = { x, y, w, h, cx: (x + (x + w - 1)) >> 1, cy: (y + (y + h - 1)) >> 1 };
+			let ok = true;
+			for (const r of rooms) {
+				if (nr.x - 1 <= r.x + r.w && nr.x + nr.w + 1 >= r.x &&
+					nr.y - 1 <= r.y + r.h && nr.y + nr.h + 1 >= r.y) { ok = false; break; }
+			}
+			if (!ok) continue;
+			for (let yy = y; yy < y + h; yy++)
+				for (let xx = x; xx < x + w; xx++) set(xx, yy, TILE.FLOOR);
+			rooms.push(nr);
+		}
+		// 部屋を順に通路でつなぐ（連結保証）
+		for (let i = 1; i < rooms.length; i++) {
+			carveCorridor(rooms[i - 1].cx, rooms[i - 1].cy, rooms[i].cx, rooms[i].cy);
+		}
+		// ループ性を出すため余分に接続
+		for (let i = 0; i < 3 && rooms.length > 2; i++) {
+			const a = pick(rooms), b = pick(rooms);
+			if (a !== b) carveCorridor(a.cx, a.cy, b.cx, b.cy);
+		}
+	}
+	function carveCorridor(x1, y1, x2, y2) {
+		let x = x1, y = y1;
+		if (chance(0.5)) {
+			while (x !== x2) { set(x, y, TILE.FLOOR); x += x < x2 ? 1 : -1; }
+			while (y !== y2) { set(x, y, TILE.FLOOR); y += y < y2 ? 1 : -1; }
+		} else {
+			while (y !== y2) { set(x, y, TILE.FLOOR); y += y < y2 ? 1 : -1; }
+			while (x !== x2) { set(x, y, TILE.FLOOR); x += x < x2 ? 1 : -1; }
+		}
+		set(x2, y2, TILE.FLOOR);
+	}
+
+	// 空き床のランダムな位置（条件で除外可）
+	function freeFloor(avoid) {
+		for (let tries = 0; tries < 600; tries++) {
+			const r = pick(rooms);
+			const x = r.x + rnd(r.w), y = r.y + rnd(r.h);
+			if (!walkable(x, y)) continue;
+			if (avoid && avoid(x, y)) continue;
+			return { x, y };
+		}
+		return { x: rooms[0].cx, y: rooms[0].cy };
+	}
+
+	// =====================================================================
+	//  エンティティ定義
+	// =====================================================================
+	const MONSTER_TYPES = [
+		{ key: 'rat',     name: 'ドブネズミ', glyph: '🐀', col: '#9a8b6b', hp: 6,  atk: 3,  def: 0, xp: 4,  gold: 2,  minF: 1, weight: 5 },
+		{ key: 'bat',     name: 'コウモリ',   glyph: '🦇', col: '#8a6bb0', hp: 5,  atk: 4,  def: 0, xp: 5,  gold: 1,  minF: 1, weight: 4, erratic: true },
+		{ key: 'goblin',  name: 'ゴブリン',   glyph: '👺', col: '#6bbf6b', hp: 11, atk: 5,  def: 1, xp: 9,  gold: 8,  minF: 2, weight: 5 },
+		{ key: 'snake',   name: '毒ヘビ',     glyph: '🐍', col: '#7fdf7f', hp: 9,  atk: 6,  def: 0, xp: 10, gold: 5,  minF: 3, weight: 3, poison: true },
+		{ key: 'skeleton',name: 'スケルトン', glyph: '💀', col: '#dfe0e8', hp: 16, atk: 7,  def: 2, xp: 16, gold: 14, minF: 4, weight: 4 },
+		{ key: 'orc',     name: 'オーク',     glyph: '👹', col: '#cf7b4b', hp: 22, atk: 9,  def: 3, xp: 24, gold: 20, minF: 5, weight: 4 },
+		{ key: 'ghost',   name: '亡霊',       glyph: '👻', col: '#bfe8ff', hp: 18, atk: 11, def: 1, xp: 30, gold: 12, minF: 6, weight: 3, erratic: true },
+		{ key: 'golem',   name: 'ゴーレム',   glyph: '🗿', col: '#9aa0b0', hp: 40, atk: 12, def: 6, xp: 50, gold: 40, minF: 7, weight: 3, slow: true },
+		{ key: 'demon',   name: 'デーモン',   glyph: '😈', col: '#e0506b', hp: 34, atk: 15, def: 4, xp: 70, gold: 55, minF: 8, weight: 3 },
+	];
+	const ITEM_TYPES = {
+		potion: { name: '薬草',     glyph: '🌿', col: '#7af0c0' },
+		gold:   { name: '金貨',     glyph: '💰', col: '#ffd66b' },
+		sword:  { name: '鋭い剣',   glyph: '🗡️', col: '#bcd4ff' },
+		shield: { name: '盾',       glyph: '🛡️', col: '#bcd4ff' },
+		heart:  { name: '命の宝珠', glyph: '❤️', col: '#ff7a8a' },
+	};
+
+	// =====================================================================
+	//  フロア構築
+	// =====================================================================
+	function buildFloor(keepPlayer) {
+		genDungeon();
+		const start = rooms[0];
+		if (!keepPlayer) {
+			player = {
+				x: start.cx, y: start.cy, hp: 20, maxhp: 20,
+				atk: 4, def: 1, lvl: 1, xp: 0, xpNext: 12,
+				potions: 1, gold: 0, dx: 0, dy: 1, poisonTurns: 0,
+				bump: 0, bx: 0, by: 0
+			};
+		} else { player.x = start.cx; player.y = start.cy; }
+
+		// 階段（プレイヤーから最も遠い部屋に）
+		let far = rooms[rooms.length - 1];
+		for (const r of rooms) {
+			if (Math.hypot(r.cx - start.cx, r.cy - start.cy) >
+				Math.hypot(far.cx - start.cx, far.cy - start.cy)) far = r;
+		}
+		stairPos = { x: far.cx, y: far.cy };
+		set(stairPos.x, stairPos.y, TILE.STAIR);
+
+		// モンスター配置
+		monsters = [];
+		const count = 5 + floor + rnd(4);
+		const available = MONSTER_TYPES.filter(m => m.minF <= floor);
+		const pool = [];
+		for (const m of available) for (let i = 0; i < m.weight; i++) pool.push(m);
+		for (let i = 0; i < count; i++) {
+			const p = freeFloor((x, y) =>
+				(x === player.x && y === player.y) ||
+				(Math.abs(x - player.x) + Math.abs(y - player.y) < 4) ||
+				monsters.some(mo => mo.x === x && mo.y === y));
+			const t = pick(pool);
+			const boost = 1 + (floor - t.minF) * 0.08;     // 深い階ほど強化
+			monsters.push({
+				type: t, x: p.x, y: p.y,
+				hp: Math.round(t.hp * boost), maxhp: Math.round(t.hp * boost),
+				atk: Math.round(t.atk * boost), def: t.def,
+				awake: false, slowToggle: false, bump: 0, bx: 0, by: 0
+			});
+		}
+
+		// アイテム配置
+		items = [];
+		const itemCount = 3 + rnd(4);
+		for (let i = 0; i < itemCount; i++) {
+			const p = freeFloor((x, y) =>
+				(x === player.x && y === player.y) ||
+				(x === stairPos.x && y === stairPos.y) ||
+				monsters.some(mo => mo.x === x && mo.y === y) ||
+				items.some(it => it.x === x && it.y === y));
+			const roll = Math.random();
+			let kind;
+			if (roll < 0.42) kind = 'potion';
+			else if (roll < 0.72) kind = 'gold';
+			else if (roll < 0.85) kind = 'sword';
+			else if (roll < 0.95) kind = 'shield';
+			else kind = 'heart';
+			items.push({ kind, x: p.x, y: p.y, amt: kind === 'gold' ? 5 + rnd(15) : 1 });
+		}
+		recomputeVisibility();
+	}
+
+	// =====================================================================
+	//  ログ・演出
+	// =====================================================================
+	function logMsg(text, cls = 'l-info') {
+		const d = document.createElement('div');
+		d.className = cls; d.textContent = text;
+		ui.log.appendChild(d);
+		while (ui.log.children.length > 6) ui.log.removeChild(ui.log.firstChild);
+	}
+	function clearLog() { while (ui.log.firstChild) ui.log.removeChild(ui.log.firstChild); }
+	function addFloat(x, y, text, col) {
+		floats.push({ x, y, text, col, t: 0, life: 0.9, vy: -28 });
+	}
+	function burst(x, y, col, n) {
+		for (let i = 0; i < n; i++) {
+			const a = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 90;
+			particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+				life: 0.4 + Math.random() * 0.4, t: 0, col, r: 2 + Math.random() * 2 });
+		}
+	}
+
+	// =====================================================================
+	//  ターン処理：プレイヤー行動 → モンスター行動
+	// =====================================================================
+	function tryPlayerMove(dx, dy) {
+		if (state !== 'play' || turnLock) return;
+		if (dx === 0 && dy === 0) { endPlayerTurn(); return; } // 待機
+		player.dx = dx; player.dy = dy;
+		const nx = player.x + dx, ny = player.y + dy;
+
+		// 攻撃判定（移動先に敵）
+		const m = monsters.find(mo => mo.x === nx && mo.y === ny);
+		if (m) { player.bx = dx; player.by = dy; player.bump = 1; playerAttack(m); endPlayerTurn(); return; }
+
+		// 移動判定
+		if (walkable(nx, ny)) {
+			player.x = nx; player.y = ny;
+			pickupAt(nx, ny);
+			endPlayerTurn();
+		}
+		// 壁ならターン消費なし
+	}
+
+	function playerAttack(m) {
+		const crit = chance(0.16);
+		let dmg = Math.max(1, player.atk + rnd(3) - m.def);
+		if (crit) dmg += player.atk;
+		m.hp -= dmg; m.awake = true; m.bx = -player.dx; m.by = -player.dy; m.bump = 1;
+		addFloat(m.x, m.y, String(dmg), crit ? '#ffd66b' : '#ffffff');
+		burst(m.x + 0.5, m.y + 0.5, m.type.col, crit ? 14 : 8);
+		shake = Math.min(8, shake + (crit ? 6 : 3));
+		if (crit) logMsg(`会心の一撃！ ${m.type.name}に ${dmg} ダメージ`, 'l-warn');
+		if (m.hp <= 0) killMonster(m);
+	}
+
+	function killMonster(m) {
+		monsters = monsters.filter(x => x !== m);
+		logMsg(`${m.type.name}を倒した！ (+${m.type.xp} EXP)`, 'l-good');
+		burst(m.x + 0.5, m.y + 0.5, m.type.col, 18);
+		player.gold += m.type.gold;
+		gainXp(m.type.xp);
+		if (chance(0.18)) items.push({ kind: 'potion', x: m.x, y: m.y, amt: 1 }); // 薬草ドロップ
+	}
+
+	function gainXp(amount) {
+		player.xp += amount;
+		while (player.xp >= player.xpNext) {
+			player.xp -= player.xpNext;
+			player.lvl++;
+			player.maxhp += 6; player.hp = player.maxhp;
+			player.atk += 2; if (player.lvl % 2 === 0) player.def += 1;
+			player.xpNext = Math.round(player.xpNext * 1.45 + 6);
+			logMsg(`レベルアップ！ Lv.${player.lvl} になった`, 'l-good');
+			addFloat(player.x, player.y, 'LEVEL UP!', '#7af0c0');
+			burst(player.x + 0.5, player.y + 0.5, '#7af0c0', 24);
+		}
+	}
+
+	function pickupAt(x, y) {
+		const it = items.find(i => i.x === x && i.y === y);
+		if (!it) return;
+		items = items.filter(i => i !== it);
+		switch (it.kind) {
+			case 'potion': player.potions++; logMsg('薬草を拾った', 'l-good'); break;
+			case 'gold': player.gold += it.amt; logMsg(`金貨を ${it.amt} 枚拾った`, 'l-good'); addFloat(x, y, '+' + it.amt + 'G', '#ffd66b'); break;
+			case 'sword': player.atk += 2; logMsg('鋭い剣を装備！ ATK+2', 'l-good'); addFloat(x, y, 'ATK+2', '#bcd4ff'); break;
+			case 'shield': player.def += 1; logMsg('盾を装備！ DEF+1', 'l-good'); addFloat(x, y, 'DEF+1', '#bcd4ff'); break;
+			case 'heart': player.maxhp += 5; player.hp = Math.min(player.maxhp, player.hp + 5); logMsg('命の宝珠！ 最大HP+5', 'l-good'); addFloat(x, y, 'HP+5', '#ff7a8a'); break;
+		}
+		burst(x + 0.5, y + 0.5, ITEM_TYPES[it.kind].col, 10);
+	}
+
+	function quaffPotion() {
+		if (state !== 'play' || turnLock) return;
+		if (player.potions <= 0) { logMsg('薬草を持っていない', 'l-warn'); return; }
+		player.potions--;
+		const heal = 10 + Math.floor(player.maxhp * 0.25);
+		player.hp = Math.min(player.maxhp, player.hp + heal);
+		player.poisonTurns = 0;
+		logMsg(`薬草を飲んだ。HPが ${heal} 回復`, 'l-good');
+		addFloat(player.x, player.y, '+' + heal, '#7af0c0');
+		burst(player.x + 0.5, player.y + 0.5, '#7af0c0', 12);
+		endPlayerTurn();
+	}
+
+	function descend() {
+		if (state !== 'play' || turnLock) return;
+		if (player.x !== stairPos.x || player.y !== stairPos.y) {
+			logMsg('階段の上ではない（"＞" を探そう）', 'l-warn'); return;
+		}
+		if (floor >= MAX_FLOOR) { win(); return; }
+		floor++;
+		logMsg(`地下 ${floor}F へ降りた…`, 'l-sys');
+		buildFloor(true);
+		refreshHud();
+		flashTransition();
+	}
+
+	// モンスターの行動
+	function monstersAct() {
+		for (const m of monsters) {
+			const dist = Math.abs(m.x - player.x) + Math.abs(m.y - player.y);
+			if (!m.awake && dist <= 7 && hasLineOfSight(m.x, m.y, player.x, player.y)) m.awake = true;
+			if (!m.awake) continue;
+
+			// 鈍足の敵は1ターンおき
+			if (m.type.slow) { m.slowToggle = !m.slowToggle; if (m.slowToggle) continue; }
+
+			// 隣接なら攻撃
+			if (dist === 1) { monsterAttack(m); if (state !== 'play') return; continue; }
+
+			// 移動方向決定
+			let mvx = 0, mvy = 0;
+			if (m.type.erratic && chance(0.4)) {
+				const d = pick([[1,0],[-1,0],[0,1],[0,-1]]); mvx = d[0]; mvy = d[1];
+			} else {
+				const sx = Math.sign(player.x - m.x), sy = Math.sign(player.y - m.y);
+				const opts = [];
+				if (sx !== 0) opts.push([sx, 0]);
+				if (sy !== 0) opts.push([0, sy]);
+				if (Math.abs(player.x - m.x) < Math.abs(player.y - m.y)) opts.reverse();
+				for (const o of opts) {
+					if (canStep(m, m.x + o[0], m.y + o[1])) { mvx = o[0]; mvy = o[1]; break; }
+				}
+			}
+			const nx = m.x + mvx, ny = m.y + mvy;
+			if ((mvx || mvy) && canStep(m, nx, ny)) {
+				if (nx === player.x && ny === player.y) { monsterAttack(m); if (state !== 'play') return; }
+				else { m.x = nx; m.y = ny; }
+			}
+		}
+		// 毒の継続ダメージ
+		if (player.poisonTurns > 0) {
+			player.poisonTurns--;
+			player.hp -= 1;
+			addFloat(player.x, player.y, '毒1', '#9fdf7f');
+			if (player.hp <= 0) die('毒に蝕まれて力尽きた');
+		}
+	}
+	function canStep(m, x, y) {
+		if (!walkable(x, y)) return false;
+		if (x === player.x && y === player.y) return true; // 攻撃のため許可
+		return !monsters.some(o => o !== m && o.x === x && o.y === y);
+	}
+
+	function monsterAttack(m) {
+		const dmg = Math.max(1, m.atk + rnd(2) - player.def);
+		player.hp -= dmg;
+		m.bx = Math.sign(player.x - m.x); m.by = Math.sign(player.y - m.y); m.bump = 1;
+		addFloat(player.x, player.y, String(dmg), '#ff8a8a');
+		shake = Math.min(10, shake + 4);
+		logMsg(`${m.type.name}の攻撃！ ${dmg} ダメージ`, 'l-bad');
+		if (m.type.poison && chance(0.5)) { player.poisonTurns = 3; logMsg('毒を受けた！', 'l-warn'); }
+		if (player.hp <= 0) die(`${m.type.name}に倒された`);
+	}
+
+	// 視線判定（ブレゼンハム）
+	function hasLineOfSight(x0, y0, x1, y1) {
+		const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+		const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+		let err = dx - dy, x = x0, y = y0, guard = 0;
+		while (guard++ < 256) {
+			if (x === x1 && y === y1) return true;
+			if (!(x === x0 && y === y0) && get(x, y) === TILE.WALL) return false;
+			const e2 = 2 * err;
+			if (e2 > -dy) { err -= dy; x += sx; }
+			if (e2 < dx) { err += dx; y += sy; }
+		}
+		return false;
+	}
+
+	function endPlayerTurn() {
+		monstersAct();
+		recomputeVisibility();
+		refreshHud();
+	}
+
+	// =====================================================================
+	//  視界（タイル可視/既知）
+	// =====================================================================
+	let visible, known;
+	function recomputeVisibility() {
+		const total = MAP_W * MAP_H;
+		if (!visible || visible.length !== total) { visible = new Uint8Array(total); known = new Uint8Array(total); }
+		visible.fill(0);
+		const R = 7;
+		for (let dy = -R; dy <= R; dy++) {
+			for (let dx = -R; dx <= R; dx++) {
+				const x = player.x + dx, y = player.y + dy;
+				if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) continue;
+				if (dx * dx + dy * dy > R * R + 2) continue;
+				if (hasLineOfSight(player.x, player.y, x, y)) {
+					visible[idx(x, y)] = 1; known[idx(x, y)] = 1;
+				}
+			}
+		}
+	}
+
+	// =====================================================================
+	//  HUD更新
+	// =====================================================================
+	function refreshHud() {
+		ui.lvl.textContent = 'Lv.' + player.lvl;
+		ui.hpBar.style.width = clamp(player.hp / player.maxhp * 100, 0, 100) + '%';
+		ui.hpTxt.textContent = Math.max(0, player.hp) + '/' + player.maxhp;
+		ui.xpBar.style.width = clamp(player.xp / player.xpNext * 100, 0, 100) + '%';
+		ui.atk.textContent = player.atk;
+		ui.def.textContent = player.def;
+		ui.potion.textContent = player.potions;
+		ui.gold.textContent = player.gold;
+		ui.floor.textContent = floor + 'F';
+	}
+
+	// =====================================================================
+	//  ゲーム開始/終了
+	// =====================================================================
+	function startGame() {
+		floor = 1;
+		clearLog();
+		particles = []; floats = []; shake = 0;
+		buildFloor(false);
+		cam.x = player.x; cam.y = player.y;
+		refreshHud();
+		state = 'play';
+		ui.overlay.classList.add('hidden');
+		logMsg('地下迷宮に足を踏み入れた…', 'l-sys');
+		flashTransition();
+	}
+	function die(reason) {
+		if (state !== 'play') return;
+		state = 'dead';
+		burst(player.x + 0.5, player.y + 0.5, '#ff5060', 30);
+		shake = 12;
+		showOverlay('💀 ゲームオーバー',
+			`${reason}。\n地下 ${floor}F まで到達 / Lv.${player.lvl} / 金貨 ${player.gold}`,
+			'もう一度挑戦', true);
+	}
+	function win() {
+		state = 'win';
+		burst(player.x + 0.5, player.y + 0.5, '#ffd66b', 40);
+		showOverlay('🏆 光の剣を手にした！',
+			`地下10階を踏破し、世界を救う「光の剣」を見つけ出した！\n最終 Lv.${player.lvl} / 金貨 ${player.gold} / 残HP ${player.hp}`,
+			'もう一度遊ぶ', true);
+	}
+	function showOverlay(title, text, btn, isResult) {
+		ui.overlay.querySelector('h1').textContent = title;
+		ui.ovText.textContent = text;
+		ui.startBtn.textContent = btn;
+		ui.overlay.classList.remove('hidden');
+		ui.overlay.querySelectorAll('.controls').forEach(e => e.style.display = isResult ? 'none' : '');
+	}
+
+	function flashTransition() { transition = 1; }
+
+	// =====================================================================
+	//  入力
+	// =====================================================================
+	const keyMap = {
+		ArrowUp: [0,-1], ArrowDown:[0,1], ArrowLeft:[-1,0], ArrowRight:[1,0],
+		w:[0,-1], s:[0,1], a:[-1,0], d:[1,0],
+		k:[0,-1], j:[0,1], h:[-1,0], l:[1,0],
+	};
+	window.addEventListener('keydown', (e) => {
+		if (state === 'title' || state === 'dead' || state === 'win') {
+			if (e.key === 'Enter' || e.key === ' ') { startGame(); e.preventDefault(); }
+			return;
+		}
+		const k = e.key;
+		if (keyMap[k]) { tryPlayerMove(keyMap[k][0], keyMap[k][1]); e.preventDefault(); return; }
+		if (k === '.' || k === ' ') { tryPlayerMove(0, 0); e.preventDefault(); return; }
+		if (k === 'q' || k === 'Q') { quaffPotion(); e.preventDefault(); return; }
+		if (k === '>') { descend(); e.preventDefault(); return; }
+	});
+
+	// モバイル十字キー
+	ui.pad.addEventListener('click', (e) => {
+		const b = e.target.closest('button[data-dir]'); if (!b) return;
+		const dir = b.dataset.dir;
+		if (state !== 'play') { startGame(); return; }
+		switch (dir) {
+			case 'up': tryPlayerMove(0,-1); break;
+			case 'down': tryPlayerMove(0,1); break;
+			case 'left': tryPlayerMove(-1,0); break;
+			case 'right': tryPlayerMove(1,0); break;
+			case 'wait': tryPlayerMove(0,0); break;
+			case 'potion': quaffPotion(); break;
+			case 'stair': descend(); break;
+		}
+	});
+	ui.startBtn.addEventListener('click', startGame);
+
+	// タッチ環境ではパッド表示
+	if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+		ui.pad.style.display = 'grid';
+		ui.ovHint.textContent = '十字キーで移動 / ●待機 / 薬=回復 / ＞=階段';
+	}
+
+	// =====================================================================
+	//  リサイズ
+	// =====================================================================
+	function resize() {
+		DPR = Math.min(window.devicePixelRatio || 1, 2);
+		cssW = window.innerWidth; cssH = window.innerHeight;
+		cv.width = Math.floor(cssW * DPR); cv.height = Math.floor(cssH * DPR);
+		cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
+		viewW = cssW; viewH = cssH;
+		tilePx = Math.max(20, Math.min(Math.floor(cssW / 19), Math.floor(cssH / 13)));
+		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+	}
+	window.addEventListener('resize', resize);
+
+	// =====================================================================
+	//  描画
+	// =====================================================================
+	function draw(dt) {
+		ctx.clearRect(0, 0, viewW, viewH);
+		if (state === 'title') { drawTitleBg(); return; }
+		if (!player) return;
+
+		// カメラ追従
+		cam.x += (player.x - cam.x) * Math.min(1, dt * 10);
+		cam.y += (player.y - cam.y) * Math.min(1, dt * 10);
+
+		const ox = viewW / 2 - cam.x * tilePx - tilePx / 2;
+		const oy = viewH / 2 - cam.y * tilePx - tilePx / 2;
+		let sx = 0, sy = 0;
+		if (shake > 0.2) { sx = (Math.random()*2-1)*shake; sy = (Math.random()*2-1)*shake; shake *= Math.pow(0.001, dt); }
+		else shake = 0;
+		ctx.save();
+		ctx.translate(Math.round(ox + sx), Math.round(oy + sy));
+
+		const x0 = Math.max(0, Math.floor(cam.x - viewW / tilePx / 2 - 1));
+		const x1 = Math.min(MAP_W - 1, Math.ceil(cam.x + viewW / tilePx / 2 + 1));
+		const y0 = Math.max(0, Math.floor(cam.y - viewH / tilePx / 2 - 1));
+		const y1 = Math.min(MAP_H - 1, Math.ceil(cam.y + viewH / tilePx / 2 + 1));
+
+		for (let y = y0; y <= y1; y++) {
+			for (let x = x0; x <= x1; x++) {
+				const i = idx(x, y);
+				if (!known[i]) continue;
+				drawTile(x, y, get(x, y), visible[i]);
+			}
+		}
+
+		// アイテム
+		for (const it of items) {
+			if (!visible[idx(it.x, it.y)]) continue;
+			const t = ITEM_TYPES[it.kind];
+			drawGlyphCell(it.x, it.y, t.glyph, t.col, 0.74);
+		}
+
+		// モンスター
+		for (const m of monsters) {
+			if (!visible[idx(m.x, m.y)]) continue;
+			const bx = m.bx * m.bump * tilePx * 0.22, by = m.by * m.bump * tilePx * 0.22;
+			drawEntity(m.x, m.y, bx, by, m.type.glyph, m.type.col, 0.92, m.awake);
+			if (m.hp < m.maxhp) {
+				const px = m.x * tilePx + bx, py = m.y * tilePx + by;
+				ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(px + 4, py - 4, tilePx - 8, 4);
+				ctx.fillStyle = '#ff5b6b';
+				ctx.fillRect(px + 4, py - 4, (tilePx - 8) * clamp(m.hp / m.maxhp, 0, 1), 4);
+			}
+			m.bump = Math.max(0, m.bump - dt * 6);
+		}
+
+		// プレイヤー
+		const pbx = player.bx * player.bump * tilePx * 0.22, pby = player.by * player.bump * tilePx * 0.22;
+		drawPlayer(player.x, player.y, pbx, pby);
+		player.bump = Math.max(0, player.bump - dt * 6);
+
+		drawParticles(dt);
+		drawFloats(dt);
+		ctx.restore();
+
+		// 階移動の閃光
+		if (transition > 0) {
+			ctx.fillStyle = `rgba(255,240,210,${transition * 0.6})`;
+			ctx.fillRect(0, 0, viewW, viewH);
+			transition = Math.max(0, transition - dt * 2.2);
+		}
+
+		// ビネット
+		const g = ctx.createRadialGradient(viewW/2, viewH/2, Math.min(viewW,viewH)*0.3,
+			viewW/2, viewH/2, Math.max(viewW,viewH)*0.7);
+		g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.55)');
+		ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, viewH);
+	}
+
+	function drawTile(x, y, t, vis) {
+		const px = x * tilePx, py = y * tilePx, s = tilePx;
+		const dim = vis ? 1 : 0.34;
+		if (t === TILE.WALL) {
+			ctx.fillStyle = shade('#1b2030', dim); ctx.fillRect(px, py, s, s);
+			ctx.fillStyle = shade('#262d44', dim); ctx.fillRect(px, py, s, Math.max(2, s*0.18));
+			ctx.fillStyle = shade('#11151f', dim); ctx.fillRect(px, py + s - Math.max(2, s*0.12), s, Math.max(2, s*0.12));
+		} else {
+			const base = ((x + y) & 1) ? '#171b29' : '#1a1f30';
+			ctx.fillStyle = shade(base, dim); ctx.fillRect(px, py, s, s);
+			ctx.strokeStyle = shade('#0c0f18', dim); ctx.lineWidth = 1;
+			ctx.strokeRect(px + 0.5, py + 0.5, s - 1, s - 1);
+			if (t === TILE.STAIR) {
+				ctx.fillStyle = shade('#0a0c12', dim);
+				ctx.fillRect(px + s*0.18, py + s*0.18, s*0.64, s*0.64);
+				ctx.fillStyle = shade('#6e7aa6', dim);
+				for (let i = 0; i < 3; i++) ctx.fillRect(px + s*0.2, py + s*0.26 + i*s*0.18, s*0.6 - i*s*0.13, s*0.08);
+				ctx.fillStyle = shade('#ffd66b', dim);
+				ctx.font = `bold ${Math.floor(s*0.5)}px monospace`;
+				ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+				ctx.fillText('>', px + s/2, py + s*0.62);
+			}
+		}
+	}
+
+	// hex → 明度調整 rgb
+	function shade(hex, k) {
+		const n = parseInt(hex.slice(1), 16);
+		const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+		return `rgb(${Math.round(r*k)},${Math.round(g*k)},${Math.round(b*k)})`;
+	}
+
+	function drawGlyphCell(x, y, glyph, col, scale) {
+		const s = tilePx;
+		const off = Math.sin(animTime * 3 + (x + y)) * s * 0.05;
+		const px = x * s + s/2, py = y * s + s/2 + off;
+		ctx.save();
+		ctx.shadowColor = col; ctx.shadowBlur = s * 0.4;
+		ctx.font = `${Math.floor(s * scale)}px serif`;
+		ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+		ctx.fillText(glyph, px, py);
+		ctx.restore();
+	}
+
+	function drawEntity(x, y, bx, by, glyph, col, scale, awake) {
+		const s = tilePx;
+		const px = x * s + s/2 + bx, py = y * s + s/2 + by;
+		ctx.save();
+		ctx.shadowColor = awake ? col : 'rgba(0,0,0,0)';
+		ctx.shadowBlur = awake ? s * 0.35 : 0;
+		ctx.font = `${Math.floor(s * scale)}px serif`;
+		ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+		if (!awake) ctx.globalAlpha = 0.8;
+		ctx.fillText(glyph, px, py);
+		ctx.restore();
+		if (awake) {
+			ctx.fillStyle = '#ff5b6b';
+			ctx.font = `bold ${Math.floor(s*0.28)}px monospace`;
+			ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+			ctx.fillText('!', px + s*0.32, py - s*0.34);
+		}
+	}
+
+	function drawPlayer(x, y, bx, by) {
+		const s = tilePx;
+		const px = x * s + s/2 + bx, py = y * s + s/2 + by;
+		ctx.save();
+		const glow = ctx.createRadialGradient(px, py, 0, px, py, s * 1.1);
+		glow.addColorStop(0, 'rgba(255,220,150,0.32)');
+		glow.addColorStop(1, 'rgba(255,220,150,0)');
+		ctx.fillStyle = glow; ctx.fillRect(px - s*1.1, py - s*1.1, s*2.2, s*2.2);
+		ctx.restore();
+		ctx.save();
+		ctx.shadowColor = '#ffcf7a'; ctx.shadowBlur = s * 0.4;
+		ctx.font = `${Math.floor(s * 0.9)}px serif`;
+		ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+		ctx.fillText('🧝', px, py);
+		ctx.restore();
+		if (player.poisonTurns > 0) {
+			ctx.fillStyle = '#9fdf7f';
+			ctx.font = `${Math.floor(s*0.3)}px serif`;
+			ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+			ctx.fillText('☣', px + s*0.3, py - s*0.32);
+		}
+	}
+
+	function drawParticles(dt) {
+		for (let i = particles.length - 1; i >= 0; i--) {
+			const p = particles[i]; p.t += dt;
+			if (p.t >= p.life) { particles.splice(i, 1); continue; }
+			p.x += p.vx * dt / tilePx; p.y += p.vy * dt / tilePx; p.vy += 60 * dt / tilePx;
+			const a = 1 - p.t / p.life;
+			ctx.globalAlpha = a; ctx.fillStyle = p.col;
+			ctx.beginPath(); ctx.arc(p.x * tilePx, p.y * tilePx, p.r * a + 0.5, 0, Math.PI * 2); ctx.fill();
+		}
+		ctx.globalAlpha = 1;
+	}
+
+	function drawFloats(dt) {
+		for (let i = floats.length - 1; i >= 0; i--) {
+			const f = floats[i]; f.t += dt;
+			if (f.t >= f.life) { floats.splice(i, 1); continue; }
+			const a = 1 - f.t / f.life;
+			const px = f.x * tilePx + tilePx/2;
+			const py = f.y * tilePx + tilePx/2 + f.vy * f.t;
+			ctx.globalAlpha = a; ctx.fillStyle = f.col;
+			ctx.font = `bold ${Math.floor(tilePx*0.4)}px monospace`;
+			ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+			ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+			ctx.strokeText(f.text, px, py); ctx.fillText(f.text, px, py);
+		}
+		ctx.globalAlpha = 1;
+	}
+
+	// タイトル背景（うっすら動く魔法陣）
+	function drawTitleBg() {
+		const cx = viewW/2, cy = viewH/2;
+		ctx.save();
+		ctx.translate(cx, cy); ctx.rotate(animTime * 0.05);
+		ctx.strokeStyle = 'rgba(255,200,120,0.08)'; ctx.lineWidth = 1.5;
+		const R = Math.min(viewW, viewH) * 0.34;
+		for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.arc(0, 0, R - k*26, 0, Math.PI*2); ctx.stroke(); }
+		ctx.beginPath();
+		for (let a = 0; a < Math.PI * 2; a += Math.PI / 3) {
+			ctx.moveTo(Math.cos(a)*R, Math.sin(a)*R);
+			ctx.lineTo(Math.cos(a + Math.PI*2/3)*R, Math.sin(a + Math.PI*2/3)*R);
+		}
+		ctx.stroke();
+		ctx.restore();
+	}
+
+	// =====================================================================
+	//  メインループ（デルタタイム）
+	// =====================================================================
+	let last = performance.now();
+	function loop(now) {
+		let dt = (now - last) / 1000; last = now;
+		if (dt > 0.1) dt = 0.1;            // フレーム落ち時の暴走防止
+		animTime += dt;
+		draw(dt);
+		requestAnimationFrame(loop);
+	}
+
+	// 初期化
+	resize();
+	requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
