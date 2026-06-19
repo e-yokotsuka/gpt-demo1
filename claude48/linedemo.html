@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<!-- このファイルの作者情報（AIメタデータ） -->
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="description" content="Dynamic Colorful Lines - 流れるカラフルなラインのデモ（Claude Opus 4.8版）">
+	<title>Dynamic Colorful Lines - Claude Opus 4.8版</title>
+	<style>
+		/* 画面全体を黒背景で占有し、はみ出しを隠す */
+		html, body {
+			margin: 0;
+			padding: 0;
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			background: #04060d;
+		}
+		body {
+			/* 画面奥に向かう放射状グラデーションで奥行きを演出 */
+			background:
+				radial-gradient(circle at 30% 25%, rgba(40, 70, 140, 0.25), transparent 55%),
+				radial-gradient(circle at 75% 80%, rgba(120, 30, 110, 0.22), transparent 55%),
+				linear-gradient(160deg, #04060d 0%, #070a16 60%, #0a0512 100%);
+		}
+		canvas {
+			display: block;
+			width: 100vw;
+			height: 100vh;
+		}
+		/* 右上のタイトル表記 */
+		.label {
+			position: fixed;
+			top: 16px;
+			right: 18px;
+			font-family: "Segoe UI", "Hiragino Sans", system-ui, sans-serif;
+			font-size: 11px;
+			font-weight: 600;
+			letter-spacing: 0.22em;
+			color: rgba(220, 230, 255, 0.55);
+			text-transform: uppercase;
+			pointer-events: none;
+			user-select: none;
+			text-shadow: 0 0 12px rgba(80, 140, 255, 0.4);
+		}
+		/* 操作ヒント（数秒でフェードアウト） */
+		.hint {
+			position: fixed;
+			bottom: 16px;
+			left: 18px;
+			font-family: "Segoe UI", "Hiragino Sans", system-ui, sans-serif;
+			font-size: 12px;
+			color: rgba(220, 230, 255, 0.45);
+			pointer-events: none;
+			user-select: none;
+			transition: opacity 1.2s ease;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="stage"></canvas>
+	<div class="label">Claude Opus 4.8 / Dynamic Colorful Lines</div>
+	<div class="hint" id="hint">マウス（タッチ）でラインを引き寄せ・反発できます</div>
+	<script>
+	(() => {
+		"use strict";
+
+		const canvas = document.getElementById("stage");
+		const ctx = canvas.getContext("2d", { alpha: false });
+		const hintEl = document.getElementById("hint");
+
+		// 動きを抑える設定（アクセシビリティ）を尊重する
+		const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+		let width = 0;          // CSSピクセル幅
+		let height = 0;         // CSSピクセル高さ
+		let dpr = 1;            // デバイスピクセル比
+		let lines = [];         // ライン（リボン）の配列
+
+		// マウス／タッチの状態。引力(active)と斥力(repel)を持つ
+		const pointer = { x: 0, y: 0, active: false, repel: false };
+
+		// 履歴を持つ「先頭点」。リボンは過去の軌跡を結んで描く
+		class Ribbon {
+			constructor() {
+				this.reset(true);
+			}
+
+			reset(initial) {
+				// 画面内のランダムな位置から開始
+				this.x = Math.random() * width;
+				this.y = Math.random() * height;
+				const ang = Math.random() * Math.PI * 2;
+				const sp = 1.4 + Math.random() * 2.6;
+				this.vx = Math.cos(ang) * sp;
+				this.vy = Math.sin(ang) * sp;
+				// 色相とその変化速度。リボン全体で色がゆっくり流れる
+				this.hue = Math.random() * 360;
+				this.hueSpeed = 0.25 + Math.random() * 0.9;
+				this.width = 1.1 + Math.random() * 2.6;
+				// 軌跡の長さ（点の最大数）。短すぎず長すぎず
+				this.maxLen = reduceMotion ? 14 : (18 + Math.floor(Math.random() * 26));
+				this.history = [];
+				// 揺らぎ用の位相。サイン波で進路を微妙に蛇行させる
+				this.phase = Math.random() * Math.PI * 2;
+				this.wobble = 0.015 + Math.random() * 0.03;
+				if (initial) {
+					for (let i = 0; i < this.maxLen; i++) {
+						this.history.push({ x: this.x, y: this.y });
+					}
+				}
+			}
+
+			update(t) {
+				// ゆるやかな蛇行（フローフィールド風の進路変化）
+				this.phase += this.wobble;
+				const curl = Math.sin(this.phase) * 0.35;
+				const cos = Math.cos(curl);
+				const sin = Math.sin(curl);
+				const nvx = this.vx * cos - this.vy * sin;
+				const nvy = this.vx * sin + this.vy * cos;
+				this.vx = nvx;
+				this.vy = nvy;
+
+				// ポインタとの相互作用（引力／斥力）
+				if (pointer.active) {
+					const dx = pointer.x - this.x;
+					const dy = pointer.y - this.y;
+					const dist2 = dx * dx + dy * dy;
+					const radius = 260;
+					if (dist2 < radius * radius) {
+						const dist = Math.sqrt(dist2) || 1;
+						// 距離が近いほど強く作用させる
+						const force = (1 - dist / radius) * 0.9;
+						const dir = pointer.repel ? -1 : 1;
+						this.vx += (dx / dist) * force * dir;
+						this.vy += (dy / dist) * force * dir;
+					}
+				}
+
+				// 速度を一定範囲に保ち、暴走を防ぐ
+				const speed = Math.hypot(this.vx, this.vy);
+				const maxSpeed = 4.5;
+				const minSpeed = 1.2;
+				if (speed > maxSpeed) {
+					this.vx = (this.vx / speed) * maxSpeed;
+					this.vy = (this.vy / speed) * maxSpeed;
+				} else if (speed < minSpeed) {
+					this.vx = (this.vx / (speed || 1)) * minSpeed;
+					this.vy = (this.vy / (speed || 1)) * minSpeed;
+				}
+
+				this.x += this.vx;
+				this.y += this.vy;
+
+				// 壁で滑らかに反射（少し内側に押し戻す）
+				if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx); }
+				else if (this.x > width) { this.x = width; this.vx = -Math.abs(this.vx); }
+				if (this.y < 0) { this.y = 0; this.vy = Math.abs(this.vy); }
+				else if (this.y > height) { this.y = height; this.vy = -Math.abs(this.vy); }
+
+				// 色相を進める
+				this.hue = (this.hue + this.hueSpeed) % 360;
+
+				// 軌跡へ現在位置を追加し、古い点を捨てる
+				this.history.push({ x: this.x, y: this.y });
+				if (this.history.length > this.maxLen) {
+					this.history.shift();
+				}
+			}
+
+			draw() {
+				const h = this.history;
+				const n = h.length;
+				if (n < 2) return;
+
+				// 軌跡を尾→頭の順に描く。後半ほど太く明るくして
+				// 「流れるリボン」の質感を出す
+				for (let i = 1; i < n; i++) {
+					const p0 = h[i - 1];
+					const p1 = h[i];
+					const ratio = i / n;               // 0(尾)〜1(頭)
+					const alpha = ratio * ratio * 0.85; // 頭に向けて不透明
+					const lw = this.width * (0.3 + ratio * 0.7);
+					// 色相も尾と頭でわずかにずらしてグラデーション化
+					const hue = (this.hue - (1 - ratio) * 40 + 360) % 360;
+					ctx.strokeStyle = `hsla(${hue}, 95%, ${55 + ratio * 12}%, ${alpha})`;
+					ctx.lineWidth = lw;
+					ctx.beginPath();
+					ctx.moveTo(p0.x, p0.y);
+					ctx.lineTo(p1.x, p1.y);
+					ctx.stroke();
+				}
+
+				// 頭に小さな光点を置いてアクセント
+				const head = h[n - 1];
+				ctx.fillStyle = `hsla(${this.hue}, 100%, 75%, 0.9)`;
+				ctx.beginPath();
+				ctx.arc(head.x, head.y, this.width * 0.8, 0, Math.PI * 2);
+				ctx.fill();
+			}
+		}
+
+		// 画面サイズに応じてライン本数を決める（パフォーマンス調整）
+		function lineCountForArea() {
+			const area = width * height;
+			// 約1万px²あたり0.9本を目安に、上下限を設ける
+			let count = Math.round(area / 11000);
+			count = Math.max(40, Math.min(160, count));
+			if (reduceMotion) count = Math.min(count, 50);
+			return count;
+		}
+
+		// キャンバスをDPR対応で初期化する
+		function resize() {
+			dpr = Math.min(window.devicePixelRatio || 1, 2); // 過剰な高DPRは2で頭打ち
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = Math.floor(width * dpr);
+			canvas.height = Math.floor(height * dpr);
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+			// 線の接合をなめらかに
+			ctx.lineCap = "round";
+			ctx.lineJoin = "round";
+
+			// 背景を一度塗りつぶす（残像のベース）
+			ctx.fillStyle = "#04060d";
+			ctx.fillRect(0, 0, width, height);
+
+			// ライン本数を再構成
+			const target = lineCountForArea();
+			lines = Array.from({ length: target }, () => new Ribbon());
+
+			// ポインタ初期位置は中央
+			if (!pointer.active) {
+				pointer.x = width / 2;
+				pointer.y = height / 2;
+			}
+		}
+
+		// メインループ。残像（フェード塗り）→更新→描画
+		let lastTime = performance.now();
+		function frame(now) {
+			const t = now;
+
+			// 残像エフェクト：半透明の黒で塗り、軌跡を徐々に消す
+			// reduceMotion時はやや濃く塗って残像を短くする
+			ctx.globalCompositeOperation = "source-over";
+			ctx.fillStyle = reduceMotion ? "rgba(4, 6, 13, 0.35)" : "rgba(4, 6, 13, 0.16)";
+			ctx.fillRect(0, 0, width, height);
+
+			// 加算合成で線が重なると明るく光る
+			ctx.globalCompositeOperation = "lighter";
+			for (let i = 0; i < lines.length; i++) {
+				const line = lines[i];
+				line.update(t);
+				line.draw();
+			}
+
+			lastTime = now;
+			requestAnimationFrame(frame);
+		}
+
+		// ポインタ操作のハンドリング ---------------------------------
+		function setPointer(x, y) {
+			pointer.x = x;
+			pointer.y = y;
+			pointer.active = true;
+		}
+
+		window.addEventListener("mousemove", (e) => setPointer(e.clientX, e.clientY));
+		window.addEventListener("mousedown", (e) => {
+			setPointer(e.clientX, e.clientY);
+			// 右クリックや副ボタンで斥力モードへ
+			pointer.repel = (e.button !== 0);
+		});
+		window.addEventListener("mouseup", () => { pointer.repel = false; });
+		window.addEventListener("mouseleave", () => { pointer.active = false; });
+		// 右クリックメニューは抑制（斥力操作のため）
+		window.addEventListener("contextmenu", (e) => e.preventDefault());
+
+		window.addEventListener("touchstart", (e) => {
+			const tch = e.touches[0];
+			if (tch) setPointer(tch.clientX, tch.clientY);
+		}, { passive: true });
+		window.addEventListener("touchmove", (e) => {
+			const tch = e.touches[0];
+			if (tch) setPointer(tch.clientX, tch.clientY);
+		}, { passive: true });
+		window.addEventListener("touchend", () => { pointer.active = false; });
+
+		// リサイズはデバウンスして再構成
+		let resizeTimer = null;
+		window.addEventListener("resize", () => {
+			clearTimeout(resizeTimer);
+			resizeTimer = setTimeout(resize, 150);
+		});
+
+		// 数秒後に操作ヒントを消す
+		setTimeout(() => {
+			if (hintEl) hintEl.style.opacity = "0";
+		}, 5000);
+
+		// 起動
+		resize();
+		requestAnimationFrame(frame);
+	})();
+	</script>
+</body>
+</html>

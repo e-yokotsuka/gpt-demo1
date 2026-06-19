@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- AIメタ情報（必須） -->
+  <meta name="ai.author" content="Claude Opus 4.8">
+  <meta name="ai.model" content="claude-opus-4-8">
+  <meta name="ai.note" content="GPU(WebGL)プラズマ/トンネル/メタボールにCanvas2Dのサインスクローラー・ラスターバー・3Dスターフィールドを重ねた自己完結メガデモ。">
+  <title>MegaDemo Style Demo - Claude Opus 4.8版</title>
+  <style>
+    /* 画面全体に表示し、はみ出しは隠す */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #03020a;
+      cursor: none;
+    }
+    /* 2枚のキャンバスを完全に重ねる（GLが下、2Dが上） */
+    canvas {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #gl  { z-index: 0; }
+    #fx  { z-index: 1; }
+    /* prefers-reduced-motion 用の静的フォールバック表示 */
+    #fallback {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: #cfe8ff;
+      text-align: center;
+      background: radial-gradient(circle at 50% 40%, #1a1240, #05030f 70%);
+    }
+    #fallback h1 {
+      font-size: clamp(28px, 6vw, 72px);
+      letter-spacing: 0.08em;
+      margin: 0 0 0.3em;
+      background: linear-gradient(90deg, #7df9ff, #ff7df0, #ffe066);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    #fallback p { opacity: 0.7; font-size: clamp(13px, 2.4vw, 18px); }
+  </style>
+</head>
+<body>
+  <!-- 背景: GPUで描くプラズマ＋トンネル＋メタボール -->
+  <canvas id="gl"></canvas>
+  <!-- 前景: 古典的メガデモ要素（スクローラー/ラスター/スター/ロゴ） -->
+  <canvas id="fx"></canvas>
+  <!-- アニメーション抑制設定時の静的表示 -->
+  <div id="fallback">
+    <h1>CLAUDE OPUS 4.8 MEGADEMO</h1>
+    <p>アニメーション抑制が有効なため静止画で表示しています</p>
+  </div>
+
+  <script>
+  "use strict";
+
+  // =========================================================================
+  // メガデモ "Claude Opus 4.8版"
+  //  - 背景はWebGLのフラグメントシェーダーでGPU描画（プラズマ＋無限トンネル＋
+  //    メタボール＋走査線）。CPU負荷を抑え、4K相当でも滑らかに動く。
+  //  - 前景はCanvas2Dで古典的なデモシーン要素（サインスクローラー、コッパー/
+  //    ラスターバー、3Dスターフィールド、グローするロゴ）を合成。
+  //  - 単一HTML・外部CDNなしの自己完結構成。
+  // =========================================================================
+
+  const glCanvas = document.getElementById("gl");
+  const fxCanvas = document.getElementById("fx");
+  const fxCtx = fxCanvas.getContext("2d", { alpha: true });
+
+  // 動きの抑制設定を尊重（reduced-motionなら静的フォールバックへ）
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // デバイスピクセル比は上限を設けてパフォーマンスを確保
+  const DPR_CAP = 2;
+  let dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+
+  // 論理サイズ（CSSピクセル）
+  let W = window.innerWidth;
+  let H = window.innerHeight;
+
+  // ---------------------------------------------------------------------------
+  // WebGL 初期化
+  // ---------------------------------------------------------------------------
+  const gl = glCanvas.getContext("webgl", { antialias: false, alpha: false, depth: false })
+          || glCanvas.getContext("experimental-webgl");
+
+  // 頂点シェーダー: 画面全体を覆う三角形を出力するだけ
+  const VERT_SRC = `
+    attribute vec2 aPos;
+    void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+  `;
+
+  // フラグメントシェーダー: 背景エフェクトの本体
+  //  プラズマ・トンネル・メタボール・ビネット・走査線を合成する。
+  const FRAG_SRC = `
+    precision highp float;
+    uniform vec2  uRes;   // 解像度(px)
+    uniform float uTime;  // 経過時間(秒)
+
+    // 2D回転行列
+    mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
+
+    // HSV->RGB変換（鮮やかな色相循環に使用）
+    vec3 hsv2rgb(vec3 c){
+      vec3 p = abs(fract(c.xxx + vec3(0.0,2.0/3.0,1.0/3.0))*6.0 - 3.0);
+      return c.z * mix(vec3(1.0), clamp(p-1.0,0.0,1.0), c.y);
+    }
+
+    void main(){
+      // 中心を原点としアスペクト比を補正した座標
+      vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / min(uRes.x, uRes.y);
+      float t = uTime;
+
+      // --- レイヤー1: 多重サインのプラズマ ---
+      vec2 p = uv * 3.0;
+      float plasma =
+          sin(p.x*1.7 + t*0.9)
+        + sin(p.y*1.9 - t*0.7)
+        + sin((p.x+p.y)*1.3 + t*0.6)
+        + sin(length(p)*2.2 - t*1.1);
+      plasma *= 0.25; // -1..1へ正規化
+      float hue = plasma*0.5 + 0.5 + t*0.03;
+      vec3 col = hsv2rgb(vec3(hue, 0.65, 0.55)) * 0.6;
+
+      // --- レイヤー2: 無限トンネル ---
+      vec2 tp = uv * rot(t*0.15);
+      float ang = atan(tp.y, tp.x);
+      float rad = length(tp) + 0.0001;
+      float depth = 0.35/rad + t*0.5;          // 奥行き方向のスクロール
+      float tunnel = sin(depth*6.2831*1.5) * sin(ang*8.0 + t*0.5);
+      float tube = smoothstep(0.0, 0.6, 1.0 - rad); // 中心ほど明るい
+      vec3 tunnelCol = hsv2rgb(vec3(fract(depth*0.15 + 0.55), 0.8, 1.0));
+      col += tunnelCol * tunnel * tube * 0.45;
+
+      // --- レイヤー3: メタボール（有機的な光の塊） ---
+      float field = 0.0;
+      for(int i=0;i<5;i++){
+        float fi = float(i);
+        vec2 c = vec2(
+          sin(t*(0.3+fi*0.12) + fi*2.1) * 0.6,
+          cos(t*(0.27+fi*0.09) + fi*1.3) * 0.6
+        );
+        float d = length(uv - c);
+        field += 0.045 / (d*d + 0.02);
+      }
+      float blob = smoothstep(0.9, 1.8, field);
+      vec3 blobCol = hsv2rgb(vec3(fract(t*0.08 + 0.85), 0.9, 1.0));
+      col += blobCol * blob * 0.9;
+
+      // 全体の発光感を強調
+      col = pow(col, vec3(0.85));
+
+      // --- 走査線（CRT風） ---
+      float scan = 0.92 + 0.08*sin(gl_FragCoord.y*3.1416 + t*4.0);
+      col *= scan;
+
+      // --- ビネット（周辺減光） ---
+      float vig = smoothstep(1.25, 0.25, length(uv));
+      col *= mix(0.45, 1.0, vig);
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `;
+
+  let glProgram = null;
+  let uRes = null, uTime = null;
+  let glOK = false;
+
+  // シェーダーコンパイル補助
+  function compile(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      console.warn("shader compile error:", gl.getShaderInfoLog(s));
+      return null;
+    }
+    return s;
+  }
+
+  function initGL(){
+    if(!gl) return false;
+    const vs = compile(gl.VERTEX_SHADER, VERT_SRC);
+    const fs = compile(gl.FRAGMENT_SHADER, FRAG_SRC);
+    if(!vs || !fs) return false;
+
+    glProgram = gl.createProgram();
+    gl.attachShader(glProgram, vs);
+    gl.attachShader(glProgram, fs);
+    gl.linkProgram(glProgram);
+    if(!gl.getProgramParameter(glProgram, gl.LINK_STATUS)){
+      console.warn("program link error:", gl.getProgramInfoLog(glProgram));
+      return false;
+    }
+    gl.useProgram(glProgram);
+
+    // 画面全体を覆う1枚の大きな三角形
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+    const aPos = gl.getAttribLocation(glProgram, "aPos");
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    uRes  = gl.getUniformLocation(glProgram, "uRes");
+    uTime = gl.getUniformLocation(glProgram, "uTime");
+    return true;
+  }
+
+  glOK = initGL();
+
+  // ---------------------------------------------------------------------------
+  // 前景(Canvas2D)用データ
+  // ---------------------------------------------------------------------------
+
+  // 3Dスターフィールド
+  const STAR_COUNT = 360;
+  const stars = [];
+  function seedStars(){
+    stars.length = 0;
+    for(let i=0;i<STAR_COUNT;i++){
+      stars.push({
+        x: (Math.random()*2-1),
+        y: (Math.random()*2-1),
+        z: Math.random(),         // 0(近い)..1(遠い)
+        s: 0.6 + Math.random()*1.6
+      });
+    }
+  }
+  seedStars();
+
+  // スクロールメッセージ（古典的なグリーティング調）
+  const MESSAGE =
+    "  CLAUDE OPUS 4.8 PRESENTS  *  MEGADEMO STYLE DEMO  *  " +
+    "GPU PLASMA + INFINITE TUNNEL + METABALLS + 3D STARFIELD  *  " +
+    "GREETINGS TO ALL DEMOSCENE CODERS  *  PUSHING PIXELS SINCE 1986  *  " +
+    "ENJOY THE SHOW ...      ";
+
+  // ---------------------------------------------------------------------------
+  // リサイズ処理（両キャンバス＋GLビューポート）
+  // ---------------------------------------------------------------------------
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    W = window.innerWidth;
+    H = window.innerHeight;
+
+    glCanvas.width  = Math.floor(W * dpr);
+    glCanvas.height = Math.floor(H * dpr);
+    fxCanvas.width  = Math.floor(W * dpr);
+    fxCanvas.height = Math.floor(H * dpr);
+
+    if(glOK){
+      gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+    }
+    // 2Dはdpr倍のスケールでCSSピクセル基準に描画
+    fxCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // ---------------------------------------------------------------------------
+  // 前景描画関数群
+  // ---------------------------------------------------------------------------
+
+  // 3Dスターフィールド（手前に向かって飛んでくる）
+  function drawStars(t, dt){
+    const cx = W/2, cy = H/2;
+    const spread = Math.min(W, H);
+    fxCtx.save();
+    for(const st of stars){
+      st.z -= dt*0.25;
+      if(st.z <= 0.02){ st.x=(Math.random()*2-1); st.y=(Math.random()*2-1); st.z=1; }
+      const k = 1/st.z;
+      const sx = cx + st.x*k*spread*0.35;
+      const sy = cy + st.y*k*spread*0.35;
+      if(sx<-10||sx>W+10||sy<-10||sy>H+10) continue;
+      const size = st.s*k*0.6;
+      const a = Math.min(1, (1-st.z)*1.4);
+      fxCtx.fillStyle = "rgba(210,235,255,"+a.toFixed(3)+")";
+      fxCtx.fillRect(sx, sy, size, size);
+    }
+    fxCtx.restore();
+  }
+
+  // コッパー/ラスターバー（左右端に縦の光帯を上下動）
+  function drawRasterBars(t){
+    const barCount = 6;
+    fxCtx.save();
+    fxCtx.globalCompositeOperation = "screen";
+    for(let i=0;i<barCount;i++){
+      const phase = t*1.4 + i*1.05;
+      const y = H*0.5 + Math.sin(phase)*H*0.34;
+      const hue = (i*60 + t*40) % 360;
+      const thick = 26;
+      const grad = fxCtx.createLinearGradient(0, y-thick, 0, y+thick);
+      grad.addColorStop(0,   "hsla("+hue+",90%,60%,0)");
+      grad.addColorStop(0.5, "hsla("+hue+",95%,68%,0.55)");
+      grad.addColorStop(1,   "hsla("+hue+",90%,60%,0)");
+      fxCtx.fillStyle = grad;
+      fxCtx.fillRect(0, y-thick, W, thick*2);
+    }
+    fxCtx.restore();
+  }
+
+  // サインスクローラー（文字を波打たせ色相を循環）
+  let scrollX = 0;
+  function drawScroller(t, dt){
+    const fontPx = Math.max(20, Math.floor(Math.min(W,H)*0.05));
+    const charGap = fontPx*0.66;
+    fxCtx.save();
+    fxCtx.font = "900 "+fontPx+"px 'Trebuchet MS', Consolas, monospace";
+    fxCtx.textBaseline = "middle";
+    fxCtx.globalCompositeOperation = "lighter";
+
+    const baseY = H*0.8;
+    const total = MESSAGE.length*charGap;
+    scrollX -= dt*180; // 左へスクロール
+    // ループ復帰
+    if(scrollX < -total) scrollX += total;
+
+    for(let i=0;i<MESSAGE.length;i++){
+      const ch = MESSAGE[i];
+      if(ch === " ") continue;
+      // 2周ぶん配置して途切れを防ぐ
+      for(let rep=0; rep<2; rep++){
+        const x = scrollX + i*charGap + rep*total;
+        if(x < -fontPx || x > W+fontPx) continue;
+        const wave = Math.sin(x*0.012 + t*2.2)*fontPx*0.55;
+        const scaleY = 1 + Math.sin(x*0.02 + t*3)*0.12;
+        const hue = (x*0.4 + t*60) % 360;
+        fxCtx.save();
+        fxCtx.translate(x, baseY + wave);
+        fxCtx.scale(1, scaleY);
+        fxCtx.shadowColor = "hsla("+hue+",100%,65%,0.9)";
+        fxCtx.shadowBlur = 18;
+        fxCtx.fillStyle = "hsl("+hue+",100%,72%)";
+        fxCtx.fillText(ch, 0, 0);
+        fxCtx.restore();
+      }
+    }
+    fxCtx.restore();
+  }
+
+  // 中央ロゴ（バウンス＆グロー）
+  function drawLogo(t){
+    const cx = W/2;
+    const cy = H*0.34 + Math.sin(t*1.1)*H*0.03;
+    const size = Math.max(30, Math.floor(Math.min(W,H)*0.11));
+    const pulse = 1 + Math.sin(t*2.4)*0.04;
+    fxCtx.save();
+    fxCtx.translate(cx, cy);
+    fxCtx.scale(pulse, pulse);
+    fxCtx.textAlign = "center";
+    fxCtx.textBaseline = "middle";
+    fxCtx.font = "900 "+size+"px 'Trebuchet MS', Arial Black, sans-serif";
+
+    // 多層グローで立体的に
+    const hue = (t*30)%360;
+    fxCtx.globalCompositeOperation = "lighter";
+    for(let g=3; g>=1; g--){
+      fxCtx.shadowColor = "hsla("+hue+",100%,60%,0.8)";
+      fxCtx.shadowBlur = g*22;
+      fxCtx.fillStyle = "hsla("+((hue+40)%360)+",100%,75%,0.5)";
+      fxCtx.fillText("CLAUDE OPUS 4.8", 0, 0);
+    }
+    fxCtx.shadowBlur = 0;
+    fxCtx.fillStyle = "#ffffff";
+    fxCtx.globalCompositeOperation = "source-over";
+    fxCtx.font = "900 "+size+"px 'Trebuchet MS', Arial Black, sans-serif";
+    fxCtx.fillText("CLAUDE OPUS 4.8", 0, 0);
+    fxCtx.restore();
+  }
+
+  // ---------------------------------------------------------------------------
+  // 静的フォールバック（reduced-motion時）
+  // ---------------------------------------------------------------------------
+  function renderStatic(){
+    // GLは1フレームだけ描く（時間固定）
+    if(glOK){
+      gl.uniform2f(uRes, glCanvas.width, glCanvas.height);
+      gl.uniform1f(uTime, 12.0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    // 2Dロゴとメッセージを静止表示
+    fxCtx.clearRect(0,0,W,H);
+    drawLogo(0.0);
+    document.getElementById("fallback").style.display = "flex";
+  }
+
+  // ---------------------------------------------------------------------------
+  // メインループ
+  // ---------------------------------------------------------------------------
+  let startTime = performance.now();
+  let lastTime = startTime;
+
+  function frame(now){
+    const t  = (now - startTime)/1000;
+    let dt = (now - lastTime)/1000;
+    lastTime = now;
+    if(dt > 0.05) dt = 0.05; // タブ復帰時などのジャンプ抑制
+
+    // 背景(GPU)
+    if(glOK){
+      gl.uniform2f(uRes, glCanvas.width, glCanvas.height);
+      gl.uniform1f(uTime, t);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    } else {
+      // WebGL非対応時の簡易フォールバック背景
+      fxCtx.fillStyle = "#05030f";
+      fxCtx.fillRect(0,0,W,H);
+    }
+
+    // 前景(2D): 残像トレイルのため軽く暗幕を重ねる
+    fxCtx.globalCompositeOperation = "source-over";
+    fxCtx.fillStyle = "rgba(3,2,12,0.30)";
+    fxCtx.fillRect(0,0,W,H);
+
+    drawStars(t, dt);
+    drawRasterBars(t);
+    drawScroller(t, dt);
+    drawLogo(t);
+
+    requestAnimationFrame(frame);
+  }
+
+  if(reduceMotion){
+    renderStatic();
+  } else {
+    requestAnimationFrame(frame);
+  }
+  </script>
+</body>
+</html>

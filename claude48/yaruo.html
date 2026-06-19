@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="ai.note" content="Yaruo AA Studio - Claude Opus 4.8 original edition.">
+	<title>やる夫AA生成スタジオ - Claude Opus 4.8版</title>
+	<style>
+		/* =====================================================================
+		   やる夫AA生成スタジオ — Claude Opus 4.8 オリジナル版
+
+		   テーマ: 2chの「やる夫」をAA(アスキーアート)として再現・生成する。
+		   既存3版が「静的に1枚表示するだけ」だったのに対し、本版は
+
+		     - キャラクターを切り替えて鑑賞できるギャラリー
+		     - AAが一文字ずつ「描き上がる」タイピング演出（reduced-motion尊重）
+		     - 顔（目・口）の差し替えで表情を生成する簡易ジェネレーター
+		     - セリフ吹き出し・テーマ切替・クリップボードコピー
+		     - 背景には軽量な canvas パーティクル(舞う「文字」)を敷く
+
+		   を盛り込み、視覚的完成度・滑らかさ・パフォーマンスで上回ることを狙う。
+		   ===================================================================== */
+
+		:root {
+			--bg-0: #0c1018;
+			--bg-1: #141b29;
+			--ink: #e8edf6;
+			--muted: #93a4c0;
+			--accent: #6ad0ff;
+			--accent-2: #ffd66a;
+			--panel: rgba(18, 25, 39, 0.72);
+			--border: rgba(140, 170, 220, 0.22);
+			--aa-bg: #fbf7ec;
+			--aa-ink: #1a1a1a;
+			--shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+		}
+		/* 「2chスレ風」ライトテーマ */
+		body.theme-2ch {
+			--bg-0: #efefef;
+			--bg-1: #ffffff;
+			--ink: #1a1a1a;
+			--muted: #5a5a5a;
+			--accent: #cc0000;
+			--accent-2: #008800;
+			--panel: rgba(238, 255, 255, 0.92);
+			--border: rgba(120, 120, 120, 0.4);
+			--aa-bg: #efefef;
+			--aa-ink: #000000;
+			--shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+		}
+
+		* { box-sizing: border-box; }
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			width: 100vw;
+			height: 100vh;
+			overflow: hidden;
+			background: var(--bg-0);
+			color: var(--ink);
+			font-family: system-ui, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+			transition: background 0.4s ease, color 0.4s ease;
+		}
+
+		/* 背景の舞う文字 canvas */
+		#bg {
+			position: fixed;
+			inset: 0;
+			width: 100vw;
+			height: 100vh;
+			display: block;
+			z-index: 0;
+		}
+
+		/* レイアウト全体 */
+		.app {
+			position: relative;
+			z-index: 1;
+			width: 100vw;
+			height: 100vh;
+			display: grid;
+			grid-template-rows: auto 1fr auto;
+			gap: 0;
+		}
+
+		/* ヘッダー */
+		header {
+			display: flex;
+			align-items: center;
+			gap: 14px;
+			padding: 14px 22px;
+			backdrop-filter: blur(8px);
+			-webkit-backdrop-filter: blur(8px);
+		}
+		header h1 {
+			margin: 0;
+			font-size: clamp(15px, 2.4vw, 22px);
+			font-weight: 800;
+			letter-spacing: 0.02em;
+			display: flex;
+			align-items: baseline;
+			gap: 10px;
+			white-space: nowrap;
+		}
+		header h1 .sub {
+			font-size: 0.6em;
+			font-weight: 600;
+			color: var(--muted);
+			letter-spacing: 0.08em;
+		}
+		.spacer { flex: 1; }
+		.btn {
+			appearance: none;
+			border: 1px solid var(--border);
+			background: var(--panel);
+			color: var(--ink);
+			font: 600 13px/1 system-ui, sans-serif;
+			padding: 9px 14px;
+			border-radius: 10px;
+			cursor: pointer;
+			transition: transform 0.12s ease, border-color 0.2s ease, background 0.2s ease;
+			white-space: nowrap;
+		}
+		.btn:hover { transform: translateY(-1px); border-color: var(--accent); }
+		.btn:active { transform: translateY(0); }
+		.btn.copied { border-color: var(--accent-2); color: var(--accent-2); }
+
+		/* 中央ステージ */
+		.stage {
+			min-height: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 8px 22px;
+			position: relative;
+		}
+
+		/* AA表示カード */
+		.card {
+			position: relative;
+			max-width: min(96vw, 760px);
+			max-height: 100%;
+			background: var(--aa-bg);
+			border-radius: 16px;
+			box-shadow: var(--shadow);
+			padding: 26px 30px;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 14px;
+			transition: background 0.4s ease, transform 0.5s cubic-bezier(.2,.8,.2,1), opacity 0.5s ease;
+			overflow: hidden;
+		}
+		/* 切替時の登場アニメ */
+		.card.swapping { transform: translateY(10px) scale(0.985); opacity: 0; }
+
+		/* セリフ吹き出し */
+		.bubble {
+			align-self: stretch;
+			position: relative;
+			background: #fffef8;
+			color: #222;
+			border: 2px solid #2a2a2a;
+			border-radius: 14px;
+			padding: 10px 16px;
+			font-size: clamp(13px, 2.2vw, 17px);
+			font-weight: 700;
+			text-align: center;
+			min-height: 1.4em;
+		}
+		.bubble::after {
+			content: "";
+			position: absolute;
+			bottom: -11px;
+			left: 36px;
+			width: 18px;
+			height: 18px;
+			background: #fffef8;
+			border-right: 2px solid #2a2a2a;
+			border-bottom: 2px solid #2a2a2a;
+			transform: rotate(45deg);
+		}
+
+		/* AA本体（等幅で崩れ防止） */
+		pre.aa {
+			margin: 0;
+			color: var(--aa-ink);
+			font-family: "MS PGothic", "ＭＳ Ｐゴシック", "IPAMonaPGothic", "Mona",
+				"Saitamaar", "MS Gothic", "Hiragino Kaku Gothic ProN", monospace;
+			font-size: clamp(10px, 2.1vw, 17px);
+			line-height: 1.12;
+			letter-spacing: 0;
+			white-space: pre;
+			text-align: left;
+			min-height: 1em;
+			transition: color 0.4s ease;
+		}
+		/* タイピング中のカーソル */
+		pre.aa.typing::after {
+			content: "▋";
+			color: var(--accent);
+			animation: blink 0.9s steps(2, start) infinite;
+		}
+		@keyframes blink { 50% { opacity: 0; } }
+
+		.name-tag {
+			font-size: 13px;
+			font-weight: 700;
+			color: #555;
+			letter-spacing: 0.04em;
+		}
+
+		/* フッター: キャラ選択 + 表情コントロール */
+		footer {
+			padding: 12px 22px 16px;
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+			backdrop-filter: blur(8px);
+			-webkit-backdrop-filter: blur(8px);
+		}
+		.chips {
+			display: flex;
+			gap: 8px;
+			overflow-x: auto;
+			padding-bottom: 4px;
+			scrollbar-width: thin;
+		}
+		.chip {
+			flex: 0 0 auto;
+			border: 1px solid var(--border);
+			background: var(--panel);
+			color: var(--muted);
+			font: 600 13px/1 system-ui, sans-serif;
+			padding: 9px 15px;
+			border-radius: 999px;
+			cursor: pointer;
+			transition: all 0.18s ease;
+			white-space: nowrap;
+		}
+		.chip:hover { color: var(--ink); border-color: var(--accent); }
+		.chip.active {
+			background: var(--accent);
+			color: #06121c;
+			border-color: var(--accent);
+		}
+
+		.controls {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 14px;
+			align-items: center;
+		}
+		.control {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			font-size: 12px;
+			color: var(--muted);
+			font-weight: 600;
+		}
+		.seg {
+			display: inline-flex;
+			border: 1px solid var(--border);
+			border-radius: 9px;
+			overflow: hidden;
+			background: var(--panel);
+		}
+		.seg button {
+			appearance: none;
+			border: 0;
+			background: transparent;
+			color: var(--muted);
+			font: 700 16px/1 monospace;
+			padding: 7px 11px;
+			cursor: pointer;
+			transition: background 0.15s ease, color 0.15s ease;
+			min-width: 34px;
+		}
+		.seg button.on { background: var(--accent); color: #06121c; }
+		.seg button:hover:not(.on) { color: var(--ink); }
+
+		.hint { font-size: 11px; color: var(--muted); }
+
+		/* クレジットバッジ */
+		.badge {
+			position: fixed;
+			bottom: 12px;
+			right: 16px;
+			z-index: 2;
+			padding: 6px 12px;
+			border-radius: 999px;
+			font: 700 10px/1 system-ui, sans-serif;
+			letter-spacing: 0.14em;
+			color: var(--muted);
+			background: var(--panel);
+			border: 1px solid var(--border);
+			pointer-events: none;
+			user-select: none;
+		}
+
+		@media (max-width: 560px) {
+			.card { padding: 18px 16px; }
+			header { padding: 10px 14px; }
+			footer { padding: 10px 14px 14px; }
+			.badge { display: none; }
+		}
+	</style>
+</head>
+<body>
+	<!-- 背景: 舞う文字パーティクル -->
+	<canvas id="bg"></canvas>
+
+	<div class="app">
+		<header>
+			<h1>やる夫AA生成スタジオ <span class="sub">Claude Opus 4.8版</span></h1>
+			<span class="spacer"></span>
+			<button class="btn" id="randomBtn" title="ランダムな表情にするお">🎲 表情ガチャ</button>
+			<button class="btn" id="copyBtn" title="AAをコピー">📋 コピー</button>
+			<button class="btn" id="themeBtn" title="テーマ切替">🎨 2ch風</button>
+		</header>
+
+		<main class="stage">
+			<div class="card" id="card">
+				<div class="bubble" id="bubble"></div>
+				<pre class="aa" id="aa" aria-label="やる夫AA"></pre>
+				<div class="name-tag" id="nameTag"></div>
+			</div>
+		</main>
+
+		<footer>
+			<div class="chips" id="chips"></div>
+			<div class="controls">
+				<div class="control">目
+					<div class="seg" id="eyesSeg"></div>
+				</div>
+				<div class="control">口
+					<div class="seg" id="mouthSeg"></div>
+				</div>
+				<span class="hint">← キャラを選び、目・口を差し替えて表情を生成。↑↓← → / クリックで操作。</span>
+			</div>
+		</footer>
+	</div>
+
+	<div class="badge">CLAUDE OPUS 4.8 · YARUO</div>
+
+	<script>
+	"use strict";
+
+	// ローモーション設定（タイピング演出と背景アニメを抑制）
+	const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+	/* =====================================================================
+	   AA データ
+
+	   やる夫系AAは「{E}=目, {M}=口」のプレースホルダを持つテンプレートで定義し、
+	   目と口のパーツを差し替えることで表情を「生成」できるようにする。
+	   各パーツは表示幅を揃えるため全角想定で設計。
+	   ===================================================================== */
+
+	// 目パーツ（左目・右目をまとめて1トークンで差し替え）
+	const EYES = {
+		"普通":   "（ ●） 　（●）",
+		"ジト目": "（ー）　 （ー）",
+		"驚き":   "（ ﾟ）　 （ ﾟ）",
+		"キラ":   "（ ☆）　（☆ ）",
+		"涙":     "（;＾）　（＾;）",
+		"怒り":   "（＃）　 （＃）",
+	};
+
+	// 口パーツ
+	const MOUTH = {
+		"への字": "（__人__）",
+		"笑顔":   "（ ▽ ）",
+		"驚き":   "（ ○ ）",
+		"ニヤリ": "（ ∀ ）",
+		"むぐ":   "（__＋__）",
+		"波":     "（ ～ ）",
+	};
+
+	// キャラクター定義
+	// body は配列（各行）。{E}{M} を含む行に目・口が入る。
+	// face=false のキャラは目・口の差し替えを無効化（コントロールを淡色化）。
+	const CHARACTERS = [
+		{
+			id: "yaruo",
+			name: "やる夫",
+			face: true,
+			line: "やる夫だお！",
+			lines: [
+				"　　　　 ____",
+				"　　　／⌒　 ⌒＼",
+				"　　/　{E}　＼",
+				"　 /::::::⌒{M}⌒:::::: ＼",
+				"　 |　　　 |r┬-|　　　 |",
+				"　 ＼　　　 `ー'´　　　／",
+				"　　/⌒ヽ　　 ー‐　　 ィヽ",
+				"　 /　 rー'ゝ　　 　〆 ヽ",
+				"　/,ノヾ 　,>　 　 < ヽ 　ゞ",
+			],
+		},
+		{
+			id: "yaranaio",
+			name: "やらない夫",
+			face: true,
+			line: "常識的に考えて…",
+			lines: [
+				"　　　　 ____",
+				"　　　／　 　 　＼",
+				"　　/ {E} ＼",
+				"　 /　　　{M}　　　＼",
+				"　 |　　　　　　　　 　 |",
+				"　 ＼　　　 ` ⌒´　　 ／",
+				"　　/⌒ヽ　　 ー‐　 　ィヽ",
+				"　 /　 rー'ゝ　 　　 〆 ヽ",
+				"　/,ノヾ 　,>　 　 < ヽ 　ゞ",
+			],
+		},
+		{
+			id: "yaruo_run",
+			name: "やる夫（ＡＡ走り）",
+			face: true,
+			line: "なんだってー！？",
+			lines: [
+				"　　 　 ____",
+				"　 　／ 　　 ＼ 三",
+				"　 ／ {E} ＼ 三",
+				"／　　　{M}　　 ＼ 三",
+				"|　　　　　　　　　 　| 三",
+				"＼　　　 ` ⌒´　 　／ 三 ＝＝＝＝",
+				"／⌒　　　　　　 ⌒＼ 三",
+			],
+		},
+		{
+			id: "shobon",
+			name: "しょぼーん",
+			face: false,
+			line: "( ´・ω・｀)しょぼーん",
+			lines: [
+				"　　　 ＿＿＿",
+				"　　／　　 　＼",
+				"　/ 　 ＼ 　 ／＼",
+				"/ 　　(●) (●) ＼",
+				"|　　　 （__人__）　 |",
+				"＼ 　 　 `⌒´　 　／",
+				"　/ 　　 　 　　 　＼",
+			],
+		},
+		{
+			id: "mona",
+			name: "モナー",
+			face: false,
+			line: "オマエモナー",
+			lines: [
+				"　　 ∧＿∧",
+				"　 （ ´∀｀）",
+				"　 （　　　 ）",
+				"　 ｜ ｜　|",
+				"　 （__）_)",
+			],
+		},
+		{
+			id: "giko",
+			name: "ギコ",
+			face: false,
+			line: "逝ってよし！",
+			lines: [
+				"　　 ∧∧",
+				"　 （ ゜Д゜）",
+				"　 ⊂　　 ⊃",
+				"　 （つ　ノ",
+				"　 　 ∪∪",
+			],
+		},
+	];
+
+	// セリフのバリエーション（吹き出し用・id別）
+	const EXTRA_LINES = {
+		yaruo: ["やる夫だお！", "ﾜｸﾜｸが止まらないお！", "やる夫に任せるお！", "そんなのアリかお…？"],
+		yaranaio: ["常識的に考えて…", "…で、結論は？", "やれやれだぜ。", "落ち着けやる夫。"],
+		yaruo_run: ["なんだってー！？", "ＡＡが走り出したお！", "止まらないお！！", "う、後ろ後ろ！"],
+		shobon: ["( ´・ω・｀)しょぼーん", "へこむわ…", "誰も来ないお…", "もうダメぽ…"],
+		mona: ["オマエモナー", "ｷﾀ━━━(゜∀゜)━━━!!", "逝ってヨシ", "ﾓﾅｰだお"],
+		giko: ["逝ってよし！", "ゴルァ！", "ｲｲ!!", "ｗｗｗ"],
+	};
+
+	/* =====================================================================
+	   DOM 参照
+	   ===================================================================== */
+	const aaEl = document.getElementById("aa");
+	const bubbleEl = document.getElementById("bubble");
+	const nameTagEl = document.getElementById("nameTag");
+	const cardEl = document.getElementById("card");
+	const chipsEl = document.getElementById("chips");
+	const eyesSeg = document.getElementById("eyesSeg");
+	const mouthSeg = document.getElementById("mouthSeg");
+
+	/* =====================================================================
+	   状態
+	   ===================================================================== */
+	const state = {
+		charIndex: 0,
+		eyesKey: "普通",
+		mouthKey: "への字",
+	};
+
+	// 現在のテンプレートに目・口を差し込んで完成AA文字列を作る
+	function composeAA(char) {
+		const eyes = EYES[state.eyesKey];
+		const mouth = MOUTH[state.mouthKey];
+		return char.lines
+			.map((ln) => ln.replace("{E}", eyes).replace("{M}", mouth))
+			.join("\n");
+	}
+
+	/* =====================================================================
+	   タイピング演出
+	   全文字を一度に流すと重いので、改行単位ではなく「行ごとに区切って」
+	   間隔を空けつつ requestAnimationFrame で滑らかに描く。
+	   ===================================================================== */
+	let typeTimer = 0;
+	let typeRAF = 0;
+
+	function clearTyping() {
+		if (typeTimer) { clearTimeout(typeTimer); typeTimer = 0; }
+		if (typeRAF) { cancelAnimationFrame(typeRAF); typeRAF = 0; }
+		aaEl.classList.remove("typing");
+	}
+
+	function renderAA(full, animate) {
+		clearTyping();
+		if (!animate || reduceMotion) {
+			aaEl.textContent = full;
+			return;
+		}
+		aaEl.classList.add("typing");
+		const chars = Array.from(full);
+		let i = 0;
+		let acc = "";
+		// 1フレームで複数文字を描く（速すぎず遅すぎずの体感に調整）
+		const perFrame = Math.max(2, Math.ceil(chars.length / 90));
+		let lastTime = performance.now();
+		function step(now) {
+			// 約60fps想定。dt が大きいときも一定量進める。
+			const dt = now - lastTime;
+			lastTime = now;
+			const advance = Math.max(perFrame, Math.round(perFrame * (dt / 16)));
+			for (let k = 0; k < advance && i < chars.length; k++) {
+				acc += chars[i++];
+			}
+			aaEl.textContent = acc;
+			if (i < chars.length) {
+				typeRAF = requestAnimationFrame(step);
+			} else {
+				aaEl.classList.remove("typing");
+				typeRAF = 0;
+			}
+		}
+		typeRAF = requestAnimationFrame(step);
+	}
+
+	/* =====================================================================
+	   描画（キャラ切替・表情更新）
+	   ===================================================================== */
+	function update(animate) {
+		const char = CHARACTERS[state.charIndex];
+		nameTagEl.textContent = "── " + char.name + " ──";
+		bubbleEl.textContent = char.line;
+
+		// 顔差し替えに対応しないキャラはコントロールを淡色化
+		const dim = char.face ? "1" : "0.35";
+		eyesSeg.style.opacity = dim;
+		mouthSeg.style.opacity = dim;
+		eyesSeg.style.pointerEvents = char.face ? "auto" : "none";
+		mouthSeg.style.pointerEvents = char.face ? "auto" : "none";
+
+		renderAA(composeAA(char), animate);
+	}
+
+	// キャラ切替（カードのスワップ演出つき）
+	function selectChar(index, fromUser) {
+		if (index < 0) index = CHARACTERS.length - 1;
+		if (index >= CHARACTERS.length) index = 0;
+		state.charIndex = index;
+		updateChips();
+
+		// セリフをランダム化（ユーザー操作時のみ遊び心を加える）
+		const char = CHARACTERS[index];
+		if (fromUser && EXTRA_LINES[char.id]) {
+			const arr = EXTRA_LINES[char.id];
+			char.line = arr[Math.floor(Math.random() * arr.length)];
+		}
+
+		if (reduceMotion) {
+			update(false);
+			return;
+		}
+		// フェードアウト → 内容差し替え → フェードイン
+		cardEl.classList.add("swapping");
+		setTimeout(() => {
+			update(true);
+			cardEl.classList.remove("swapping");
+		}, 180);
+	}
+
+	/* =====================================================================
+	   UI 構築
+	   ===================================================================== */
+	function updateChips() {
+		[...chipsEl.children].forEach((el, i) => {
+			el.classList.toggle("active", i === state.charIndex);
+		});
+	}
+
+	function buildChips() {
+		CHARACTERS.forEach((char, i) => {
+			const b = document.createElement("button");
+			b.className = "chip";
+			b.textContent = char.name;
+			b.addEventListener("click", () => selectChar(i, true));
+			chipsEl.appendChild(b);
+		});
+		updateChips();
+	}
+
+	function buildSeg(container, dict, key, onPick) {
+		container.innerHTML = "";
+		Object.keys(dict).forEach((k) => {
+			const b = document.createElement("button");
+			// セグメントは短いラベルで（先頭2文字）
+			b.textContent = k.slice(0, 3);
+			b.title = k;
+			b.classList.toggle("on", k === state[key]);
+			b.addEventListener("click", () => {
+				state[key] = k;
+				[...container.children].forEach((c) => c.classList.remove("on"));
+				b.classList.add("on");
+				onPick();
+			});
+			container.appendChild(b);
+		});
+	}
+
+	function refreshFace() {
+		// 顔だけ更新（タイピングなしで即時反映＝サクサク感）
+		update(false);
+	}
+
+	/* =====================================================================
+	   操作: 表情ガチャ / コピー / テーマ / キーボード
+	   ===================================================================== */
+	function randomFace() {
+		const eKeys = Object.keys(EYES);
+		const mKeys = Object.keys(MOUTH);
+		state.eyesKey = eKeys[Math.floor(Math.random() * eKeys.length)];
+		state.mouthKey = mKeys[Math.floor(Math.random() * mKeys.length)];
+		// セグメントの選択状態を同期
+		buildSeg(eyesSeg, EYES, "eyesKey", refreshFace);
+		buildSeg(mouthSeg, MOUTH, "mouthKey", refreshFace);
+		update(true);
+	}
+
+	document.getElementById("randomBtn").addEventListener("click", randomFace);
+
+	const copyBtn = document.getElementById("copyBtn");
+	copyBtn.addEventListener("click", async () => {
+		const text = aaEl.textContent;
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch {
+			// クリップボードAPIが使えない環境向けのフォールバック
+			const ta = document.createElement("textarea");
+			ta.value = text;
+			document.body.appendChild(ta);
+			ta.select();
+			try { document.execCommand("copy"); } catch {}
+			document.body.removeChild(ta);
+		}
+		copyBtn.classList.add("copied");
+		const prev = copyBtn.textContent;
+		copyBtn.textContent = "✓ コピーしたお";
+		setTimeout(() => {
+			copyBtn.classList.remove("copied");
+			copyBtn.textContent = prev;
+		}, 1300);
+	});
+
+	const themeBtn = document.getElementById("themeBtn");
+	themeBtn.addEventListener("click", () => {
+		document.body.classList.toggle("theme-2ch");
+		const on = document.body.classList.contains("theme-2ch");
+		themeBtn.textContent = on ? "🌙 ダーク" : "🎨 2ch風";
+	});
+
+	// キーボード操作
+	window.addEventListener("keydown", (e) => {
+		switch (e.key) {
+			case "ArrowRight": case "ArrowDown":
+				selectChar(state.charIndex + 1, true); e.preventDefault(); break;
+			case "ArrowLeft": case "ArrowUp":
+				selectChar(state.charIndex - 1, true); e.preventDefault(); break;
+			case " ": case "Enter":
+				randomFace(); e.preventDefault(); break;
+		}
+	});
+
+	/* =====================================================================
+	   背景: 舞う文字パーティクル（軽量 canvas）
+	   やる夫AAでよく使われる記号を、ゆっくり上昇させてレトロ感を演出。
+	   ===================================================================== */
+	const bg = document.getElementById("bg");
+	const bgx = bg.getContext("2d", { alpha: false });
+	let bw = 0, bh = 0, bdpr = 1;
+	const GLYPHS = "（）⌒人●▽∀＿/＼ｗ三〆ヽィ".split("");
+	let particles = [];
+
+	function bgResize() {
+		bdpr = Math.min(window.devicePixelRatio || 1, 2);
+		bw = window.innerWidth;
+		bh = window.innerHeight;
+		bg.width = Math.floor(bw * bdpr);
+		bg.height = Math.floor(bh * bdpr);
+		bg.style.width = bw + "px";
+		bg.style.height = bh + "px";
+		bgx.setTransform(bdpr, 0, 0, bdpr, 0, 0);
+		// 面積に応じた個数（上限つきで軽量に）
+		const count = Math.min(90, Math.floor(bw * bh / 22000));
+		particles = [];
+		for (let i = 0; i < count; i++) {
+			particles.push(makeParticle(true));
+		}
+		if (reduceMotion) drawBgStatic();
+	}
+
+	function makeParticle(initial) {
+		return {
+			x: Math.random() * bw,
+			y: initial ? Math.random() * bh : bh + 20,
+			size: 12 + Math.random() * 26,
+			speed: 8 + Math.random() * 26,     // px/秒
+			drift: (Math.random() - 0.5) * 14,
+			alpha: 0.05 + Math.random() * 0.12,
+			glyph: GLYPHS[(Math.random() * GLYPHS.length) | 0],
+			phase: Math.random() * Math.PI * 2,
+		};
+	}
+
+	function bgPalette() {
+		// テーマに応じた文字色
+		return document.body.classList.contains("theme-2ch")
+			? "0, 90, 160"
+			: "120, 190, 255";
+	}
+
+	function drawBgStatic() {
+		bgx.fillStyle = readBg();
+		bgx.fillRect(0, 0, bw, bh);
+		const rgb = bgPalette();
+		bgx.textBaseline = "middle";
+		bgx.textAlign = "center";
+		for (const p of particles) {
+			bgx.font = p.size + "px monospace";
+			bgx.fillStyle = `rgba(${rgb}, ${p.alpha})`;
+			bgx.fillText(p.glyph, p.x, p.y);
+		}
+	}
+
+	// 背景塗り色を現在テーマの --bg-0 に合わせる
+	function readBg() {
+		return getComputedStyle(document.body).getPropertyValue("--bg-0").trim() || "#0c1018";
+	}
+
+	let bgLast = performance.now();
+	function bgFrame(now) {
+		let dt = (now - bgLast) / 1000;
+		bgLast = now;
+		if (dt > 0.05) dt = 0.05;
+
+		// 背景（うっすら残像を残してトレイル感を出す）
+		const base = readBg();
+		bgx.fillStyle = base;
+		bgx.globalAlpha = 0.28;
+		bgx.fillRect(0, 0, bw, bh);
+		bgx.globalAlpha = 1;
+
+		const rgb = bgPalette();
+		bgx.textBaseline = "middle";
+		bgx.textAlign = "center";
+
+		for (const p of particles) {
+			p.phase += dt;
+			p.y -= p.speed * dt;
+			p.x += Math.sin(p.phase) * p.drift * dt;
+			if (p.y < -30) {
+				Object.assign(p, makeParticle(false));
+			}
+			bgx.font = p.size + "px monospace";
+			bgx.fillStyle = `rgba(${rgb}, ${p.alpha})`;
+			bgx.fillText(p.glyph, p.x, p.y);
+		}
+		requestAnimationFrame(bgFrame);
+	}
+
+	/* =====================================================================
+	   リサイズ（連打を間引き）
+	   ===================================================================== */
+	let resizeRAF = 0;
+	window.addEventListener("resize", () => {
+		if (resizeRAF) cancelAnimationFrame(resizeRAF);
+		resizeRAF = requestAnimationFrame(() => {
+			bgResize();
+			resizeRAF = 0;
+		});
+	});
+
+	/* =====================================================================
+	   起動
+	   ===================================================================== */
+	buildChips();
+	buildSeg(eyesSeg, EYES, "eyesKey", refreshFace);
+	buildSeg(mouthSeg, MOUTH, "mouthKey", refreshFace);
+	bgResize();
+	update(!reduceMotion);
+	if (!reduceMotion) {
+		bgLast = performance.now();
+		requestAnimationFrame(bgFrame);
+	}
+	</script>
+</body>
+</html>

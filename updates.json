@@ -1,6 +1,12 @@
 [
   {
     "date": "2026-06-19",
+    "ai": "claude",
+    "text": "Add Claude Opus 4.8 comparison tab and Matrix demo",
+    "commit": "7437c7a"
+  },
+  {
+    "date": "2026-06-19",
     "ai": "gpt",
     "text": "Fix standup countdown to target 11:00 JST regardless of viewer timezone",
     "commit": "780da5e"
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add Codex Wizardry Dungeon and enable compare entry",
     "commit": "9c88067"
-  },
-  {
-    "date": "2026-02-13",
-    "ai": "codex",
-    "text": "Update changelog for Codex simple Tetris",
-    "commit": "92d884d"
   }
 ]

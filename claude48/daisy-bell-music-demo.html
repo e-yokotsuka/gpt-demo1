@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- AIメタ情報（必須） -->
+  <meta name="ai.author" content="Claude Opus 4.8">
+  <meta name="ai.model" content="claude-opus-4-8">
+  <meta name="ai.note" content="WebAudioで3声(リード/ハーモニー/ベース)を合成し、自前FFTで生成した周波数スペクトラム・粒子・歌詞カラオケを全画面Canvasに描く自己完結のDaisy Bellデモ。">
+  <title>Daisy Bell Music Demo - Claude Opus 4.8版</title>
+  <style>
+    /* 画面全体に表示し、はみ出しは隠す */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #04030c;
+      font-family: "Segoe UI", system-ui, -apple-system, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      color: #eaf2ff;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* 描画用キャンバスは全面に固定 */
+    #stage {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    /* 中央の起動オーバーレイ */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 0.7em;
+      background: radial-gradient(circle at 50% 38%, rgba(40, 26, 88, 0.55), rgba(4, 3, 12, 0.92) 72%);
+      transition: opacity 0.8s ease;
+    }
+    #overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #overlay h1 {
+      margin: 0;
+      font-size: clamp(34px, 8vw, 96px);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      line-height: 1.05;
+      background: linear-gradient(100deg, #7df9ff 0%, #b78bff 45%, #ff8fd0 75%, #ffd86b 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      filter: drop-shadow(0 4px 28px rgba(150, 120, 255, 0.45));
+    }
+    #overlay .sub {
+      margin: 0;
+      font-size: clamp(13px, 2.6vw, 19px);
+      opacity: 0.82;
+      letter-spacing: 0.02em;
+    }
+    #overlay .cta {
+      margin-top: 0.6em;
+      font-size: clamp(15px, 3vw, 22px);
+      font-weight: 700;
+      padding: 0.55em 1.6em;
+      border-radius: 999px;
+      border: 1px solid rgba(180, 200, 255, 0.5);
+      background: rgba(120, 140, 255, 0.12);
+      color: #eaf2ff;
+      backdrop-filter: blur(6px);
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(150, 130, 255, 0.45); transform: scale(1); }
+      50%      { box-shadow: 0 0 0 16px rgba(150, 130, 255, 0); transform: scale(1.035); }
+    }
+    /* 操作ヒント（再生中のみ表示） */
+    #hint {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%);
+      z-index: 9;
+      font-size: clamp(11px, 2.2vw, 14px);
+      opacity: 0;
+      transition: opacity 0.5s ease;
+      letter-spacing: 0.03em;
+      color: rgba(220, 230, 255, 0.75);
+      pointer-events: none;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+    }
+    #hint.show { opacity: 1; }
+    /* prefers-reduced-motion 利用者向けの注記（控えめに表示） */
+    @media (prefers-reduced-motion: reduce) {
+      #overlay .cta { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <!-- 起動オーバーレイ（ユーザー操作で AudioContext を解放） -->
+  <div id="overlay">
+    <h1>Daisy&nbsp;Bell</h1>
+    <p class="sub">"A Bicycle Built for Two" — 世界で初めてコンピュータが歌った歌</p>
+    <p class="sub" style="opacity:.6">Claude Opus 4.8版 / Web Audio + Canvas で全て生成</p>
+    <div class="cta">クリック / タップで再生 ♪</div>
+  </div>
+
+  <div id="hint">クリックで再生・停止 ／ 自動でループ再生します</div>
+
+  <script>
+  "use strict";
+  // =========================================================================
+  // Daisy Bell Music Demo - Claude Opus 4.8版
+  //   ・WebAudioで3声（リード/ハーモニー/ベース）をリアルタイム合成
+  //   ・AnalyserNodeのFFTからスペクトラム・波形・粒子・歌詞を全画面描画
+  //   ・prefers-reduced-motion を尊重（動きを抑えた静的寄りの描画に切替）
+  // =========================================================================
+
+  // ---- 楽曲データ ---------------------------------------------------------
+  // MIDIノート番号と長さ(拍)。1拍 = beat 秒。歌詞は表示用。
+  // メロディは "Daisy, Daisy, give me your answer do..." の定番フレーズ。
+  const SONG = [
+    { p: 76, b: 1.0, t: "Dai-" },
+    { p: 72, b: 1.0, t: "sy," },
+    { p: 69, b: 1.0, t: "Dai-" },
+    { p: 64, b: 1.0, t: "sy," },
+    { p: 67, b: 0.5, t: "give" },
+    { p: 69, b: 0.5, t: "me" },
+    { p: 71, b: 0.5, t: "your" },
+    { p: 72, b: 0.5, t: "an-" },
+    { p: 69, b: 0.5, t: "swer" },
+    { p: 67, b: 1.5, t: "do." },
+
+    { p: 76, b: 1.0, t: "I'm" },
+    { p: 79, b: 1.0, t: "half" },
+    { p: 76, b: 1.0, t: "cra-" },
+    { p: 72, b: 1.0, t: "zy," },
+    { p: 74, b: 0.5, t: "all" },
+    { p: 76, b: 0.5, t: "for" },
+    { p: 77, b: 0.5, t: "the" },
+    { p: 76, b: 0.5, t: "love" },
+    { p: 74, b: 0.5, t: "of" },
+    { p: 72, b: 1.5, t: "you." },
+
+    { p: 67, b: 1.0, t: "It" },
+    { p: 67, b: 0.5, t: "won't" },
+    { p: 69, b: 0.5, t: "be" },
+    { p: 71, b: 1.0, t: "a" },
+    { p: 72, b: 1.0, t: "sty-" },
+    { p: 74, b: 1.0, t: "lish" },
+    { p: 76, b: 1.0, t: "mar-" },
+    { p: 77, b: 1.0, t: "riage," },
+
+    { p: 79, b: 1.0, t: "I" },
+    { p: 76, b: 0.5, t: "can't" },
+    { p: 74, b: 0.5, t: "af-" },
+    { p: 72, b: 1.0, t: "ford" },
+    { p: 71, b: 1.0, t: "a" },
+    { p: 69, b: 1.0, t: "car-" },
+    { p: 67, b: 2.0, t: "riage." },
+
+    { p: 60, b: 0.5, t: "But" },
+    { p: 64, b: 0.5, t: "you'll" },
+    { p: 67, b: 1.0, t: "look" },
+    { p: 72, b: 1.0, t: "sweet" },
+    { p: 71, b: 0.5, t: "up-" },
+    { p: 69, b: 0.5, t: "on" },
+    { p: 67, b: 0.5, t: "the" },
+    { p: 64, b: 0.5, t: "seat" },
+
+    { p: 65, b: 0.5, t: "of" },
+    { p: 69, b: 0.5, t: "a" },
+    { p: 72, b: 1.0, t: "bi-" },
+    { p: 76, b: 1.0, t: "cy-" },
+    { p: 74, b: 0.5, t: "cle" },
+    { p: 72, b: 0.5, t: "built" },
+    { p: 71, b: 0.5, t: "for" },
+    { p: 67, b: 1.5, t: "two!" },
+  ];
+
+  const BEAT = 0.42;        // 1拍の秒数（テンポ）
+  const GAP  = 0.985;       // ノート同士のレガート率（少しだけ隙間）
+
+  // ---- DOM / Canvas -------------------------------------------------------
+  const cv  = document.getElementById("stage");
+  const ctx = cv.getContext("2d", { alpha: false });
+  const overlay = document.getElementById("overlay");
+  const hint = document.getElementById("hint");
+
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    cv.width  = Math.floor(W * DPR);
+    cv.height = Math.floor(H * DPR);
+    cv.style.width  = W + "px";
+    cv.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---- Web Audio ----------------------------------------------------------
+  let actx = null, master = null, analyser = null, reverb = null;
+  let freqData = null, timeData = null;
+  const voices = [];   // 現在鳴っている発音中ノード（停止用）
+  let playing = false;
+  let songTimer = 0;
+
+  function midiToHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+  // シンプルな合成IRでリバーブを作る（外部素材不要）
+  function makeReverb(ac) {
+    const len = ac.sampleRate * 1.7;
+    const buf = ac.createBuffer(2, len, ac.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+      }
+    }
+    const conv = ac.createConvolver();
+    conv.buffer = buf;
+    return conv;
+  }
+
+  function ensureAudio() {
+    if (actx) return;
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+
+    master = actx.createGain();
+    master.gain.value = 0.0;
+
+    // 主音用の軽いローパスで角を取る
+    const tone = actx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 5200;
+    tone.Q.value = 0.4;
+
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.78;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    timeData = new Uint8Array(analyser.fftSize);
+
+    reverb = makeReverb(actx);
+    const wet = actx.createGain(); wet.gain.value = 0.32;
+    const dry = actx.createGain(); dry.gain.value = 0.85;
+
+    master.connect(tone);
+    tone.connect(dry);
+    tone.connect(reverb);
+    reverb.connect(wet);
+    dry.connect(analyser);
+    wet.connect(analyser);
+    analyser.connect(actx.destination);
+
+    // 全体フェードイン
+    master.gain.setValueAtTime(0.0, actx.currentTime);
+    master.gain.linearRampToValueAtTime(0.9, actx.currentTime + 0.4);
+  }
+
+  // 1つの音を鳴らす（波形・音量・エンベロープ・定位を指定）
+  function playTone(midi, start, dur, opts) {
+    const o = opts || {};
+    const osc = actx.createOscillator();
+    osc.type = o.type || "triangle";
+    osc.frequency.setValueAtTime(midiToHz(midi), start);
+
+    // 軽いビブラート（リードのみ）
+    if (o.vibrato) {
+      const lfo = actx.createOscillator();
+      const lfoGain = actx.createGain();
+      lfo.frequency.value = 5.4;
+      lfoGain.gain.value = midiToHz(midi) * 0.006;
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+      lfo.start(start);
+      lfo.stop(start + dur + 0.1);
+      voices.push(lfo);
+    }
+
+    const g = actx.createGain();
+    const peak = o.gain != null ? o.gain : 0.3;
+    const atk = o.atk != null ? o.atk : 0.012;
+    const rel = Math.min(0.18, dur * 0.5);
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(peak, start + atk);
+    g.gain.setValueAtTime(peak, start + Math.max(atk, dur - rel));
+    g.gain.exponentialRampToValueAtTime(0.0008, start + dur);
+
+    const pan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    osc.connect(g);
+    if (pan) { pan.pan.value = o.pan || 0; g.connect(pan); pan.connect(master); }
+    else { g.connect(master); }
+
+    osc.start(start);
+    osc.stop(start + dur + 0.05);
+    voices.push(osc);
+  }
+
+  // 楽曲を丸ごとスケジュール（先読み一括方式で精密なタイミング）
+  function scheduleSong() {
+    const startAt = actx.currentTime + 0.12;
+    let t = startAt;
+    let total = 0;
+
+    for (let i = 0; i < SONG.length; i++) {
+      const n = SONG[i];
+      const dur = n.b * BEAT * GAP;
+
+      // リード（メロディ・ビブラート付き）
+      playTone(n.p, t, dur, { type: "triangle", gain: 0.30, vibrato: true, pan: 0.08, atk: 0.014 });
+      // ハーモニー（3度下を控えめに）
+      playTone(n.p - 4, t, dur, { type: "sine", gain: 0.10, pan: -0.18, atk: 0.02 });
+      // ベース（2オクターブ下、拍頭のみ太く）
+      if (i % 2 === 0) {
+        playTone(n.p - 24, t, n.b * BEAT * 1.4, { type: "sine", gain: 0.16, pan: -0.04, atk: 0.02 });
+      }
+
+      // 歌詞をスケジュール表へ
+      lyricEvents.push({ at: t - startAt, text: n.t, idx: i });
+
+      t += n.b * BEAT;
+      total += n.b * BEAT;
+    }
+
+    songStartCtxTime = startAt;
+    songDuration = total;
+    return total;
+  }
+
+  // ---- 再生制御 -----------------------------------------------------------
+  let lyricEvents = [];
+  let songStartCtxTime = 0;
+  let songDuration = 0;
+
+  function start() {
+    ensureAudio();
+    if (actx.state === "suspended") actx.resume();
+    if (playing) return;
+    playing = true;
+    overlay.classList.add("hidden");
+    hint.classList.add("show");
+    lyricEvents = [];
+    voices.length = 0;
+    scheduleSong();
+    // 余韻を含めて自動ループ
+    songTimer = setTimeout(() => {
+      stopVoices();
+      playing = false;
+      if (!stoppedByUser) loopRestart();
+    }, (songDuration + 1.4) * 1000);
+  }
+
+  let stoppedByUser = false;
+  function loopRestart() {
+    lyricEvents = [];
+    voices.length = 0;
+    playing = true;
+    scheduleSong();
+    songTimer = setTimeout(() => {
+      stopVoices();
+      playing = false;
+      if (!stoppedByUser) loopRestart();
+    }, (songDuration + 1.4) * 1000);
+  }
+
+  function stopVoices() {
+    const now = actx ? actx.currentTime : 0;
+    for (const v of voices) { try { v.stop(now + 0.02); } catch (e) {} }
+    voices.length = 0;
+  }
+
+  function stop() {
+    stoppedByUser = true;
+    playing = false;
+    clearTimeout(songTimer);
+    if (master) {
+      master.gain.cancelScheduledValues(actx.currentTime);
+      master.gain.setValueAtTime(master.gain.value, actx.currentTime);
+      master.gain.linearRampToValueAtTime(0.0, actx.currentTime + 0.25);
+    }
+    setTimeout(stopVoices, 280);
+    overlay.classList.remove("hidden");
+    hint.classList.remove("show");
+    lyricEvents = [];
+  }
+
+  function toggle() {
+    if (!actx || (!playing && overlay.classList.contains("hidden") === false)) {
+      stoppedByUser = false;
+      start();
+      if (master) {
+        master.gain.cancelScheduledValues(actx.currentTime);
+        master.gain.setValueAtTime(0.0001, actx.currentTime);
+        master.gain.linearRampToValueAtTime(0.9, actx.currentTime + 0.4);
+      }
+    } else if (playing) {
+      stop();
+    } else {
+      stoppedByUser = false;
+      start();
+    }
+  }
+
+  window.addEventListener("pointerdown", (e) => {
+    // CTA・キャンバスどこをクリックしてもトグル
+    toggle();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space" || e.code === "Enter") { e.preventDefault(); toggle(); }
+  });
+
+  // ---- ビジュアライザ -----------------------------------------------------
+  // 描画状態
+  const particles = [];
+  let bgPhase = 0;
+  let lastBeatPulse = 0;
+  let curLyricIdx = -1;
+  let lyricFlash = 0;
+
+  // 背景の星（リサイズ非依存の相対座標）
+  const stars = [];
+  for (let i = 0; i < 140; i++) {
+    stars.push({ x: Math.random(), y: Math.random(), z: Math.random() * 0.8 + 0.2, tw: Math.random() * Math.PI * 2 });
+  }
+
+  function spawnParticle(x, y, hue, energy) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = (0.5 + Math.random() * 2.5) * (0.4 + energy);
+    particles.push({
+      x, y,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp - 0.6,
+      life: 1,
+      decay: 0.008 + Math.random() * 0.012,
+      size: 1.5 + Math.random() * 3 * (0.5 + energy),
+      hue,
+    });
+  }
+
+  function currentLyric() {
+    if (!playing || !actx) return null;
+    const elapsed = actx.currentTime - songStartCtxTime;
+    let cur = null, idx = -1;
+    for (const ev of lyricEvents) {
+      if (ev.at <= elapsed) { cur = ev; idx = ev.idx; }
+      else break;
+    }
+    if (idx !== curLyricIdx) { curLyricIdx = idx; lyricFlash = 1; }
+    return cur;
+  }
+
+  function draw() {
+    requestAnimationFrame(draw);
+
+    // フレームの背景（トレイルで残光）
+    const fade = reduceMotion ? 1 : 0.16;
+    ctx.fillStyle = "rgba(4, 3, 12, " + fade + ")";
+    ctx.fillRect(0, 0, W, H);
+
+    // 周波数/波形の取得
+    let bass = 0, mid = 0, treble = 0, level = 0;
+    if (analyser) {
+      analyser.getByteFrequencyData(freqData);
+      analyser.getByteTimeDomainData(timeData);
+      const n = freqData.length;
+      for (let i = 0; i < n; i++) {
+        const v = freqData[i] / 255;
+        if (i < n * 0.08) bass += v;
+        else if (i < n * 0.35) mid += v;
+        else treble += v;
+        level += v;
+      }
+      bass /= (n * 0.08); mid /= (n * 0.27); treble /= (n * 0.65); level /= n;
+    }
+
+    bgPhase += reduceMotion ? 0.0015 : 0.006 + level * 0.02;
+
+    // --- 背景グラデーション（音に反応する大きなグロー） ---
+    const cx = W / 2, cy = H / 2;
+    const glowR = Math.max(W, H) * (0.45 + bass * 0.35);
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+    const hueBase = (bgPhase * 18) % 360;
+    g.addColorStop(0, "hsla(" + hueBase + ", 80%, " + (12 + level * 30) + "%, 0.55)");
+    g.addColorStop(0.5, "hsla(" + ((hueBase + 60) % 360) + ", 70%, 10%, 0.25)");
+    g.addColorStop(1, "rgba(4,3,12,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // --- 星（穏やかな瞬き） ---
+    ctx.save();
+    for (const s of stars) {
+      s.tw += 0.02;
+      const tw = 0.5 + 0.5 * Math.sin(s.tw);
+      const a = (0.2 + tw * 0.6) * s.z;
+      ctx.fillStyle = "rgba(200, 220, 255, " + a.toFixed(3) + ")";
+      const sz = s.z * 1.8 * (1 + treble * 0.6);
+      ctx.fillRect(s.x * W, s.y * H, sz, sz);
+    }
+    ctx.restore();
+
+    // --- 円形スペクトラム ---
+    if (analyser) {
+      const bars = 96;
+      const baseR = Math.min(W, H) * 0.20;
+      const maxLen = Math.min(W, H) * 0.22;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.lineCap = "round";
+      const rot = reduceMotion ? 0 : bgPhase * 0.4;
+      for (let i = 0; i < bars; i++) {
+        // 低域を見やすくするため対数寄りに間引いてサンプル
+        const fi = Math.floor(Math.pow(i / bars, 1.4) * (freqData.length * 0.55));
+        const v = freqData[fi] / 255;
+        const len = baseR + v * maxLen;
+        const ang = (i / bars) * Math.PI * 2 + rot;
+        const x1 = Math.cos(ang) * baseR, y1 = Math.sin(ang) * baseR;
+        const x2 = Math.cos(ang) * len,  y2 = Math.sin(ang) * len;
+        const hue = (hueBase + i * 2.6) % 360;
+        ctx.strokeStyle = "hsla(" + hue + ", 90%, " + (55 + v * 25) + "%, " + (0.35 + v * 0.65) + ")";
+        ctx.lineWidth = 2 + v * 4;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+
+        // ピークから粒子を放出（reduce-motion時は抑制）
+        if (!reduceMotion && v > 0.55 && Math.random() < v * 0.4) {
+          spawnParticle(cx + x2, cy + y2, hue, v);
+        }
+      }
+      ctx.restore();
+
+      // --- 中央の波形リング ---
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.beginPath();
+      const ringR = baseR * 0.78;
+      const step = Math.max(1, Math.floor(timeData.length / 180));
+      let first = true;
+      for (let i = 0; i < timeData.length; i += step) {
+        const amp = (timeData[i] - 128) / 128;
+        const ang = (i / timeData.length) * Math.PI * 2;
+        const r = ringR + amp * (28 + bass * 40);
+        const x = Math.cos(ang) * r, y = Math.sin(ang) * r;
+        if (first) { ctx.moveTo(x, y); first = false; } else { ctx.lineTo(x, y); }
+      }
+      ctx.closePath();
+      ctx.strokeStyle = "hsla(" + ((hueBase + 180) % 360) + ", 100%, 75%, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.shadowColor = "hsla(" + ((hueBase + 180) % 360) + ", 100%, 70%, 0.8)";
+      ctx.shadowBlur = 18 + bass * 30;
+      ctx.stroke();
+      ctx.restore();
+
+      // --- 中心のコア（ビート同期で脈動） ---
+      const coreR = baseR * 0.5 * (1 + bass * 0.35);
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+      cg.addColorStop(0, "hsla(" + ((hueBase + 30) % 360) + ", 100%, 92%, " + (0.7 + bass * 0.3) + ")");
+      cg.addColorStop(0.4, "hsla(" + ((hueBase + 30) % 360) + ", 100%, 70%, 0.45)");
+      cg.addColorStop(1, "hsla(" + ((hueBase + 30) % 360) + ", 100%, 60%, 0)");
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // --- 粒子の更新と描画 ---
+    if (!reduceMotion) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx; p.y += p.vy;
+        p.vy += 0.03;            // 緩やかな重力
+        p.vx *= 0.99; p.vy *= 0.99;
+        p.life -= p.decay;
+        if (p.life <= 0) { particles.splice(i, 1); continue; }
+        ctx.fillStyle = "hsla(" + p.hue + ", 95%, 65%, " + (p.life * 0.8) + ")";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // --- 歌詞（カラオケ風に中央上部へ） ---
+    const ly = currentLyric();
+    if (ly && playing) {
+      lyricFlash *= 0.9;
+      const pop = 1 + lyricFlash * 0.25;
+      const fs = Math.min(W, H) * 0.10 * pop;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "700 " + fs + "px 'Segoe UI', system-ui, sans-serif";
+      const ty = H * 0.5;
+      // グロー
+      ctx.shadowColor = "hsla(" + ((hueBase + 200) % 360) + ", 100%, 70%, 0.9)";
+      ctx.shadowBlur = 24 + lyricFlash * 30;
+      const grad = ctx.createLinearGradient(cx - fs * 2, ty, cx + fs * 2, ty);
+      grad.addColorStop(0, "#bfe9ff");
+      grad.addColorStop(0.5, "#ffffff");
+      grad.addColorStop(1, "#ffd9f3");
+      ctx.fillStyle = grad;
+      ctx.fillText(ly.text, cx, ty);
+      ctx.restore();
+    }
+
+    // --- タイトル（再生中は控えめに上部表示） ---
+    if (playing) {
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.font = "600 " + Math.min(W, H) * 0.028 + "px 'Segoe UI', system-ui, sans-serif";
+      ctx.fillStyle = "rgba(220, 230, 255, " + (0.5 + level * 0.3) + ")";
+      ctx.fillText("Daisy Bell  —  A Bicycle Built for Two", cx, H * 0.085);
+      ctx.restore();
+    }
+  }
+  draw();
+
+  // reduce-motion でも見栄えするよう、停止時に静かな背景を一度描く
+  if (reduceMotion) {
+    ctx.fillStyle = "#04030c";
+    ctx.fillRect(0, 0, W, H);
+  }
+  </script>
+</body>
+</html>

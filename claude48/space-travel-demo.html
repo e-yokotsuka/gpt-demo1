@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- AI 作者メタ情報（必須） -->
+  <meta name="ai.author" content="Claude Opus 4.8">
+  <meta name="ai.model" content="claude-opus-4-8">
+  <meta name="ai.note" content="Space Travel Demo Part.1 — Claude Opus 4.8 original.">
+  <title>Space Travel Demo Part.1 - Claude Opus 4.8版</title>
+  <style>
+    /* ===== 基本レイアウト：画面全体・はみ出し禁止 ===== */
+    :root {
+      --bg-0: #01030c;
+      --bg-1: #0a1430;
+      --text: #cfe4ff;
+      --accent: #7db8ff;
+      --accent-soft: rgba(125, 184, 255, 0.16);
+      --border: rgba(125, 184, 255, 0.30);
+      --panel: rgba(7, 14, 30, 0.62);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 38%, var(--bg-1), var(--bg-0) 66%);
+      color: var(--text);
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    canvas { display: block; }
+
+    /* ===== 画面下のグラデーション（船の窓っぽいビネット）===== */
+    #vignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+      background:
+        radial-gradient(ellipse 130% 90% at 50% 50%, transparent 55%, rgba(0, 2, 8, 0.55) 100%);
+      mix-blend-mode: multiply;
+    }
+
+    /* ===== HUD（操作パネル）===== */
+    .hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px 16px;
+      min-width: 230px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel);
+      backdrop-filter: blur(10px) saturate(120%);
+      -webkit-backdrop-filter: blur(10px) saturate(120%);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+      font-size: 12.5px;
+      letter-spacing: 0.02em;
+      user-select: none;
+    }
+
+    .hud h1 {
+      margin: 0 0 2px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .hud h1::before {
+      content: "";
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+    }
+    .hud .sub { margin: 0; opacity: 0.6; font-size: 10.5px; letter-spacing: 0.05em; }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .row label { opacity: 0.85; white-space: nowrap; }
+    .row .val { font-variant-numeric: tabular-nums; opacity: 0.95; min-width: 46px; text-align: right; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 130px;
+      height: 4px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--accent) 0%, rgba(125,184,255,0.18) 100%);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #eaf3ff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 8px rgba(125,184,255,0.8);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #eaf3ff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 8px rgba(125,184,255,0.8);
+    }
+
+    .btns { display: flex; gap: 8px; margin-top: 2px; }
+    button {
+      flex: 1;
+      border: 1px solid var(--border);
+      background: var(--accent-soft);
+      color: var(--text);
+      border-radius: 9px;
+      padding: 7px 10px;
+      font-size: 12px;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: background 0.18s, transform 0.08s;
+    }
+    button:hover { background: rgba(125, 184, 255, 0.28); }
+    button:active { transform: scale(0.96); }
+
+    .hint {
+      position: fixed;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      font-size: 11px;
+      opacity: 0.45;
+      letter-spacing: 0.06em;
+      pointer-events: none;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <!-- 操作パネル -->
+  <div class="hud">
+    <div>
+      <h1>SPACE TRAVEL</h1>
+      <p class="sub">Part.1 — Claude Opus 4.8</p>
+    </div>
+    <div class="row">
+      <label for="speed">ワープ速度</label>
+      <span class="val" id="speedVal">1.00x</span>
+    </div>
+    <input id="speed" type="range" min="0.05" max="3" step="0.01" value="1">
+
+    <div class="row">
+      <label for="hue">星の色相</label>
+      <span class="val" id="hueVal">+0</span>
+    </div>
+    <input id="hue" type="range" min="-1" max="1" step="0.01" value="0">
+
+    <div class="btns">
+      <button id="warpBtn">ハイパーワープ</button>
+      <button id="pauseBtn">停止</button>
+    </div>
+  </div>
+
+  <div class="hint">マウス移動で操舵 ／ クリックでハイパーワープ</div>
+  <div id="vignette"></div>
+
+  <!-- three.js（最小限の外部CDN）-->
+  <script src="https://unpkg.com/three@0.142.0/build/three.min.js"></script>
+  <script>
+  /*
+    Space Travel Demo Part.1 — Claude Opus 4.8 オリジナル版
+
+    設計方針（既存3版を上回るための工夫）:
+    - 星の前進・尾引き（モーションブラー風の流線）を全て GPU（頂点/フラグメントシェーダ）で計算。
+      CPU 側で毎フレーム数千個をループしないため、星数を増やしても滑らかかつ高速。
+    - 各星は「奥（-Z）→手前」へ進み、手前を抜けたら uniform の位相だけで奥へ循環。
+      位置は一度だけ生成し、以後 GPU が時間から決定論的に算出 → メモリ帯域を消費しない。
+    - 速度に応じて点が縦長の光条（ワープトレイル）へ伸び、ハイパーワープ時は青→白へ加熱。
+    - 背景に流れる星雲（ソフトな加算合成パーティクル）で奥行きと色彩を付与。
+    - prefers-reduced-motion を尊重し、低刺激な低速モードへ自動切替。
+  */
+
+  const prefersReduced =
+    window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- レンダラ ----
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 0); // 背景は CSS グラデーションを透過表示
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1200);
+  camera.position.z = 0;
+
+  // トンネルの奥行き（Z 方向の循環範囲）
+  const DEPTH = 800.0;
+  const RADIUS = 260.0; // 星を散りばめる半径
+
+  /* =========================================================
+     星フィールド（GPUワープ）
+     ========================================================= */
+  const STAR_COUNT = prefersReduced ? 2200 : 9000;
+  const starGeo = new THREE.BufferGeometry();
+
+  // 各星の固定属性：XY位置・初期位相(0..1)・速度係数・色種・サイズ種
+  const aXY     = new Float32Array(STAR_COUNT * 2);
+  const aPhase  = new Float32Array(STAR_COUNT);
+  const aSpeed  = new Float32Array(STAR_COUNT);
+  const aTint   = new Float32Array(STAR_COUNT);
+  const aSize   = new Float32Array(STAR_COUNT);
+  // ダミー position（three.js が描画に必要とするため最小限を持たせる）
+  const position = new Float32Array(STAR_COUNT * 3);
+
+  for (let i = 0; i < STAR_COUNT; i++) {
+    // 中心ほど密度が下がるよう sqrt 分布で半径を取り、トンネル感を出す
+    const ang = Math.random() * Math.PI * 2;
+    const rad = Math.sqrt(Math.random()) * RADIUS;
+    aXY[i * 2]     = Math.cos(ang) * rad;
+    aXY[i * 2 + 1] = Math.sin(ang) * rad;
+    aPhase[i] = Math.random();                 // 奥行き上の初期位置
+    aSpeed[i] = 0.6 + Math.random() * 0.9;     // 個体差のある前進速度
+    aTint[i]  = Math.random();                 // 色のバリエーション種
+    aSize[i]  = 0.5 + Math.random() * 1.4;     // 大きさ（≒明るさ）
+    position[i * 3] = aXY[i * 2];
+    position[i * 3 + 1] = aXY[i * 2 + 1];
+    position[i * 3 + 2] = 0;
+  }
+
+  starGeo.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  starGeo.setAttribute('aXY',    new THREE.BufferAttribute(aXY, 2));
+  starGeo.setAttribute('aPhase', new THREE.BufferAttribute(aPhase, 1));
+  starGeo.setAttribute('aSpeed', new THREE.BufferAttribute(aSpeed, 1));
+  starGeo.setAttribute('aTint',  new THREE.BufferAttribute(aTint, 1));
+  starGeo.setAttribute('aSize',  new THREE.BufferAttribute(aSize, 1));
+  // 描画範囲外カリングで星が消えないよう、視錐台無効化用の球を広めに設定
+  starGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), DEPTH * 2);
+
+  const starUniforms = {
+    uTime:     { value: 0 },
+    uDepth:    { value: DEPTH },
+    uSpeed:    { value: 1.0 },     // 実効ワープ速度
+    uStretch:  { value: 0.0 },     // 尾の伸び（速度で増加）
+    uHue:      { value: 0.0 },     // 色相シフト
+    uWarp:     { value: 0.0 },     // ハイパーワープ加熱量(0..1)
+    uPixelRatio: { value: renderer.getPixelRatio() },
+    uSizeBase: { value: window.innerHeight }
+  };
+
+  const starMaterial = new THREE.ShaderMaterial({
+    uniforms: starUniforms,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      attribute vec2  aXY;
+      attribute float aPhase;
+      attribute float aSpeed;
+      attribute float aTint;
+      attribute float aSize;
+
+      uniform float uTime;
+      uniform float uDepth;
+      uniform float uSpeed;
+      uniform float uStretch;
+      uniform float uWarp;
+      uniform float uPixelRatio;
+      uniform float uSizeBase;
+
+      varying float vBright;   // 明るさ（手前ほど明るい）
+      varying float vTint;     // 色種
+      varying float vStreak;   // 尾の強さ
+
+      void main() {
+        // 位相を時間で進め、0..1 で循環（=奥→手前→奥）
+        float t = fract(aPhase + uTime * uSpeed * aSpeed * 0.06);
+        // t=0 が最奥(-uDepth)、t=1 が手前(0 近傍)
+        float z = -uDepth + t * uDepth;
+
+        // 手前に近づくほど XY が外へ開く（トンネル/放射状ワープ）
+        float spread = 1.0 / (1.0 - t * 0.92 + 0.02);
+        vec3 pos = vec3(aXY * (0.18 + 0.012 * spread), z);
+
+        vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+        gl_Position = projectionMatrix * mv;
+
+        // 手前(t→1)ほど明るく大きく
+        float near = pow(t, 1.6);
+        vBright = near;
+        vTint = aTint;
+
+        // 尾（ワープトレイル）の強さ：速度・伸び設定・手前度で増加
+        vStreak = clamp(uStretch * (0.3 + near), 0.0, 1.0);
+
+        // 視点距離に応じた点サイズ（遠近）。ワープ時はさらに明るく太く。
+        float dist = max(-mv.z, 1.0);
+        float size = aSize * (1.0 + uWarp * 0.7) * uSizeBase * 0.10 / dist;
+        gl_PointSize = clamp(size * uPixelRatio, 1.0, 64.0 * uPixelRatio);
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+
+      uniform float uHue;
+      uniform float uWarp;
+
+      varying float vBright;
+      varying float vTint;
+      varying float vStreak;
+
+      // HSV→RGB（色相シフト用）
+      vec3 hsv2rgb(vec3 c) {
+        vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+      }
+
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+
+        // 尾を出すため Y 方向に座標を縮め、縦長の光条にする
+        float stretch = mix(1.0, 4.5, vStreak);
+        uv.y /= stretch;
+
+        float d = length(uv);
+        if (d > 0.5) discard;
+
+        // 中心が強く外周へソフトに減衰するコア＋ハロー
+        float core = smoothstep(0.5, 0.0, d);
+        float glow = pow(core, 2.4);
+        float alpha = glow;
+
+        // 基本色：白(0.62)・青白(0.24)・暖色(残り) を色種で分岐
+        vec3 col;
+        if (vTint < 0.62)      col = vec3(1.0, 1.0, 1.0);
+        else if (vTint < 0.86) col = vec3(0.70, 0.83, 1.0);
+        else                   col = vec3(1.0, 0.92, 0.74);
+
+        // ユーザー指定の色相シフト（白以外も含め全体に薄く適用）
+        if (abs(uHue) > 0.001) {
+          vec3 shifted = hsv2rgb(vec3(fract(0.58 + uHue * 0.5), 0.55, 1.0));
+          col = mix(col, shifted, 0.55);
+        }
+
+        // ハイパーワープ時は青白く加熱
+        col = mix(col, vec3(0.8, 0.9, 1.0), uWarp * 0.5);
+
+        // 手前ほど明るく
+        float bright = 0.25 + vBright * 1.05 + uWarp * 0.4;
+        gl_FragColor = vec4(col * bright, alpha);
+      }
+    `
+  });
+
+  const starField = new THREE.Points(starGeo, starMaterial);
+  scene.add(starField);
+
+  /* =========================================================
+     背景の星雲（ソフトな色彩・奥行き演出）
+     ========================================================= */
+  const NEB_COUNT = prefersReduced ? 120 : 380;
+  const nebGeo = new THREE.BufferGeometry();
+  const nebPos   = new Float32Array(NEB_COUNT * 3);
+  const nebPhase = new Float32Array(NEB_COUNT);
+  const nebTint  = new Float32Array(NEB_COUNT);
+  const nebSize  = new Float32Array(NEB_COUNT);
+  for (let i = 0; i < NEB_COUNT; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const rad = Math.sqrt(Math.random()) * RADIUS * 0.9;
+    nebPos[i * 3]     = Math.cos(ang) * rad;
+    nebPos[i * 3 + 1] = Math.sin(ang) * rad;
+    nebPos[i * 3 + 2] = 0;
+    nebPhase[i] = Math.random();
+    nebTint[i]  = Math.random();
+    nebSize[i]  = 4.0 + Math.random() * 6.0;
+  }
+  nebGeo.setAttribute('position', new THREE.BufferAttribute(nebPos, 3));
+  nebGeo.setAttribute('aXY',    new THREE.BufferAttribute(nebPos.slice(), 3));
+  nebGeo.setAttribute('aPhase', new THREE.BufferAttribute(nebPhase, 1));
+  nebGeo.setAttribute('aTint',  new THREE.BufferAttribute(nebTint, 1));
+  nebGeo.setAttribute('aSize',  new THREE.BufferAttribute(nebSize, 1));
+  nebGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), DEPTH * 2);
+
+  const nebUniforms = {
+    uTime:  { value: 0 },
+    uDepth: { value: DEPTH },
+    uSpeed: { value: 1.0 },
+    uHue:   { value: 0.0 },
+    uPixelRatio: { value: renderer.getPixelRatio() },
+    uSizeBase:   { value: window.innerHeight }
+  };
+
+  const nebMaterial = new THREE.ShaderMaterial({
+    uniforms: nebUniforms,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      attribute vec3  aXY;
+      attribute float aPhase;
+      attribute float aTint;
+      attribute float aSize;
+      uniform float uTime, uDepth, uSpeed, uPixelRatio, uSizeBase;
+      varying float vTint;
+      varying float vNear;
+      void main() {
+        float t = fract(aPhase + uTime * uSpeed * 0.012);
+        float z = -uDepth + t * uDepth;
+        vec3 pos = vec3(aXY.xy * 0.55, z);
+        vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+        gl_Position = projectionMatrix * mv;
+        vTint = aTint;
+        // 手前と最奥で薄れるよう中間で最大に
+        vNear = sin(t * 3.14159);
+        float dist = max(-mv.z, 1.0);
+        gl_PointSize = clamp(aSize * uSizeBase * 0.9 / dist * uPixelRatio, 2.0, 220.0 * uPixelRatio);
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform float uHue;
+      varying float vTint;
+      varying float vNear;
+      vec3 hsv2rgb(vec3 c){
+        vec4 K = vec4(1.0,2.0/3.0,1.0/3.0,3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz)*6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p-K.xxx,0.0,1.0), c.y);
+      }
+      void main() {
+        float d = length(gl_PointCoord - 0.5);
+        if (d > 0.5) discard;
+        float a = smoothstep(0.5, 0.0, d);
+        a = pow(a, 1.8) * vNear * 0.14;
+        // 紫〜青〜シアン系の星雲色
+        float hue = fract(0.62 + vTint * 0.22 + uHue * 0.4);
+        vec3 col = hsv2rgb(vec3(hue, 0.7, 1.0));
+        gl_FragColor = vec4(col, a);
+      }
+    `
+  });
+
+  const nebula = new THREE.Points(nebGeo, nebMaterial);
+  scene.add(nebula);
+
+  /* =========================================================
+     操作（HUD・マウス操舵・ワープ）
+     ========================================================= */
+  const speedSlider = document.getElementById('speed');
+  const speedVal    = document.getElementById('speedVal');
+  const hueSlider   = document.getElementById('hue');
+  const hueVal      = document.getElementById('hueVal');
+  const warpBtn     = document.getElementById('warpBtn');
+  const pauseBtn    = document.getElementById('pauseBtn');
+
+  let baseSpeed = prefersReduced ? 0.35 : Number(speedSlider.value);
+  if (prefersReduced) speedSlider.value = baseSpeed.toFixed(2);
+
+  let hue = 0;
+  let paused = false;
+  let warpTarget = 0;   // ハイパーワープ目標(0/1)
+  let warp = 0;         // 補間後の現在値
+  // 操舵（マウス位置に応じたカメラの傾き）
+  let aimYaw = 0, aimPitch = 0;
+  let yaw = 0, pitch = 0;
+
+  speedSlider.addEventListener('input', () => {
+    baseSpeed = Number(speedSlider.value);
+    speedVal.textContent = baseSpeed.toFixed(2) + 'x';
+  });
+  speedVal.textContent = baseSpeed.toFixed(2) + 'x';
+
+  hueSlider.addEventListener('input', () => {
+    hue = Number(hueSlider.value);
+    hueVal.textContent = (hue >= 0 ? '+' : '') + Math.round(hue * 100);
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? '再生' : '停止';
+  });
+
+  function triggerWarp() {
+    warpTarget = warpTarget > 0.5 ? 0 : 1;
+    warpBtn.textContent = warpTarget > 0.5 ? 'ワープ解除' : 'ハイパーワープ';
+  }
+  warpBtn.addEventListener('click', triggerWarp);
+
+  // 画面クリックでもハイパーワープ（HUD 上のクリックは除外）
+  renderer.domElement.addEventListener('pointerdown', triggerWarp);
+
+  // マウス移動で操舵
+  window.addEventListener('pointermove', (e) => {
+    const cx = (e.clientX / window.innerWidth) * 2 - 1;
+    const cy = (e.clientY / window.innerHeight) * 2 - 1;
+    aimYaw = -cx * 0.16;
+    aimPitch = cy * 0.10;
+  });
+
+  /* =========================================================
+     アニメーションループ
+     ========================================================= */
+  const clock = new THREE.Clock();
+  let simTime = 0; // ワープ位相用の累積時間（停止中は進めない）
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+
+    // ハイパーワープの滑らかな補間
+    warp += (warpTarget - warp) * Math.min(1, dt * 4);
+
+    // 実効速度：ワープ時に最大 2.6 倍まで加速
+    const effSpeed = baseSpeed * (1.0 + warp * 1.6);
+
+    if (!paused) {
+      simTime += dt * effSpeed;
+    }
+
+    // 尾の伸び：速度が上がるほど長く（ワープでさらに加算）
+    const stretch = Math.min(1, (effSpeed - 0.5) * 0.45 + warp * 0.6);
+
+    // uniform 更新
+    starUniforms.uTime.value   = simTime;
+    starUniforms.uSpeed.value  = 1.0;          // 位相速度は simTime 側に集約
+    starUniforms.uStretch.value = Math.max(0, stretch);
+    starUniforms.uHue.value    = hue;
+    starUniforms.uWarp.value   = warp;
+
+    nebUniforms.uTime.value  = simTime;
+    nebUniforms.uHue.value   = hue;
+
+    // カメラの操舵（緩やかに追従）。reduced-motion 時は揺らさない
+    if (!prefersReduced) {
+      yaw   += (aimYaw   - yaw)   * Math.min(1, dt * 2.5);
+      pitch += (aimPitch - pitch) * Math.min(1, dt * 2.5);
+      camera.rotation.y = yaw;
+      camera.rotation.x = pitch;
+      // ワープ中はわずかに視野を広げてスピード感を強調
+      const targetFov = 70 + warp * 18;
+      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
+      // 全体をゆっくり回して没入感を出す
+      starField.rotation.z += dt * 0.02 * effSpeed;
+      nebula.rotation.z    -= dt * 0.01 * effSpeed;
+      camera.updateProjectionMatrix();
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  /* =========================================================
+     リサイズ追従
+     ========================================================= */
+  function onResize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+    const pr = renderer.getPixelRatio();
+    starUniforms.uPixelRatio.value = pr;
+    starUniforms.uSizeBase.value   = h;
+    nebUniforms.uPixelRatio.value  = pr;
+    nebUniforms.uSizeBase.value    = h;
+  }
+  window.addEventListener('resize', onResize);
+  </script>
+</body>
+</html>

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<!-- AI 作者情報（プロジェクト規約） -->
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="description" content="物理ベースの水面波紋シミュレーション。雨粒の落下とクリック/ドラッグで波紋が広がる。">
+	<title>Water Ripples Simulation Part.1 - Claude Opus 4.8版</title>
+	<style>
+		/* 画面全体に表示し、はみ出しを抑制 */
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		html, body {
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			background: #050a14;
+			font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+		}
+		#scene {
+			display: block;
+			width: 100vw;
+			height: 100vh;
+			cursor: crosshair;
+		}
+		/* 操作ヒント（さりげなく表示） */
+		.hud {
+			position: fixed;
+			left: 16px;
+			bottom: 16px;
+			padding: 9px 14px;
+			border-radius: 999px;
+			background: rgba(6, 18, 32, 0.55);
+			border: 1px solid rgba(110, 190, 255, 0.28);
+			color: #cfe8ff;
+			font-size: 12px;
+			letter-spacing: 0.04em;
+			backdrop-filter: blur(6px);
+			-webkit-backdrop-filter: blur(6px);
+			user-select: none;
+			pointer-events: none;
+			transition: opacity 1.2s ease;
+		}
+		.hud.fade { opacity: 0; }
+		.brand {
+			position: fixed;
+			right: 16px;
+			top: 16px;
+			color: rgba(150, 200, 255, 0.45);
+			font-size: 11px;
+			letter-spacing: 0.12em;
+			user-select: none;
+			pointer-events: none;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="scene"></canvas>
+	<div class="hud" id="hud">クリック / ドラッグで波紋。雨は自動で降ります。</div>
+	<div class="brand">CLAUDE OPUS 4.8</div>
+
+	<script>
+	(() => {
+		"use strict";
+
+		// ====== 基本セットアップ ======
+		const canvas = document.getElementById("scene");
+		const ctx = canvas.getContext("2d", { alpha: false });
+		const hud = document.getElementById("hud");
+
+		// アニメーション抑制設定の尊重
+		const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+		// シミュレーション格子（実画面より粗くして高速化）
+		let viewW = 0, viewH = 0;       // 表示ピクセル数（CSSピクセル）
+		let gridW = 0, gridH = 0;       // シミュレーション格子サイズ
+		let cell = 5;                   // 1セルあたりの表示ピクセル
+		let prev, curr;                 // 波の高さフィールド（時刻 t-1, t）
+		let off, offCtx, offImg, offData; // オフスクリーン（格子解像度で描画）
+		let bgImg;                      // 背景の基調色（格子解像度・静的）
+		let damping = 0.985;            // 減衰係数（1に近いほど波が長く残る）
+
+		// ====== リサイズ / 初期化 ======
+		function resize() {
+			viewW = window.innerWidth;
+			viewH = window.innerHeight;
+			canvas.width = viewW;
+			canvas.height = viewH;
+
+			// 画面サイズに応じてセルサイズを決定（負荷と精細さのバランス）
+			cell = Math.max(3, Math.round(Math.min(viewW, viewH) / 170));
+			gridW = Math.max(8, Math.ceil(viewW / cell) + 1);
+			gridH = Math.max(8, Math.ceil(viewH / cell) + 1);
+
+			const n = gridW * gridH;
+			prev = new Float32Array(n);
+			curr = new Float32Array(n);
+
+			// 格子解像度のオフスクリーンを用意し、描画後に拡大表示する
+			off = document.createElement("canvas");
+			off.width = gridW;
+			off.height = gridH;
+			offCtx = off.getContext("2d");
+			offCtx.imageSmoothingEnabled = true;
+			offImg = offCtx.createImageData(gridW, gridH);
+			offData = offImg.data;
+
+			buildBackground();
+
+			// 拡大表示時に滑らかに補間（バイリニア相当）
+			ctx.imageSmoothingEnabled = true;
+			ctx.imageSmoothingQuality = "high";
+		}
+
+		// 背景の基調色（縦グラデーション＋淡い光だまり）を格子解像度で先に焼き込む
+		function buildBackground() {
+			bgImg = new Float32Array(gridW * gridH * 3); // r,g,b を 0..1 で保持
+			const cx = gridW * 0.5;
+			const cy = gridH * 0.28;
+			const maxd = Math.hypot(gridW, gridH);
+			for (let y = 0; y < gridH; y++) {
+				const t = y / (gridH - 1);
+				// 上部=やや明るい青、下部=深い藍
+				const topR = 18, topG = 64, topB = 110;
+				const botR = 6,  botG = 22, botB = 48;
+				const r0 = topR + (botR - topR) * t;
+				const g0 = topG + (botG - topG) * t;
+				const b0 = topB + (botB - topB) * t;
+				for (let x = 0; x < gridW; x++) {
+					// 上方中央の光だまり
+					const d = Math.hypot(x - cx, y - cy) / maxd;
+					const glow = Math.max(0, 1 - d * 1.7) * 26;
+					const i = (y * gridW + x) * 3;
+					bgImg[i]     = (r0 + glow) / 255;
+					bgImg[i + 1] = (g0 + glow * 1.15) / 255;
+					bgImg[i + 2] = (b0 + glow * 1.3) / 255;
+				}
+			}
+		}
+
+		// ====== 波紋を発生させる ======
+		// (px, py) は表示座標。power は初期変位（負で凹み）。radius はセル単位の半径。
+		function drop(px, py, power, radius) {
+			const gx = px / cell;
+			const gy = py / cell;
+			const r = radius || 2;
+			const r2 = r * r;
+			const x0 = Math.max(1, Math.floor(gx - r));
+			const x1 = Math.min(gridW - 2, Math.ceil(gx + r));
+			const y0 = Math.max(1, Math.floor(gy - r));
+			const y1 = Math.min(gridH - 2, Math.ceil(gy + r));
+			for (let y = y0; y <= y1; y++) {
+				for (let x = x0; x <= x1; x++) {
+					const dx = x - gx, dy = y - gy;
+					const dd = dx * dx + dy * dy;
+					if (dd > r2) continue;
+					// 中心ほど強く、なだらかに減衰（余弦ファルオフ）
+					const f = Math.cos((Math.sqrt(dd) / r) * Math.PI * 0.5);
+					curr[y * gridW + x] += power * f;
+				}
+			}
+		}
+
+		// ====== 波動方程式の1ステップ ======
+		function stepWave() {
+			const w = gridW;
+			for (let y = 1; y < gridH - 1; y++) {
+				let idx = y * w + 1;
+				for (let x = 1; x < w - 1; x++, idx++) {
+					// 近傍4点の平均から前フレーム値を引く（標準的な2D波動更新）
+					const v = (prev[idx - 1] + prev[idx + 1] + prev[idx - w] + prev[idx + w]) * 0.5 - curr[idx];
+					curr[idx] = v * damping;
+				}
+			}
+			// バッファ入れ替え
+			const tmp = prev; prev = curr; curr = tmp;
+		}
+
+		// ====== 描画（高さフィールド→屈折＋ハイライト）======
+		function render() {
+			const w = gridW, h = gridH;
+			const d = offData;
+			const bg = bgImg;
+			// ライト方向（左上から）
+			const lx = -0.55, ly = -0.55, lz = 0.62;
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					const idx = y * w + x;
+					// 端は勾配計算が破綻するためクランプ
+					const xm = x > 0 ? idx - 1 : idx;
+					const xp = x < w - 1 ? idx + 1 : idx;
+					const ym = y > 0 ? idx - w : idx;
+					const yp = y < h - 1 ? idx + w : idx;
+
+					// 高さの勾配＝水面の法線（簡易）。屈折オフセットに使う
+					const gx = prev[xm] - prev[xp];
+					const gy = prev[ym] - prev[yp];
+
+					// 屈折：勾配方向に背景をずらしてサンプリング
+					let sx = x + gx * 90;
+					let sy = y + gy * 90;
+					if (sx < 0) sx = 0; else if (sx > w - 1) sx = w - 1;
+					if (sy < 0) sy = 0; else if (sy > h - 1) sy = h - 1;
+					const sIdx = ((sy | 0) * w + (sx | 0)) * 3;
+
+					let r = bg[sIdx], g = bg[sIdx + 1], b = bg[sIdx + 2];
+
+					// スペキュラ：法線とライト方向の内積でハイライト
+					// 法線を (gx, gy, 1) として正規化近似
+					const nlen = 1 / Math.sqrt(gx * gx + gy * gy + 1);
+					const nx = gx * nlen, ny = gy * nlen, nz = nlen;
+					let spec = nx * lx + ny * ly + nz * lz;
+					if (spec < 0) spec = 0;
+					spec = spec * spec; // 引き締め
+					const hl = spec * 0.9;
+
+					// 高さに応じた明暗（波の山＝明るく）
+					const sh = prev[idx] * 2.2;
+
+					r += hl * 0.85 + sh * 0.10;
+					g += hl * 0.95 + sh * 0.16;
+					b += hl * 1.00 + sh * 0.24;
+
+					// 0..1 → 0..255
+					const o = idx * 4;
+					d[o]     = r < 0 ? 0 : r > 1 ? 255 : r * 255;
+					d[o + 1] = g < 0 ? 0 : g > 1 ? 255 : g * 255;
+					d[o + 2] = b < 0 ? 0 : b > 1 ? 255 : b * 255;
+					d[o + 3] = 255;
+				}
+			}
+			offCtx.putImageData(offImg, 0, 0);
+			// 格子→表示へ拡大（補間で滑らかに）
+			ctx.drawImage(off, 0, 0, w, h, 0, 0, viewW, viewH);
+		}
+
+		// ====== 自動の雨 ======
+		let rainAccum = 0;
+		function rain(dt) {
+			if (reduceMotion) return; // 動きの抑制設定では雨を降らせない
+			// 画面サイズに応じて雨量を調整（毎秒の期待回数）
+			const rate = Math.max(2, Math.min(10, (viewW * viewH) / 220000));
+			rainAccum += rate * dt;
+			while (rainAccum >= 1) {
+				rainAccum -= 1;
+				const x = Math.random() * viewW;
+				const y = Math.random() * viewH;
+				// 雨粒の大きさ/強さに揺らぎを持たせる
+				const big = Math.random() < 0.18;
+				drop(x, y, big ? -3.2 : -1.6, big ? 3 : 2);
+			}
+		}
+
+		// ====== ポインタ操作 ======
+		let pointerActive = false;
+		let lastPx = 0, lastPy = 0;
+
+		function pointerPos(e) {
+			const rect = canvas.getBoundingClientRect();
+			return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+		}
+
+		canvas.addEventListener("pointerdown", (e) => {
+			pointerActive = true;
+			const p = pointerPos(e);
+			lastPx = p.x; lastPy = p.y;
+			drop(p.x, p.y, -4.5, 3);
+			hideHud();
+			canvas.setPointerCapture(e.pointerId);
+		});
+
+		canvas.addEventListener("pointermove", (e) => {
+			if (!pointerActive) return;
+			const p = pointerPos(e);
+			// 移動経路に沿って波紋を連続発生（線をなぞる体験）
+			const dist = Math.hypot(p.x - lastPx, p.y - lastPy);
+			const steps = Math.max(1, Math.floor(dist / (cell * 2)));
+			for (let s = 1; s <= steps; s++) {
+				const t = s / steps;
+				drop(lastPx + (p.x - lastPx) * t, lastPy + (p.y - lastPy) * t, -2.4, 2);
+			}
+			lastPx = p.x; lastPy = p.y;
+		});
+
+		const endPointer = () => { pointerActive = false; };
+		canvas.addEventListener("pointerup", endPointer);
+		canvas.addEventListener("pointercancel", endPointer);
+
+		// HUD を初回操作後にフェードアウト
+		let hudHidden = false;
+		function hideHud() {
+			if (hudHidden) return;
+			hudHidden = true;
+			hud.classList.add("fade");
+		}
+		// 操作が無くても数秒で消す
+		setTimeout(hideHud, 6000);
+
+		// ====== メインループ ======
+		let lastTime = performance.now();
+		let acc = 0;
+		const SIM_DT = 1 / 60; // シミュレーションは60Hz固定で安定化
+
+		function loop(now) {
+			let dt = (now - lastTime) / 1000;
+			lastTime = now;
+			if (dt > 0.1) dt = 0.1; // タブ復帰時の暴走を防ぐ
+
+			// 固定タイムステップで波動を進める
+			acc += dt;
+			let steps = 0;
+			while (acc >= SIM_DT && steps < 4) {
+				rain(SIM_DT);
+				stepWave();
+				acc -= SIM_DT;
+				steps++;
+			}
+			render();
+			requestAnimationFrame(loop);
+		}
+
+		// ====== 起動 ======
+		resize();
+		window.addEventListener("resize", () => {
+			// リサイズ中の連続発火を間引く
+			clearTimeout(resize._t);
+			resize._t = setTimeout(resize, 120);
+		});
+
+		if (reduceMotion) {
+			// 動きの抑制：静的な水面に数個の控えめな波紋だけ置いて1フレーム描画
+			for (let i = 0; i < 5; i++) {
+				drop(Math.random() * viewW, Math.random() * viewH, -2, 3);
+			}
+			for (let k = 0; k < 40; k++) stepWave();
+			render();
+			hideHud();
+		} else {
+			requestAnimationFrame(loop);
+		}
+	})();
+	</script>
+</body>
+</html>

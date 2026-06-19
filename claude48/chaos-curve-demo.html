@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- AIメタ情報（このファイルの作者） -->
+  <meta name="ai.author" content="Claude Opus 4.8">
+  <meta name="ai.model" content="claude-opus-4-8">
+  <meta name="ai.note" content="Chaos Curve Demo - de Jong / Clifford アトラクタの密度可視化。Claude Opus 4.8 オリジナル版。">
+  <title>Chaos Curve Demo - Claude Opus 4.8版</title>
+  <style>
+    /* ===== 基本レイアウト：画面全体・はみ出し禁止 ===== */
+    :root {
+      --panel: rgba(10, 14, 26, 0.72);
+      --panel-border: rgba(130, 180, 255, 0.22);
+      --accent: #7cc4ff;
+      --accent-2: #ff7ad0;
+      --text: #dbe9ff;
+      --text-dim: #8fa6c8;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #03060f;
+      color: var(--text);
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: none;
+    }
+    /* キャンバスは2枚重ね：下=アトラクタ蓄積、上=ポスト処理（グロー合成） */
+    canvas {
+      display: block;
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+    #glow {
+      /* 上層は加算合成風のグローを重ねる */
+      mix-blend-mode: screen;
+      pointer-events: none;
+      opacity: 0.85;
+    }
+
+    /* ===== HUD（操作パネル） ===== */
+    .hud {
+      position: fixed;
+      z-index: 10;
+      top: 14px;
+      left: 14px;
+      width: min(320px, calc(100vw - 28px));
+      padding: 14px 16px 16px;
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      background: var(--panel);
+      backdrop-filter: blur(10px) saturate(1.2);
+      -webkit-backdrop-filter: blur(10px) saturate(1.2);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+      font-size: 12px;
+      transition: transform 0.35s cubic-bezier(.2,.9,.2,1), opacity 0.35s;
+    }
+    .hud.collapsed {
+      transform: translateX(calc(-100% - 14px));
+      opacity: 0;
+    }
+    .hud h1 {
+      margin: 0 0 2px;
+      font-size: 15px;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hud .sub {
+      margin: 0 0 12px;
+      font-size: 10.5px;
+      color: var(--text-dim);
+      letter-spacing: 0.02em;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 18px 1fr 52px;
+      gap: 8px;
+      align-items: center;
+      margin: 7px 0;
+    }
+    .row label { color: var(--text-dim); font-weight: 600; }
+    .row output {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+      font-size: 11px;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, rgba(124,196,255,.5), rgba(255,122,208,.5));
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #eaf4ff;
+      box-shadow: 0 0 8px rgba(124,196,255,.9);
+      cursor: pointer;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px; border: none; border-radius: 50%;
+      background: #eaf4ff; box-shadow: 0 0 8px rgba(124,196,255,.9); cursor: pointer;
+    }
+    .btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .btns button {
+      flex: 1 1 auto;
+      min-width: 64px;
+      padding: 8px 6px;
+      border: 1px solid var(--panel-border);
+      border-radius: 9px;
+      background: rgba(124, 196, 255, 0.10);
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.18s, transform 0.08s;
+    }
+    .btns button:hover { background: rgba(124, 196, 255, 0.22); }
+    .btns button:active { transform: scale(0.96); }
+    .btns button.on {
+      background: linear-gradient(90deg, rgba(124,196,255,.35), rgba(255,122,208,.35));
+      border-color: rgba(255,255,255,.35);
+    }
+
+    .divider {
+      height: 1px;
+      margin: 12px 0 4px;
+      background: linear-gradient(90deg, transparent, var(--panel-border), transparent);
+    }
+    .palette {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .swatch {
+      flex: 1;
+      height: 22px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .swatch:hover { transform: translateY(-2px); }
+    .swatch.on { border-color: #fff; }
+
+    /* トグルボタン（パネル開閉） */
+    #toggle {
+      position: fixed;
+      z-index: 11;
+      top: 14px;
+      left: 14px;
+      width: 38px; height: 38px;
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      color: var(--text);
+      font-size: 16px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.35s cubic-bezier(.2,.9,.2,1);
+    }
+    #toggle.shifted { transform: none; }
+
+    .hint {
+      position: fixed;
+      z-index: 9;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10.5px;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+      pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,.8);
+      transition: opacity 0.6s;
+    }
+  </style>
+</head>
+<body>
+  <!-- 蓄積描画用キャンバス -->
+  <canvas id="base"></canvas>
+  <!-- グロー（ポスト処理）合成用キャンバス -->
+  <canvas id="glow"></canvas>
+
+  <!-- パネル開閉トグル（折りたたみ時に表示） -->
+  <button id="toggle" title="パネル表示">≡</button>
+
+  <!-- 操作パネル -->
+  <section class="hud" id="hud">
+    <h1>Chaos Curve</h1>
+    <p class="sub">Strange Attractor / 密度可視化 — Opus 4.8版</p>
+
+    <div class="row">
+      <label for="pa">a</label>
+      <input id="pa" type="range" min="-3" max="3" step="0.001" value="-1.7">
+      <output id="pav">-1.700</output>
+    </div>
+    <div class="row">
+      <label for="pb">b</label>
+      <input id="pb" type="range" min="-3" max="3" step="0.001" value="1.8">
+      <output id="pbv">1.800</output>
+    </div>
+    <div class="row">
+      <label for="pc">c</label>
+      <input id="pc" type="range" min="-3" max="3" step="0.001" value="-1.9">
+      <output id="pcv">-1.900</output>
+    </div>
+    <div class="row">
+      <label for="pd">d</label>
+      <input id="pd" type="range" min="-3" max="3" step="0.001" value="-0.4">
+      <output id="pdv">-0.400</output>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="row">
+      <label for="pglow" title="グロー強度">✦</label>
+      <input id="pglow" type="range" min="0" max="1" step="0.01" value="0.7">
+      <output id="pglowv">0.70</output>
+    </div>
+    <div class="row">
+      <label for="pspeed" title="アニメ速度">▷</label>
+      <input id="pspeed" type="range" min="0" max="1" step="0.01" value="0.45">
+      <output id="pspeedv">0.45</output>
+    </div>
+
+    <div class="palette" id="palette"></div>
+
+    <div class="btns">
+      <button id="btnType">Type: de Jong</button>
+      <button id="btnAuto" class="on">Auto ◯</button>
+      <button id="btnRandom">Random</button>
+      <button id="btnSave">PNG</button>
+    </div>
+  </section>
+
+  <div class="hint" id="hint">ドラッグ/スワイプで形状変化・ダブルクリックでパネル開閉</div>
+
+  <script>
+  "use strict";
+  /* ============================================================
+     Chaos Curve Demo — Claude Opus 4.8 オリジナル版
+
+     概要:
+     - de Jong / Clifford ストレンジアトラクタを反復計算し、
+       密度バッファ（各ピクセルへの命中回数）を作る。
+     - 密度を対数トーンマッピングして配色し、明部を抽出して
+       ガウシアン風ブラーで「グロー」を合成する2パス構成。
+     - パラメータ(a,b,c,d)を滑らかに自動モーフィングし、
+       生き物のように形が変化し続ける。
+     - すべて素のCanvas APIで完結（外部CDNなし）。
+     ============================================================ */
+
+    // ---- DOM参照 ----
+    const baseCanvas = document.getElementById("base");
+    const glowCanvas = document.getElementById("glow");
+    const bctx = baseCanvas.getContext("2d", { alpha: false });
+    const gctx = glowCanvas.getContext("2d", { alpha: true });
+
+    const hud = document.getElementById("hud");
+    const toggleBtn = document.getElementById("toggle");
+    const hint = document.getElementById("hint");
+
+    const sliders = {
+      a: document.getElementById("pa"),
+      b: document.getElementById("pb"),
+      c: document.getElementById("pc"),
+      d: document.getElementById("pd"),
+      glow: document.getElementById("pglow"),
+      speed: document.getElementById("pspeed"),
+    };
+    const outs = {
+      a: document.getElementById("pav"),
+      b: document.getElementById("pbv"),
+      c: document.getElementById("pcv"),
+      d: document.getElementById("pdv"),
+      glow: document.getElementById("pglowv"),
+      speed: document.getElementById("pspeedv"),
+    };
+    const btnType = document.getElementById("btnType");
+    const btnAuto = document.getElementById("btnAuto");
+    const btnRandom = document.getElementById("btnRandom");
+    const btnSave = document.getElementById("btnSave");
+    const paletteEl = document.getElementById("palette");
+
+    // ---- prefers-reduced-motion ----
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // ---- 描画状態 ----
+    let W = 0, H = 0;          // 表示ピクセルサイズ（DPR適用後の論理解像度）
+    let dpr = 1;
+    let buffW = 0, buffH = 0;  // 密度バッファ解像度（負荷調整のため画面より低解像度）
+    let density = null;        // Float32Array 密度バッファ
+    let maxDensity = 1;        // 当該フレームの最大密度（トーンマッピング用）
+    let imageData = null;      // base描画用 ImageData
+    let pixels = null;         // imageData.data (Uint8ClampedArray)
+
+    // アトラクタ反復の現在点
+    let ax = 0.1, ay = 0.1;
+
+    // 目標/現在のパラメータ（自動モーフィング用に分離）
+    const target = { a: -1.7, b: 1.8, c: -1.9, d: -0.4 };
+    const cur = { a: -1.7, b: 1.8, c: -1.9, d: -0.4 };
+
+    // モード
+    let attractorType = 0; // 0:de Jong, 1:Clifford
+    const typeNames = ["de Jong", "Clifford"];
+    let autoMorph = !reduceMotion;
+    let paletteIndex = 0;
+
+    // 自動モーフィングの揺らぎ位相
+    const phase = { a: 0, b: 1.7, c: 3.1, d: 4.6 };
+
+    // ---- カラーパレット（密度tに対するRGBグラデーション）----
+    // 各パレットは [位置0..1, r, g, b] の配列。LUTに展開して高速参照。
+    const palettes = [
+      { name: "Aurora", stops: [
+        [0.00,  4,  6, 20],
+        [0.30, 20, 60,140],
+        [0.55, 30,200,210],
+        [0.78,180,255,170],
+        [1.00,255,255,235],
+      ]},
+      { name: "Magma", stops: [
+        [0.00,  6,  2, 12],
+        [0.30,110, 20, 80],
+        [0.58,235, 70, 60],
+        [0.80,255,170, 60],
+        [1.00,255,250,210],
+      ]},
+      { name: "Ice", stops: [
+        [0.00,  3,  8, 22],
+        [0.35, 28, 80,160],
+        [0.62, 90,170,255],
+        [0.85,180,225,255],
+        [1.00,255,255,255],
+      ]},
+      { name: "Neon", stops: [
+        [0.00, 10,  2, 22],
+        [0.28,130, 20,200],
+        [0.55,255, 40,160],
+        [0.80,255,120,255],
+        [1.00,235,255,255],
+      ]},
+    ];
+    const LUT_SIZE = 1024;
+    let lut = new Uint8Array(LUT_SIZE * 3);
+
+    // パレットをLUTに展開
+    function buildLUT() {
+      const stops = palettes[paletteIndex].stops;
+      for (let i = 0; i < LUT_SIZE; i++) {
+        const t = i / (LUT_SIZE - 1);
+        // 該当区間を探す
+        let s0 = stops[0], s1 = stops[stops.length - 1];
+        for (let k = 0; k < stops.length - 1; k++) {
+          if (t >= stops[k][0] && t <= stops[k + 1][0]) { s0 = stops[k]; s1 = stops[k + 1]; break; }
+        }
+        const span = (s1[0] - s0[0]) || 1;
+        const f = (t - s0[0]) / span;
+        const idx = i * 3;
+        lut[idx]     = (s0[1] + (s1[1] - s0[1]) * f) | 0;
+        lut[idx + 1] = (s0[2] + (s1[2] - s0[2]) * f) | 0;
+        lut[idx + 2] = (s0[3] + (s1[3] - s0[3]) * f) | 0;
+      }
+    }
+
+    // パレットUI生成
+    function buildPaletteUI() {
+      paletteEl.innerHTML = "";
+      palettes.forEach((p, i) => {
+        const sw = document.createElement("div");
+        sw.className = "swatch" + (i === paletteIndex ? " on" : "");
+        sw.title = p.name;
+        // CSSグラデーションでプレビュー
+        const css = p.stops.map(s => `rgb(${s[1]},${s[2]},${s[3]}) ${(s[0]*100).toFixed(0)}%`).join(",");
+        sw.style.background = `linear-gradient(90deg, ${css})`;
+        sw.addEventListener("click", () => {
+          paletteIndex = i;
+          buildLUT();
+          buildPaletteUI();
+        });
+        paletteEl.appendChild(sw);
+      });
+    }
+
+    // ---- リサイズ ----
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = Math.round(window.innerWidth * dpr);
+      H = Math.round(window.innerHeight * dpr);
+      baseCanvas.width = W; baseCanvas.height = H;
+      glowCanvas.width = W; glowCanvas.height = H;
+
+      // 密度バッファは画面の約70%解像度に抑え、滑らかさと負荷を両立
+      const scale = 0.7;
+      buffW = Math.max(2, Math.round(W * scale));
+      buffH = Math.max(2, Math.round(H * scale));
+      density = new Float32Array(buffW * buffH);
+      imageData = bctx.createImageData(buffW, buffH);
+      pixels = imageData.data;
+
+      // 背景クリア
+      bctx.fillStyle = "#03060f";
+      bctx.fillRect(0, 0, W, H);
+    }
+
+    // ---- アトラクタ1ステップ ----
+    // de Jong:  x' = sin(a*y) - cos(b*x),  y' = sin(c*x) - cos(d*y)
+    // Clifford: x' = sin(a*y) + c*cos(a*x), y' = sin(b*x) + d*cos(b*y)
+    // 反復で密度バッファへ加算する。
+    function iterate(count) {
+      const a = cur.a, b = cur.b, c = cur.c, d = cur.d;
+      let x = ax, y = ay;
+      const dens = density;
+      const bw = buffW, bh = buffH;
+
+      // 画面座標へのマッピング係数（アトラクタは概ね [-2.5, 2.5] に収まる）
+      const range = (attractorType === 0) ? 2.4 : (2.0 + Math.abs(c) + Math.abs(d)) * 0.6 + 1.0;
+      const sx = bw / (range * 2);
+      const sy = bh / (range * 2);
+      const ox = bw * 0.5;
+      const oy = bh * 0.5;
+
+      let localMax = maxDensity * 0.985; // 緩やかに減衰させ追従性を確保
+
+      if (attractorType === 0) {
+        for (let i = 0; i < count; i++) {
+          const nx = Math.sin(a * y) - Math.cos(b * x);
+          const ny = Math.sin(c * x) - Math.cos(d * y);
+          x = nx; y = ny;
+          const px = (x * sx + ox) | 0;
+          const py = (y * sy + oy) | 0;
+          if (px >= 0 && px < bw && py >= 0 && py < bh) {
+            const idx = py * bw + px;
+            const v = dens[idx] + 1;
+            dens[idx] = v;
+            if (v > localMax) localMax = v;
+          }
+        }
+      } else {
+        for (let i = 0; i < count; i++) {
+          const nx = Math.sin(a * y) + c * Math.cos(a * x);
+          const ny = Math.sin(b * x) + d * Math.cos(b * y);
+          x = nx; y = ny;
+          const px = (x * sx + ox) | 0;
+          const py = (y * sy + oy) | 0;
+          if (px >= 0 && px < bw && py >= 0 && py < bh) {
+            const idx = py * bw + px;
+            const v = dens[idx] + 1;
+            dens[idx] = v;
+            if (v > localMax) localMax = v;
+          }
+        }
+      }
+      ax = x; ay = y;
+      maxDensity = localMax;
+    }
+
+    // ---- 密度バッファの緩やかな減衰（残像トレイル）----
+    // 自動モーフ時は形が動くため、古い軌跡を少しずつ薄め、滑らかな尾を残す。
+    function decay(factor) {
+      const dens = density;
+      const n = dens.length;
+      for (let i = 0; i < n; i++) dens[i] *= factor;
+    }
+
+    // ---- 密度 → ピクセル（対数トーンマッピング + LUT配色）----
+    function render() {
+      const dens = density;
+      const n = buffW * buffH;
+      const px = pixels;
+      // 対数スケールの正規化係数
+      const invLogMax = 1 / Math.log(maxDensity + 1);
+      const lastLut = (LUT_SIZE - 1);
+
+      for (let i = 0; i < n; i++) {
+        const v = dens[i];
+        let t = 0;
+        if (v > 0) {
+          // log(1+v) を [0,1] へ。明部を伸ばすため軽いガンマを適用。
+          t = Math.log(v + 1) * invLogMax;
+          if (t > 1) t = 1;
+        }
+        const li = (t * lastLut) | 0;
+        const l3 = li * 3;
+        const o = i << 2;
+        px[o]     = lut[l3];
+        px[o + 1] = lut[l3 + 1];
+        px[o + 2] = lut[l3 + 2];
+        px[o + 3] = 255;
+      }
+
+      // 低解像度バッファをそのまま描き、Canvas側で拡大（imageSmoothing有効でアンチエイリアス）
+      // ImageData は等倍配置 → 一旦オフスクリーン的に putImageData して drawImage で拡大する。
+      bctx.putImageData(imageData, 0, 0); // 左上に等倍で配置（buffW x buffH）
+      // 拡大コピー：自分自身のサブ矩形を全画面へ
+      bctx.imageSmoothingEnabled = true;
+      bctx.imageSmoothingQuality = "high";
+      bctx.drawImage(baseCanvas, 0, 0, buffW, buffH, 0, 0, W, H);
+    }
+
+    // ---- グロー（明部抽出 + ぼかし + screen合成）----
+    function renderGlow(strength) {
+      if (strength <= 0.001) { gctx.clearRect(0, 0, W, H); return; }
+      gctx.clearRect(0, 0, W, H);
+      // baseの内容を縮小→拡大することで安価なブラーを得る。
+      // さらにブラーフィルタを重ねて柔らかいハロを生成。
+      gctx.save();
+      gctx.globalAlpha = strength;
+      gctx.filter = "blur(" + (2.5 * dpr) + "px) brightness(1.25)";
+      // 1/4縮小して拡大（広がりのある光）
+      gctx.drawImage(baseCanvas, 0, 0, W, H, -W * 0.0, -H * 0.0, W, H);
+      gctx.restore();
+    }
+
+    // ---- 自動モーフィング：目標パラメータを正弦波で揺らす ----
+    function updateMorph(dt, speed) {
+      if (autoMorph) {
+        const s = speed * 0.25;
+        phase.a += dt * s * 0.7;
+        phase.b += dt * s * 0.53;
+        phase.c += dt * s * 0.61;
+        phase.d += dt * s * 0.47;
+        target.a = 1.9 * Math.sin(phase.a) + 0.4 * Math.sin(phase.a * 2.3);
+        target.b = 1.9 * Math.sin(phase.b) + 0.4 * Math.cos(phase.b * 1.7);
+        target.c = 1.9 * Math.sin(phase.c) + 0.4 * Math.sin(phase.c * 2.1);
+        target.d = 1.9 * Math.cos(phase.d) + 0.4 * Math.sin(phase.d * 1.9);
+      }
+      // 現在値を目標へ滑らかに補間（イージング）
+      const k = autoMorph ? Math.min(1, dt * 1.8) : Math.min(1, dt * 6);
+      cur.a += (target.a - cur.a) * k;
+      cur.b += (target.b - cur.b) * k;
+      cur.c += (target.c - cur.c) * k;
+      cur.d += (target.d - cur.d) * k;
+
+      // スライダー表示を現在値に同期（自動時のみ）
+      if (autoMorph) {
+        syncSlider("a", cur.a);
+        syncSlider("b", cur.b);
+        syncSlider("c", cur.c);
+        syncSlider("d", cur.d);
+      }
+    }
+
+    function syncSlider(key, v) {
+      sliders[key].value = v.toFixed(3);
+      outs[key].textContent = v.toFixed(3);
+    }
+
+    // ---- メインループ ----
+    let last = performance.now();
+    let accFps = 60;
+
+    function loop(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+
+      // FPS推定（負荷適応用）
+      const fps = 1 / (dt || 0.016);
+      accFps += (fps - accFps) * 0.08;
+
+      const speed = parseFloat(sliders.speed.value);
+      const glowStrength = parseFloat(sliders.glow.value);
+
+      updateMorph(dt, speed);
+
+      // 反復回数を負荷に応じて調整（30fps下回ったら減らす）
+      let iters = (buffW * buffH) * 0.22;
+      if (accFps < 45) iters *= 0.7;
+      if (accFps < 30) iters *= 0.6;
+      iters = Math.max(8000, Math.min(180000, iters | 0));
+
+      if (autoMorph) {
+        // 動きがある時は残像を減衰させ尾を残す
+        decay(0.90);
+        iterate(iters);
+      } else {
+        // 静止時は蓄積を継続し、徐々に精細化
+        iterate(iters);
+        // 上限が伸び続けないように軽く減衰
+        if (maxDensity > 4000) decay(0.995);
+      }
+
+      render();
+      renderGlow(glowStrength);
+
+      rafId = requestAnimationFrame(loop);
+    }
+
+    // ---- 構図リセット（パラメータ変更時に密度を再計算開始）----
+    function resetField() {
+      if (density) density.fill(0);
+      maxDensity = 1;
+      ax = 0.1 + (Math.random() - 0.5) * 0.02;
+      ay = 0.1 + (Math.random() - 0.5) * 0.02;
+    }
+
+    // ---- スライダー操作 ----
+    ["a", "b", "c", "d"].forEach(key => {
+      sliders[key].addEventListener("input", () => {
+        const v = parseFloat(sliders[key].value);
+        outs[key].textContent = v.toFixed(3);
+        target[key] = v;
+        // 手動操作したら自動モーフを止める
+        if (autoMorph) setAuto(false);
+        cur[key] = v; // 即時反映
+        resetField();
+      });
+    });
+    sliders.glow.addEventListener("input", () => {
+      outs.glow.textContent = parseFloat(sliders.glow.value).toFixed(2);
+    });
+    sliders.speed.addEventListener("input", () => {
+      outs.speed.textContent = parseFloat(sliders.speed.value).toFixed(2);
+    });
+
+    // ---- ボタン ----
+    function setAuto(on) {
+      autoMorph = on;
+      btnAuto.classList.toggle("on", on);
+      btnAuto.textContent = on ? "Auto ◯" : "Auto ✕";
+      // 自動から手動へ移る時、現在のスライダー位相を引き継ぐ
+      if (on) {
+        phase.a = cur.a; phase.b = cur.b; phase.c = cur.c; phase.d = cur.d;
+      }
+      resetField();
+    }
+    btnAuto.addEventListener("click", () => setAuto(!autoMorph));
+
+    btnType.addEventListener("click", () => {
+      attractorType = (attractorType + 1) % typeNames.length;
+      btnType.textContent = "Type: " + typeNames[attractorType];
+      resetField();
+    });
+
+    btnRandom.addEventListener("click", () => {
+      target.a = cur.a = (Math.random() * 4 - 2);
+      target.b = cur.b = (Math.random() * 4 - 2);
+      target.c = cur.c = (Math.random() * 4 - 2);
+      target.d = cur.d = (Math.random() * 4 - 2);
+      syncSlider("a", cur.a); syncSlider("b", cur.b);
+      syncSlider("c", cur.c); syncSlider("d", cur.d);
+      paletteIndex = (Math.random() * palettes.length) | 0;
+      buildLUT(); buildPaletteUI();
+      setAuto(false);
+    });
+
+    btnSave.addEventListener("click", () => {
+      // グローを焼き込んだ合成画像を書き出す
+      const out = document.createElement("canvas");
+      out.width = W; out.height = H;
+      const octx = out.getContext("2d");
+      octx.drawImage(baseCanvas, 0, 0);
+      octx.globalCompositeOperation = "screen";
+      octx.globalAlpha = parseFloat(sliders.glow.value);
+      octx.drawImage(glowCanvas, 0, 0);
+      const a = document.createElement("a");
+      a.href = out.toDataURL("image/png");
+      a.download = "chaos-curve-opus48.png";
+      a.click();
+    });
+
+    // ---- パネル開閉 ----
+    let panelOpen = true;
+    function setPanel(open) {
+      panelOpen = open;
+      hud.classList.toggle("collapsed", !open);
+      toggleBtn.style.display = open ? "none" : "flex";
+    }
+    toggleBtn.addEventListener("click", () => setPanel(true));
+
+    // ---- ポインタ操作：ドラッグで a,b（横）/ c,d（縦）を変化 ----
+    let dragging = false;
+    let lastTap = 0;
+    function pointerStart(e) {
+      // ダブルタップ/ダブルクリックでパネル開閉
+      const t = performance.now();
+      if (t - lastTap < 300) { setPanel(!panelOpen); }
+      lastTap = t;
+      dragging = true;
+      hideHint();
+    }
+    function pointerMove(e) {
+      if (!dragging) return;
+      const rx = e.clientX / window.innerWidth;   // 0..1
+      const ry = e.clientY / window.innerHeight;  // 0..1
+      // 画面位置を a,c に、相対位置を b,d にマップ（直感的な形状探索）
+      target.a = cur.a = (rx * 4 - 2);
+      target.c = cur.c = (ry * 4 - 2);
+      target.b = cur.b = ((1 - ry) * 4 - 2);
+      target.d = cur.d = ((1 - rx) * 4 - 2);
+      syncSlider("a", cur.a); syncSlider("b", cur.b);
+      syncSlider("c", cur.c); syncSlider("d", cur.d);
+      if (autoMorph) setAuto(false); else resetField();
+    }
+    function pointerEnd() { dragging = false; }
+
+    // キャンバス上のみで反応（HUDは除外）
+    glowCanvas.style.pointerEvents = "none";
+    document.addEventListener("pointerdown", (e) => {
+      if (e.target.closest && e.target.closest(".hud")) return;
+      if (e.target === toggleBtn) return;
+      pointerStart(e);
+    });
+    document.addEventListener("pointermove", pointerMove);
+    document.addEventListener("pointerup", pointerEnd);
+    document.addEventListener("pointercancel", pointerEnd);
+
+    let hintHidden = false;
+    function hideHint() {
+      if (hintHidden) return;
+      hintHidden = true;
+      hint.style.opacity = "0";
+    }
+    // 数秒後に自動で薄くする
+    setTimeout(hideHint, 6000);
+
+    // ---- リサイズ追従 ----
+    let resizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { resize(); resetField(); }, 120);
+    });
+
+    // ---- 初期化 ----
+    let rafId = 0;
+    buildLUT();
+    buildPaletteUI();
+    resize();
+    resetField();
+
+    if (reduceMotion) {
+      // モーション抑制時：自動モーフ無効。静止した高精細アトラクタを1枚描く。
+      setAuto(false);
+      btnAuto.disabled = true;
+      // 十分反復して蓄積させてから描画
+      for (let k = 0; k < 60; k++) iterate(buffW * buffH * 0.3 | 0);
+      render();
+      renderGlow(parseFloat(sliders.glow.value));
+      // 静止でもパラメータ変更には反応できるよう、軽量ループは回す
+      rafId = requestAnimationFrame(loop);
+    } else {
+      rafId = requestAnimationFrame(loop);
+    }
+  </script>
+</body>
+</html>

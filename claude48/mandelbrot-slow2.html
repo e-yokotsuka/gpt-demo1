@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<!-- AIメタ情報（規約準拠） -->
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="ai.note" content="WebGLフラグメントシェーダによるGPUマンデルブロ深掘りズーム">
+	<title>Mandelbrot Explorer Part.2 - Claude Opus 4.8版</title>
+	<style>
+		:root {
+			--panel: rgba(8, 13, 28, 0.66);
+			--line: rgba(130, 200, 255, 0.30);
+			--text: #e6f2ff;
+			--accent: #7fd4ff;
+		}
+
+		* { box-sizing: border-box; }
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			background: #03060f;
+			color: var(--text);
+			font-family: "Segoe UI", Meiryo, "Hiragino Kaku Gothic ProN", sans-serif;
+			-webkit-font-smoothing: antialiased;
+		}
+
+		/* キャンバスは画面全体に敷き詰める */
+		#gl {
+			display: block;
+			position: fixed;
+			inset: 0;
+			width: 100vw;
+			height: 100vh;
+		}
+
+		/* 左上のHUD（情報パネル） */
+		.hud {
+			position: fixed;
+			left: 16px;
+			top: 16px;
+			z-index: 10;
+			min-width: 230px;
+			border: 1px solid var(--line);
+			background: var(--panel);
+			backdrop-filter: blur(10px) saturate(1.2);
+			-webkit-backdrop-filter: blur(10px) saturate(1.2);
+			border-radius: 14px;
+			padding: 14px 16px;
+			font-size: 12.5px;
+			line-height: 1.85;
+			letter-spacing: 0.02em;
+			box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+			user-select: none;
+		}
+
+		.hud h1 {
+			margin: 0 0 8px;
+			font-size: 13px;
+			font-weight: 600;
+			letter-spacing: 0.06em;
+			color: var(--accent);
+			display: flex;
+			align-items: center;
+			gap: 7px;
+		}
+
+		.hud h1::before {
+			content: "";
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: var(--accent);
+			box-shadow: 0 0 10px var(--accent);
+			animation: pulse 2.4s ease-in-out infinite;
+		}
+
+		@keyframes pulse {
+			0%, 100% { opacity: 0.55; transform: scale(0.85); }
+			50% { opacity: 1; transform: scale(1.15); }
+		}
+
+		.hud .row {
+			display: flex;
+			justify-content: space-between;
+			gap: 18px;
+		}
+
+		.hud .row .k { opacity: 0.62; }
+		.hud .row .v {
+			font-variant-numeric: tabular-nums;
+			color: #fff;
+			font-weight: 500;
+		}
+
+		.hud .hint {
+			margin-top: 9px;
+			padding-top: 9px;
+			border-top: 1px solid rgba(255, 255, 255, 0.08);
+			font-size: 11px;
+			opacity: 0.6;
+			line-height: 1.6;
+		}
+
+		/* 静止時のヒント（reduced-motion時など） */
+		.badge {
+			position: fixed;
+			right: 16px;
+			bottom: 16px;
+			z-index: 10;
+			font-size: 11px;
+			opacity: 0.5;
+			letter-spacing: 0.05em;
+			user-select: none;
+		}
+
+		/* WebGL非対応時のフォールバック表示 */
+		.fallback {
+			position: fixed;
+			inset: 0;
+			display: none;
+			place-items: center;
+			text-align: center;
+			padding: 24px;
+			font-size: 14px;
+			line-height: 1.8;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="gl"></canvas>
+
+	<div class="hud" id="hud">
+		<h1>Mandelbrot Explorer Part.2</h1>
+		<div class="row"><span class="k">ズーム倍率</span><span class="v" id="vZoom">1×</span></div>
+		<div class="row"><span class="k">反復上限</span><span class="v" id="vIter">—</span></div>
+		<div class="row"><span class="k">中心 (re)</span><span class="v" id="vCx">—</span></div>
+		<div class="row"><span class="k">中心 (im)</span><span class="v" id="vCy">—</span></div>
+		<div class="row"><span class="k">FPS</span><span class="v" id="vFps">—</span></div>
+		<div class="hint" id="hint">
+			ドラッグ: 移動 ／ ホイール: ズーム ／ ダブルクリック: その点へ吸い込み<br>
+			Space: 自動ズーム切替 ／ R: リセット
+		</div>
+	</div>
+
+	<div class="badge">Claude Opus 4.8 · WebGL GPU rendering</div>
+
+	<div class="fallback" id="fallback">
+		お使いの環境では WebGL が利用できないため、<br>
+		マンデルブロ集合を描画できませんでした。
+	</div>
+
+	<script>
+	"use strict";
+
+	// =====================================================================
+	//  Mandelbrot Explorer Part.2 — Claude Opus 4.8 オリジナル版
+	//  ・全画素計算を GPU フラグメントシェーダで実行し、毎フレーム 60fps を維持
+	//  ・スムーズ反復カウント + サイクリックパレットで美しい連続グラデーション
+	//  ・自動シネマティックズーム（既知の深部座標へ無限ズーム）と手動操作の両対応
+	//  ・prefers-reduced-motion を尊重し、自動アニメを停止
+	// =====================================================================
+
+	const canvas = document.getElementById("gl");
+	const fallback = document.getElementById("fallback");
+	const gl = canvas.getContext("webgl", { antialias: false, preserveDrawingBuffer: false })
+		|| canvas.getContext("experimental-webgl");
+
+	if (!gl) {
+		fallback.style.display = "grid";
+		throw new Error("WebGL unavailable");
+	}
+
+	// ---- 頂点シェーダ：画面全体を覆う三角形 ----
+	const VERT = `
+		attribute vec2 aPos;
+		void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+	`;
+
+	// ---- フラグメントシェーダ：マンデルブロ本体 ----
+	// スムーズカラーリングで反復数を連続値化し、HSV風サイクリックパレットで着色する。
+	const FRAG = `
+		precision highp float;
+
+		uniform vec2  uRes;       // 解像度(px)
+		uniform vec2  uCenter;    // 複素平面上の中心
+		uniform float uScale;     // 1px あたりの複素平面スケール
+		uniform float uMaxIter;   // 反復上限
+		uniform float uTime;      // 経過時間(s) パレット回転用
+		uniform float uAspect;    // 縦横比
+
+		// 連続値 t から滑らかな色を生成（コサイン・パレット by Inigo Quilez 風）
+		vec3 palette(float t) {
+			vec3 a = vec3(0.5, 0.5, 0.5);
+			vec3 b = vec3(0.5, 0.5, 0.5);
+			vec3 c = vec3(1.0, 1.0, 1.0);
+			vec3 d = vec3(0.00, 0.10, 0.20);
+			return a + b * cos(6.28318530718 * (c * t + d));
+		}
+
+		void main() {
+			// 画素座標を [-aspect..aspect] x [-1..1] に正規化し、中心・スケールを適用
+			vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+			vec2 c = uCenter + uv * uScale * 2.0;
+
+			vec2 z = vec2(0.0);
+			float n = 0.0;
+			float esc = 256.0;            // 大きめの脱出半径でスムーズ着色を綺麗に
+			float dot_zz = 0.0;
+
+			// 反復ループ（GLSL ループ上限のためループ定数 + break で制御）
+			for (int i = 0; i < 2000; i++) {
+				if (float(i) >= uMaxIter) break;
+				// z = z^2 + c
+				z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+				dot_zz = dot(z, z);
+				if (dot_zz > esc) break;
+				n += 1.0;
+			}
+
+			if (n >= uMaxIter) {
+				// 集合内部：深い色で陰影をつける
+				gl_FragColor = vec4(0.01, 0.012, 0.03, 1.0);
+				return;
+			}
+
+			// スムーズ反復数（連続化）：n + 1 - log(log|z|)/log2
+			float sn = n + 1.0 - log(log(sqrt(dot_zz))) / log(2.0);
+			float t = sn / uMaxIter;
+
+			// 平方根で低反復域を伸ばし、時間でパレットをゆっくり回転
+			float v = sqrt(t) * 3.0 + uTime * 0.04;
+			vec3 col = palette(v);
+
+			// 縁の輝きを少し強調（境界の細部を際立たせる）
+			float glow = pow(clamp(1.0 - t * 1.4, 0.0, 1.0), 3.0);
+			col += glow * vec3(0.12, 0.20, 0.35);
+
+			// 軽いガンマ補正
+			col = pow(col, vec3(0.85));
+			gl_FragColor = vec4(col, 1.0);
+		}
+	`;
+
+	// ---- シェーダ コンパイル/リンク ----
+	function compile(type, src) {
+		const s = gl.createShader(type);
+		gl.shaderSource(s, src);
+		gl.compileShader(s);
+		if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+			throw new Error(gl.getShaderInfoLog(s) || "shader compile error");
+		}
+		return s;
+	}
+
+	const program = gl.createProgram();
+	gl.attachShader(program, compile(gl.VERTEX_SHADER, VERT));
+	gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAG));
+	gl.linkProgram(program);
+	if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+		fallback.style.display = "grid";
+		throw new Error(gl.getProgramInfoLog(program) || "link error");
+	}
+	gl.useProgram(program);
+
+	// 画面全体を覆う三角形（2頂点分のオーバードローで矩形より効率的）
+	const buf = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+	const aPos = gl.getAttribLocation(program, "aPos");
+	gl.enableVertexAttribArray(aPos);
+	gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+	// uniform ロケーション
+	const U = {
+		res:    gl.getUniformLocation(program, "uRes"),
+		center: gl.getUniformLocation(program, "uCenter"),
+		scale:  gl.getUniformLocation(program, "uScale"),
+		maxIter:gl.getUniformLocation(program, "uMaxIter"),
+		time:   gl.getUniformLocation(program, "uTime"),
+		aspect: gl.getUniformLocation(program, "uAspect"),
+	};
+
+	// =====================================================================
+	//  状態（ビューポート / カメラ）
+	// =====================================================================
+	const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+	// 自動ズームの目標座標（マンデルブロ集合の有名な渦巻きディテール）
+	const TARGET = { x: -0.743643887037158704752191506114774, y: 0.131825904205311970493132056385139 };
+
+	const HOME = { x: -0.6, y: 0.0, scale: 1.6 };
+
+	const view = {
+		cx: HOME.x,
+		cy: HOME.y,
+		scale: HOME.scale,        // 半画面高さに対応する複素平面の半径
+		auto: !prefersReduced,    // reduced-motion なら自動ズームを切る
+	};
+
+	let W = 0, H = 0, dpr = 1;
+
+	function resize() {
+		// 高DPIに追従しつつ、過剰な負荷を避けるため上限を設ける
+		dpr = Math.min(window.devicePixelRatio || 1, 2);
+		W = Math.floor(window.innerWidth * dpr);
+		H = Math.floor(window.innerHeight * dpr);
+		canvas.width = W;
+		canvas.height = H;
+		canvas.style.width = window.innerWidth + "px";
+		canvas.style.height = window.innerHeight + "px";
+		gl.viewport(0, 0, W, H);
+	}
+	window.addEventListener("resize", resize);
+	resize();
+
+	// =====================================================================
+	//  反復上限：ズームが深くなるほど自動的に増やしてディテールを保つ
+	// =====================================================================
+	function computeMaxIter() {
+		const depth = Math.log2(HOME.scale / view.scale); // 何段ズームしたか
+		const it = 120 + depth * 28;
+		return Math.max(120, Math.min(2000, Math.floor(it)));
+	}
+
+	// =====================================================================
+	//  入力（手動操作）
+	// =====================================================================
+	let dragging = false, lastX = 0, lastY = 0;
+
+	canvas.addEventListener("mousedown", (e) => {
+		dragging = true; lastX = e.clientX; lastY = e.clientY;
+		view.auto = false;
+	});
+	window.addEventListener("mouseup", () => { dragging = false; });
+	window.addEventListener("mousemove", (e) => {
+		if (!dragging) return;
+		const dx = (e.clientX - lastX) * dpr;
+		const dy = (e.clientY - lastY) * dpr;
+		lastX = e.clientX; lastY = e.clientY;
+		// 画面移動量を複素平面の移動量へ変換（Yは反転）
+		view.cx -= (dx / H) * view.scale * 2.0;
+		view.cy += (dy / H) * view.scale * 2.0;
+	});
+
+	// ホイールでカーソル位置を基準にズーム
+	canvas.addEventListener("wheel", (e) => {
+		e.preventDefault();
+		view.auto = false;
+		const rect = canvas.getBoundingClientRect();
+		const mx = (e.clientX - rect.left) * dpr;
+		const my = (e.clientY - rect.top) * dpr;
+		// カーソル位置の複素座標
+		const before = screenToComplex(mx, my);
+		const factor = Math.exp(e.deltaY * 0.0012);
+		view.scale *= factor;
+		view.scale = Math.max(1e-13, Math.min(4.0, view.scale));
+		const after = screenToComplex(mx, my);
+		// カーソル下の点が動かないように中心を補正
+		view.cx += before.x - after.x;
+		view.cy += before.y - after.y;
+	}, { passive: false });
+
+	// ダブルクリックでその点へ吸い込みズーム
+	let smoothTarget = null;
+	canvas.addEventListener("dblclick", (e) => {
+		const rect = canvas.getBoundingClientRect();
+		const p = screenToComplex((e.clientX - rect.left) * dpr, (e.clientY - rect.top) * dpr);
+		smoothTarget = { x: p.x, y: p.y };
+		view.auto = false;
+	});
+
+	window.addEventListener("keydown", (e) => {
+		if (e.code === "Space") {
+			e.preventDefault();
+			if (!prefersReduced) { view.auto = !view.auto; smoothTarget = null; }
+		} else if (e.key === "r" || e.key === "R") {
+			view.cx = HOME.x; view.cy = HOME.y; view.scale = HOME.scale;
+			smoothTarget = null;
+			view.auto = !prefersReduced;
+		}
+	});
+
+	function screenToComplex(px, py) {
+		const uvx = (px - 0.5 * W) / H;
+		const uvy = (0.5 * H - py) / H; // Y反転
+		return { x: view.cx + uvx * view.scale * 2.0, y: view.cy + uvy * view.scale * 2.0 };
+	}
+
+	// =====================================================================
+	//  HUD 更新
+	// =====================================================================
+	const el = {
+		zoom: document.getElementById("vZoom"),
+		iter: document.getElementById("vIter"),
+		cx: document.getElementById("vCx"),
+		cy: document.getElementById("vCy"),
+		fps: document.getElementById("vFps"),
+		hint: document.getElementById("hint"),
+	};
+	if (prefersReduced) {
+		el.hint.innerHTML = "自動アニメは無効（reduced-motion）<br>ドラッグ/ホイール/ダブルクリックで探索できます";
+	}
+
+	function fmtZoom(z) {
+		if (z < 1000) return z.toFixed(1) + "×";
+		if (z < 1e6) return (z / 1000).toFixed(1) + "k×";
+		if (z < 1e9) return (z / 1e6).toFixed(1) + "M×";
+		return (z / 1e9).toFixed(1) + "G×";
+	}
+
+	// =====================================================================
+	//  メインループ
+	// =====================================================================
+	let startTime = performance.now();
+	let lastFrame = startTime;
+	let fpsSmoothed = 60;
+	let hudTick = 0;
+
+	function frame(now) {
+		const dt = Math.min(0.05, (now - lastFrame) / 1000);
+		lastFrame = now;
+
+		// --- カメラ更新 ---
+		if (smoothTarget) {
+			// ダブルクリック先へなめらかに寄せつつズーム
+			view.cx += (smoothTarget.x - view.cx) * Math.min(1, dt * 3.0);
+			view.cy += (smoothTarget.y - view.cy) * Math.min(1, dt * 3.0);
+			view.scale *= Math.pow(0.35, dt);
+			view.scale = Math.max(1e-13, view.scale);
+			if (view.scale < 1e-12) smoothTarget = null;
+		} else if (view.auto) {
+			// シネマティック自動ズーム：目標座標へ寄りながら指数的にズームイン
+			const k = Math.min(1, dt * 0.9);
+			view.cx += (TARGET.x - view.cx) * k;
+			view.cy += (TARGET.y - view.cy) * k;
+			view.scale *= Math.pow(0.5, dt * 0.55); // 約1.26秒で半分（ゆっくり深掘り）
+			// 浮動小数の限界に達したらホームへ戻してループ
+			if (view.scale < 7e-13) {
+				view.cx = HOME.x; view.cy = HOME.y; view.scale = HOME.scale;
+			}
+		}
+
+		const maxIter = computeMaxIter();
+		const elapsed = (now - startTime) / 1000;
+
+		// --- 描画 ---
+		gl.uniform2f(U.res, W, H);
+		gl.uniform2f(U.center, view.cx, view.cy);
+		gl.uniform1f(U.scale, view.scale);
+		gl.uniform1f(U.maxIter, maxIter);
+		gl.uniform1f(U.time, prefersReduced ? 0.0 : elapsed);
+		gl.uniform1f(U.aspect, W / H);
+		gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+		// --- HUD（数フレームに一度だけDOM更新して負荷を抑える）---
+		const instFps = 1 / Math.max(dt, 1e-3);
+		fpsSmoothed += (instFps - fpsSmoothed) * 0.1;
+		if (++hudTick % 6 === 0) {
+			el.zoom.textContent = fmtZoom(HOME.scale / view.scale);
+			el.iter.textContent = maxIter;
+			el.cx.textContent = view.cx.toFixed(10);
+			el.cy.textContent = view.cy.toFixed(10);
+			el.fps.textContent = Math.round(fpsSmoothed);
+		}
+
+		requestAnimationFrame(frame);
+	}
+
+	requestAnimationFrame(frame);
+	</script>
+</body>
+</html>

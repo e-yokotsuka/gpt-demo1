@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<!-- AI 作者メタ情報 -->
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="ai.note" content="Bouncing Colorful Balls - 自己完結の単一HTML。外部CDN不使用。">
+	<title>Bouncing Colorful Balls - Claude Opus 4.8版</title>
+	<style>
+		/* 全画面レイアウト・はみ出し防止 */
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		html, body {
+			width: 100vw;
+			height: 100vh;
+			overflow: hidden;
+			background: #05060d;
+		}
+		body {
+			/* 奥行きを感じさせる放射状＋斜めグラデーション背景 */
+			background:
+				radial-gradient(circle at 20% 15%, rgba(99, 102, 241, 0.20), transparent 45%),
+				radial-gradient(circle at 80% 85%, rgba(236, 72, 153, 0.18), transparent 45%),
+				linear-gradient(160deg, #05060d 0%, #0a0e22 55%, #11142e 100%);
+			font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+			color: #e8ecff;
+		}
+		canvas { display: block; width: 100vw; height: 100vh; }
+		/* 左下のタグ表示 */
+		.tag {
+			position: fixed;
+			left: 18px;
+			bottom: 18px;
+			padding: 8px 16px;
+			border-radius: 999px;
+			background: rgba(10, 14, 34, 0.6);
+			border: 1px solid rgba(129, 140, 248, 0.45);
+			backdrop-filter: blur(8px);
+			-webkit-backdrop-filter: blur(8px);
+			font-size: 12px;
+			letter-spacing: 0.14em;
+			user-select: none;
+			pointer-events: none;
+		}
+		/* 操作ヒント（数秒で自動的にフェードアウト） */
+		.hint {
+			position: fixed;
+			right: 18px;
+			bottom: 18px;
+			padding: 8px 16px;
+			border-radius: 999px;
+			background: rgba(10, 14, 34, 0.5);
+			border: 1px solid rgba(244, 114, 182, 0.35);
+			backdrop-filter: blur(8px);
+			-webkit-backdrop-filter: blur(8px);
+			font-size: 12px;
+			letter-spacing: 0.05em;
+			user-select: none;
+			pointer-events: none;
+			opacity: 0;
+			transition: opacity 1s ease;
+		}
+		.hint.show { opacity: 0.85; }
+	</style>
+</head>
+<body>
+	<canvas id="scene"></canvas>
+	<div class="tag">CLAUDE OPUS 4.8 // BOUNCE</div>
+	<div class="hint" id="hint">クリック / タップで弾けます</div>
+	<script>
+		"use strict";
+		// =========================================================
+		//  Bouncing Colorful Balls - Claude Opus 4.8 オリジナル版
+		//  - 自己完結の Canvas 2D 実装（外部CDN不使用）
+		//  - 重力＋ボール同士の弾性衝突（運動量交換）＋壁反発
+		//  - デルタタイムによる固定ステップ物理で滑らかかつ安定
+		//  - 高DPI対応・リサイズ追従・近接ライン・グロー描画
+		//  - prefers-reduced-motion を尊重
+		// =========================================================
+
+		const canvas = document.getElementById("scene");
+		const ctx = canvas.getContext("2d", { alpha: false });
+		const hint = document.getElementById("hint");
+
+		// 動きを抑える設定（アクセシビリティ）
+		const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+		// ---- 画面・物理パラメータ ----
+		let width = 0;          // CSSピクセル幅
+		let height = 0;         // CSSピクセル高さ
+		let dpr = 1;            // デバイスピクセル比
+		const GRAVITY = 900;    // 重力加速度 (px/s^2)
+		const RESTITUTION = 0.82; // 反発係数（壁・ボール衝突共通）
+		const AIR_FRICTION = 0.06; // 空気抵抗（1秒あたりの減衰係数）
+		const LINK_DIST = 150;  // 近接ラインを描く距離 (px)
+		const FIXED_DT = 1 / 120; // 物理の固定ステップ（安定した衝突解決のため）
+
+		let balls = [];
+
+		// HSL を 0..1 で扱うため、色は hue を保持して描画時に変換
+		// 玉の個数は画面面積に応じて調整（パフォーマンスと密度のバランス）
+		function targetCount() {
+			const area = width * height;
+			return Math.max(18, Math.min(60, Math.round(area / 26000)));
+		}
+
+		// 1個のボールを生成
+		function makeBall(x, y) {
+			const r = 10 + Math.random() * 26;
+			return {
+				x: x ?? (r + Math.random() * (width - r * 2)),
+				y: y ?? (r + Math.random() * (height * 0.5)),
+				vx: (Math.random() - 0.5) * 360,
+				vy: (Math.random() - 0.5) * 120,
+				r,
+				m: r * r,            // 質量は半径^2（面積比例）
+				hue: Math.random() * 360,
+				spin: (Math.random() - 0.5) * 4, // 見た目のハイライト回転用
+				phase: Math.random() * Math.PI * 2
+			};
+		}
+
+		// キャンバスのサイズ・解像度を設定
+		function resize() {
+			dpr = Math.min(window.devicePixelRatio || 1, 2); // 過剰な解像度を抑制
+			width = window.innerWidth;
+			height = window.innerHeight;
+			canvas.width = Math.round(width * dpr);
+			canvas.height = Math.round(height * dpr);
+			canvas.style.width = width + "px";
+			canvas.style.height = height + "px";
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+			// 既存の玉は範囲内に収め、不足分は補充し、過剰分は削る
+			const want = targetCount();
+			if (balls.length === 0) {
+				balls = Array.from({ length: want }, () => makeBall());
+			} else {
+				for (const b of balls) {
+					b.x = Math.max(b.r, Math.min(width - b.r, b.x));
+					b.y = Math.max(b.r, Math.min(height - b.r, b.y));
+				}
+				while (balls.length < want) balls.push(makeBall());
+				while (balls.length > want) balls.pop();
+			}
+		}
+
+		// 物理を1固定ステップ進める
+		function step(dt) {
+			// 重力・空気抵抗・移動
+			const damp = Math.max(0, 1 - AIR_FRICTION * dt);
+			for (const b of balls) {
+				if (!reduceMotion) b.vy += GRAVITY * dt;
+				b.vx *= damp;
+				b.vy *= damp;
+				b.x += b.vx * dt;
+				b.y += b.vy * dt;
+				b.phase += b.spin * dt;
+			}
+
+			// 壁との衝突（位置補正＋反発）
+			for (const b of balls) {
+				if (b.x - b.r < 0) { b.x = b.r; b.vx = Math.abs(b.vx) * RESTITUTION; }
+				else if (b.x + b.r > width) { b.x = width - b.r; b.vx = -Math.abs(b.vx) * RESTITUTION; }
+				if (b.y - b.r < 0) { b.y = b.r; b.vy = Math.abs(b.vy) * RESTITUTION; }
+				else if (b.y + b.r > height) {
+					b.y = height - b.r;
+					b.vy = -Math.abs(b.vy) * RESTITUTION;
+					// 床で完全に止まらないよう、微小速度なら軽く跳ね返す
+					if (!reduceMotion && Math.abs(b.vy) < 40) b.vy = -(120 + Math.random() * 120);
+				}
+			}
+
+			// ボール同士の衝突（弾性衝突・運動量と位置の両方を解決）
+			for (let i = 0; i < balls.length; i++) {
+				const a = balls[i];
+				for (let j = i + 1; j < balls.length; j++) {
+					const b = balls[j];
+					let dx = b.x - a.x;
+					let dy = b.y - a.y;
+					let distSq = dx * dx + dy * dy;
+					const minDist = a.r + b.r;
+					if (distSq >= minDist * minDist || distSq === 0) continue;
+
+					let dist = Math.sqrt(distSq);
+					const nx = dx / dist;
+					const ny = dy / dist;
+
+					// めり込み解消（質量で按分して位置補正）
+					const overlap = minDist - dist;
+					const invA = 1 / a.m, invB = 1 / b.m;
+					const invSum = invA + invB;
+					a.x -= nx * overlap * (invA / invSum);
+					a.y -= ny * overlap * (invA / invSum);
+					b.x += nx * overlap * (invB / invSum);
+					b.y += ny * overlap * (invB / invSum);
+
+					// 法線方向の相対速度
+					const rvx = b.vx - a.vx;
+					const rvy = b.vy - a.vy;
+					const velAlongNormal = rvx * nx + rvy * ny;
+					if (velAlongNormal > 0) continue; // 離れていく場合は処理不要
+
+					// 反発を考慮したインパルス
+					const impulse = -(1 + RESTITUTION) * velAlongNormal / invSum;
+					const ix = impulse * nx;
+					const iy = impulse * ny;
+					a.vx -= ix * invA;
+					a.vy -= iy * invA;
+					b.vx += ix * invB;
+					b.vy += iy * invB;
+				}
+			}
+		}
+
+		// 近接する玉同士を結ぶライン（淡い光のネットワーク）
+		function drawLinks() {
+			const maxSq = LINK_DIST * LINK_DIST;
+			ctx.lineWidth = 1;
+			for (let i = 0; i < balls.length; i++) {
+				const a = balls[i];
+				for (let j = i + 1; j < balls.length; j++) {
+					const b = balls[j];
+					const dx = a.x - b.x;
+					const dy = a.y - b.y;
+					const dSq = dx * dx + dy * dy;
+					if (dSq > maxSq) continue;
+					const t = 1 - Math.sqrt(dSq) / LINK_DIST;
+					const hue = (a.hue + b.hue) * 0.5;
+					ctx.strokeStyle = `hsla(${hue}, 85%, 70%, ${t * 0.35})`;
+					ctx.beginPath();
+					ctx.moveTo(a.x, a.y);
+					ctx.lineTo(b.x, b.y);
+					ctx.stroke();
+				}
+			}
+		}
+
+		// 1個の玉を描画（グロー＋本体グラデーション＋ハイライト）
+		function drawBall(b) {
+			// グロー（外側のぼんやりした光）
+			const glow = ctx.createRadialGradient(b.x, b.y, b.r * 0.2, b.x, b.y, b.r * 2.2);
+			glow.addColorStop(0, `hsla(${b.hue}, 95%, 65%, 0.30)`);
+			glow.addColorStop(1, `hsla(${b.hue}, 95%, 65%, 0)`);
+			ctx.fillStyle = glow;
+			ctx.beginPath();
+			ctx.arc(b.x, b.y, b.r * 2.2, 0, Math.PI * 2);
+			ctx.fill();
+
+			// 本体（立体感を出す放射状グラデーション）
+			const hx = b.x + Math.cos(b.phase) * b.r * 0.35;
+			const hy = b.y + Math.sin(b.phase) * b.r * 0.35 - b.r * 0.2;
+			const body = ctx.createRadialGradient(hx, hy, b.r * 0.1, b.x, b.y, b.r);
+			body.addColorStop(0, `hsl(${b.hue}, 95%, 78%)`);
+			body.addColorStop(0.55, `hsl(${b.hue}, 90%, 58%)`);
+			body.addColorStop(1, `hsl(${b.hue}, 85%, 38%)`);
+			ctx.fillStyle = body;
+			ctx.beginPath();
+			ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+			ctx.fill();
+
+			// 鏡面ハイライト
+			ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+			ctx.beginPath();
+			ctx.arc(hx, hy, b.r * 0.22, 0, Math.PI * 2);
+			ctx.fill();
+		}
+
+		// 描画
+		function render() {
+			// 残像（モーションブラー風）を残しつつクリア
+			ctx.fillStyle = reduceMotion ? "rgba(5, 6, 13, 1)" : "rgba(5, 6, 13, 0.28)";
+			ctx.fillRect(0, 0, width, height);
+
+			drawLinks();
+
+			// 加算合成で光が重なるほど明るく
+			ctx.globalCompositeOperation = "lighter";
+			for (const b of balls) drawBall(b);
+			ctx.globalCompositeOperation = "source-over";
+		}
+
+		// メインループ（デルタタイム＋固定ステップで物理を安定化）
+		let last = performance.now();
+		let acc = 0;
+		function loop(now) {
+			let frame = (now - last) / 1000;
+			last = now;
+			if (frame > 0.05) frame = 0.05; // タブ復帰時などの巨大ステップを抑制
+
+			acc += frame;
+			let steps = 0;
+			while (acc >= FIXED_DT && steps < 8) {
+				step(FIXED_DT);
+				acc -= FIXED_DT;
+				steps++;
+			}
+
+			render();
+			requestAnimationFrame(loop);
+		}
+
+		// クリック/タップで近くの玉を弾き飛ばす（インタラクション）
+		function burst(px, py) {
+			for (const b of balls) {
+				const dx = b.x - px;
+				const dy = b.y - py;
+				const dist = Math.hypot(dx, dy) || 1;
+				if (dist < 260) {
+					const force = (1 - dist / 260) * 900;
+					b.vx += (dx / dist) * force;
+					b.vy += (dy / dist) * force;
+				}
+			}
+		}
+
+		canvas.addEventListener("pointerdown", (e) => {
+			const rect = canvas.getBoundingClientRect();
+			burst(e.clientX - rect.left, e.clientY - rect.top);
+		});
+
+		// 初期化
+		window.addEventListener("resize", resize);
+		resize();
+		requestAnimationFrame(loop);
+
+		// 操作ヒントを少し表示してから消す
+		setTimeout(() => hint.classList.add("show"), 600);
+		setTimeout(() => hint.classList.remove("show"), 5200);
+	</script>
+</body>
+</html>

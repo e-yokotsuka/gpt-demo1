@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<!-- AI 作者メタ情報 -->
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="description" content="物理波動シミュレーションによる雨と波紋の表現 - Claude Opus 4.8版">
+	<title>Water Ripples Simulation Part.2 - Claude Opus 4.8版</title>
+	<style>
+		/* 画面全体表示・はみ出し防止 */
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		html, body {
+			width: 100vw;
+			height: 100vh;
+			overflow: hidden;
+			background: #05070d;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+			color: #cfe3ff;
+		}
+		canvas {
+			display: block;
+			width: 100vw;
+			height: 100vh;
+			cursor: crosshair;
+			touch-action: none;
+		}
+		/* 操作ヒント（控えめに表示） */
+		.hud {
+			position: fixed;
+			left: 16px;
+			bottom: 14px;
+			display: flex;
+			gap: 8px;
+			align-items: center;
+			font-size: 12px;
+			letter-spacing: 0.04em;
+			color: rgba(207, 227, 255, 0.55);
+			pointer-events: none;
+			user-select: none;
+			text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+		}
+		.hud .tag {
+			padding: 4px 10px;
+			border-radius: 999px;
+			background: rgba(10, 20, 40, 0.45);
+			border: 1px solid rgba(120, 170, 255, 0.22);
+			backdrop-filter: blur(6px);
+			-webkit-backdrop-filter: blur(6px);
+			pointer-events: auto;
+		}
+		.brand {
+			position: fixed;
+			right: 18px;
+			top: 16px;
+			font-size: 12px;
+			letter-spacing: 0.12em;
+			color: rgba(150, 190, 255, 0.5);
+			pointer-events: none;
+			user-select: none;
+			text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+		}
+	</style>
+</head>
+<body>
+	<canvas id="stage"></canvas>
+	<div class="hud">
+		<span class="tag">クリック / ドラッグで波紋を作る</span>
+	</div>
+	<div class="brand">CLAUDE OPUS 4.8 · RIPPLES II</div>
+
+	<script>
+	"use strict";
+	/*
+	 * Water Ripples Simulation Part.2 — Claude Opus 4.8版
+	 * --------------------------------------------------------------
+	 * 設計方針:
+	 *   1. 波動方程式(2D)による物理ベースの水面シミュレーション。
+	 *      低解像度グリッドで計算し、Canvasへ拡大描画して高速化。
+	 *   2. 高さ場の勾配から法線を求め、屈折・スペキュラ・コースティクス
+	 *      風のライティングを行い、写実的で美しい水面を表現する。
+	 *   3. 雨粒は実際に落下させ、着水時に物理波紋を励起。さらに視覚演出
+	 *      として落下する線と着水スプラッシュを重ねる。
+	 *   4. prefers-reduced-motion を尊重し、自動の雨を止め静かな水面にする。
+	 * Codex版の波動法を踏襲しつつ、ライティング品質・滑らかさ・落下演出で上回る。
+	 */
+
+	const canvas = document.getElementById("stage");
+	const ctx = canvas.getContext("2d", { alpha: false });
+
+	// モーション抑制設定の検出
+	const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+	let reduceMotion = reduceMotionQuery.matches;
+
+	// 画面・グリッド関連の状態
+	let viewW = 0, viewH = 0;     // CSSピクセルでの表示サイズ
+	let gridW = 0, gridH = 0;     // シミュレーショングリッドの解像度
+	let cell = 6;                 // 1グリッドあたりの表示ピクセル数
+	let prev, curr;               // 高さ場(前フレーム/現フレーム) Float32Array
+	let normalBuf;                // 法線・描画用バッファ(ImageData)
+	let offscreen, offctx;        // 低解像度オフスクリーンキャンバス
+
+	// 落下中の雨粒・着水スプラッシュ
+	const drops = [];
+	const splashes = [];
+
+	// 時間管理
+	let lastTime = 0;
+	let rainAccumulator = 0;
+	let rainInterval = 0.10;      // 雨粒生成間隔(秒) — 強さで変動
+
+	/* ============================================================
+	 * リサイズ処理 — 画面サイズに合わせてグリッドを再構築
+	 * ========================================================== */
+	function resize() {
+		viewW = window.innerWidth;
+		viewH = window.innerHeight;
+		const dpr = Math.min(window.devicePixelRatio || 1, 2);
+		canvas.width = Math.floor(viewW * dpr);
+		canvas.height = Math.floor(viewH * dpr);
+		canvas.style.width = viewW + "px";
+		canvas.style.height = viewH + "px";
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+		// グリッド解像度: 画面幅に応じてセルサイズを決め、計算量を抑える
+		cell = Math.max(4, Math.round(viewW / 320));
+		gridW = Math.max(8, Math.ceil(viewW / cell) + 1);
+		gridH = Math.max(8, Math.ceil(viewH / cell) + 1);
+
+		prev = new Float32Array(gridW * gridH);
+		curr = new Float32Array(gridW * gridH);
+
+		// 低解像度オフスクリーン(高さ場をピクセル単位で着色)
+		offscreen = document.createElement("canvas");
+		offscreen.width = gridW;
+		offscreen.height = gridH;
+		offctx = offscreen.getContext("2d");
+		normalBuf = offctx.createImageData(gridW, gridH);
+		// アルファは常に不透明
+		const d = normalBuf.data;
+		for (let i = 3; i < d.length; i += 4) d[i] = 255;
+	}
+
+	/* ============================================================
+	 * 波紋の励起 — 指定座標に高さの窪み/盛り上がりを加える
+	 *   ガウシアン状に分布させ、滑らかな波の発生源とする。
+	 * ========================================================== */
+	function disturb(px, py, power, radius) {
+		const gx = px / cell;
+		const gy = py / cell;
+		const r = radius || 2.2;
+		const rr = Math.ceil(r * 2);
+		const startX = Math.max(1, Math.floor(gx - rr));
+		const endX = Math.min(gridW - 2, Math.ceil(gx + rr));
+		const startY = Math.max(1, Math.floor(gy - rr));
+		const endY = Math.min(gridH - 2, Math.ceil(gy + rr));
+		const inv2r2 = 1 / (2 * r * r);
+		for (let y = startY; y <= endY; y++) {
+			for (let x = startX; x <= endX; x++) {
+				const dx = x - gx;
+				const dy = y - gy;
+				const g = Math.exp(-(dx * dx + dy * dy) * inv2r2);
+				curr[y * gridW + x] += power * g;
+			}
+		}
+	}
+
+	/* ============================================================
+	 * 波動シミュレーションの1ステップ
+	 *   2D波動方程式の離散化。近傍4点の平均から現在値を引いて
+	 *   新しい高さを求め、減衰係数で徐々に静める。
+	 * ========================================================== */
+	const DAMPING = 0.992;
+	function step() {
+		const w = gridW;
+		for (let y = 1; y < gridH - 1; y++) {
+			let idx = y * w + 1;
+			for (let x = 1; x < w - 1; x++, idx++) {
+				const val =
+					(prev[idx - 1] + prev[idx + 1] + prev[idx - w] + prev[idx + w]) * 0.5
+					- curr[idx];
+				curr[idx] = val * DAMPING;
+			}
+		}
+		// バッファ入れ替え
+		const t = prev; prev = curr; curr = t;
+	}
+
+	/* ============================================================
+	 * 水面の描画
+	 *   高さ場の勾配(=波の傾き)から擬似法線を取り、
+	 *   - 深さに応じた基調色
+	 *   - 光源方向とのスペキュラ反射(きらめき)
+	 *   - 高曲率部のコースティクス風の明るさ
+	 *   を合成して写実的な水面を作る。
+	 * ========================================================== */
+	function render() {
+		const w = gridW, h = gridH;
+		const data = normalBuf.data;
+		const field = prev; // 直近の高さ場
+
+		// 光源方向(画面左上やや手前から)。正規化済み
+		const lx = -0.45, ly = -0.55, lz = 0.70;
+
+		for (let y = 0; y < h; y++) {
+			for (let x = 0; x < w; x++) {
+				const idx = y * w + x;
+				// 端は隣接が無いので内側にクランプ
+				const xm = x > 0 ? idx - 1 : idx;
+				const xp = x < w - 1 ? idx + 1 : idx;
+				const ym = y > 0 ? idx - w : idx;
+				const yp = y < h - 1 ? idx + w : idx;
+
+				// 勾配(傾き)から法線を近似
+				const nx = (field[xm] - field[xp]);
+				const ny = (field[ym] - field[yp]);
+				// 法線 (nx, ny, 1) を正規化
+				const invLen = 1 / Math.sqrt(nx * nx + ny * ny + 1);
+				const Nx = nx * invLen;
+				const Ny = ny * invLen;
+				const Nz = invLen;
+
+				// 拡散光(上向きほど明るい) + 周囲光
+				const diffuse = Math.max(0, Nx * lx + Ny * ly + Nz * lz);
+
+				// スペキュラ(視線=真上, 半角ベクトルでハイライト)
+				const hl = (lz + 1);
+				const hLen = 1 / Math.sqrt(lx * lx + ly * ly + hl * hl);
+				const spec = Math.max(0, Nx * lx * hLen + Ny * ly * hLen + Nz * hl * hLen);
+				const specPow = spec * spec; const spec4 = specPow * specPow;
+				const specular = spec4 * spec4 * spec4; // 鋭いハイライト
+
+				// 高さ値(波の山谷)を明暗・色相に反映
+				const amp = field[idx];
+
+				// 基調色: 深い青〜青緑のグラデーション
+				let r = 12 + diffuse * 38 + amp * 26;
+				let g = 40 + diffuse * 95 + amp * 40;
+				let b = 78 + diffuse * 150 + amp * 70;
+
+				// コースティクス/きらめき(白)を加算
+				const sparkle = specular * 255;
+				r += sparkle;
+				g += sparkle;
+				b += sparkle;
+
+				// クランプ
+				data[idx * 4]     = r < 0 ? 0 : r > 255 ? 255 : r;
+				data[idx * 4 + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+				data[idx * 4 + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+			}
+		}
+		offctx.putImageData(normalBuf, 0, 0);
+		// 低解像度を滑らかに拡大して画面へ
+		ctx.imageSmoothingEnabled = true;
+		ctx.imageSmoothingQuality = "high";
+		ctx.drawImage(offscreen, 0, 0, w, h, 0, 0, viewW, viewH);
+	}
+
+	/* ============================================================
+	 * 雨粒(落下中) — 視覚的な雨筋。着水でスプラッシュと波紋を発生。
+	 * ========================================================== */
+	class Drop {
+		constructor() {
+			this.x = Math.random() * viewW;
+			this.targetY = viewH * (0.2 + Math.random() * 0.78); // 着水地点(奥行き表現)
+			this.y = -20 - Math.random() * 60;
+			this.len = 10 + Math.random() * 18;
+			this.speed = 620 + Math.random() * 420;
+			this.alpha = 0.25 + Math.random() * 0.35;
+			// 奥(上)ほど細く暗く、手前(下)ほど太く明るい
+			const depth = this.targetY / viewH;
+			this.width = 0.8 + depth * 1.4;
+			this.power = 1.2 + depth * 2.6;
+		}
+		update(dt) {
+			this.y += this.speed * dt;
+			if (this.y >= this.targetY) {
+				disturb(this.x, this.targetY, -this.power, 1.8 + this.power * 0.3);
+				splashes.push(new Splash(this.x, this.targetY, this.power));
+				return false; // 消滅
+			}
+			return true;
+		}
+		draw() {
+			const grad = ctx.createLinearGradient(this.x, this.y - this.len, this.x, this.y);
+			grad.addColorStop(0, "rgba(170, 205, 255, 0)");
+			grad.addColorStop(1, `rgba(200, 225, 255, ${this.alpha})`);
+			ctx.strokeStyle = grad;
+			ctx.lineWidth = this.width;
+			ctx.lineCap = "round";
+			ctx.beginPath();
+			ctx.moveTo(this.x, this.y - this.len);
+			ctx.lineTo(this.x, this.y);
+			ctx.stroke();
+		}
+	}
+
+	/* ============================================================
+	 * 着水スプラッシュ — 小さな粒子が飛び散る短命な演出。
+	 * ========================================================== */
+	class Splash {
+		constructor(x, y, power) {
+			this.parts = [];
+			const n = 4 + Math.floor(power * 2);
+			for (let i = 0; i < n; i++) {
+				const a = Math.PI + (Math.random() - 0.5) * Math.PI * 0.9;
+				const sp = 30 + Math.random() * 70 * power * 0.4;
+				this.parts.push({
+					x, y,
+					vx: Math.cos(a) * sp,
+					vy: Math.sin(a) * sp - 30 * power * 0.2,
+					life: 1,
+				});
+			}
+		}
+		update(dt) {
+			let alive = false;
+			for (const p of this.parts) {
+				p.vy += 320 * dt; // 重力
+				p.x += p.vx * dt;
+				p.y += p.vy * dt;
+				p.life -= dt * 2.6;
+				if (p.life > 0) alive = true;
+			}
+			return alive;
+		}
+		draw() {
+			for (const p of this.parts) {
+				if (p.life <= 0) continue;
+				ctx.fillStyle = `rgba(210, 230, 255, ${p.life * 0.6})`;
+				ctx.beginPath();
+				ctx.arc(p.x, p.y, 1 + p.life * 1.2, 0, Math.PI * 2);
+				ctx.fill();
+			}
+		}
+	}
+
+	/* ============================================================
+	 * メインループ
+	 * ========================================================== */
+	function frame(time) {
+		const dt = Math.min(0.05, lastTime ? (time - lastTime) / 1000 : 0.016);
+		lastTime = time;
+
+		// --- 雨の生成(モーション抑制時は自動の雨を出さない) ---
+		if (!reduceMotion) {
+			rainAccumulator += dt;
+			while (rainAccumulator >= rainInterval) {
+				rainAccumulator -= rainInterval;
+				drops.push(new Drop());
+			}
+		}
+
+		// --- 物理ステップ(モーション抑制時はゆっくり1回) ---
+		const steps = reduceMotion ? 1 : 2; // 安定性と速度のため複数ステップ
+		for (let s = 0; s < steps; s++) step();
+
+		// --- 水面描画 ---
+		render();
+
+		// --- 雨粒の更新・描画 ---
+		ctx.save();
+		for (let i = drops.length - 1; i >= 0; i--) {
+			const alive = drops[i].update(dt);
+			if (alive) drops[i].draw();
+			else drops.splice(i, 1);
+		}
+		// --- スプラッシュ ---
+		for (let i = splashes.length - 1; i >= 0; i--) {
+			const alive = splashes[i].update(dt);
+			if (alive) splashes[i].draw();
+			else splashes.splice(i, 1);
+		}
+		ctx.restore();
+
+		requestAnimationFrame(frame);
+	}
+
+	/* ============================================================
+	 * ポインタ操作 — クリック/ドラッグで自由に波紋を作れる
+	 * ========================================================== */
+	let pointerDown = false;
+	function pointerDisturb(e) {
+		const rect = canvas.getBoundingClientRect();
+		const x = e.clientX - rect.left;
+		const y = e.clientY - rect.top;
+		disturb(x, y, -4.0, 3.0);
+		splashes.push(new Splash(x, y, 2.0));
+	}
+	canvas.addEventListener("pointerdown", (e) => {
+		pointerDown = true;
+		pointerDisturb(e);
+	});
+	canvas.addEventListener("pointermove", (e) => {
+		if (pointerDown) pointerDisturb(e);
+	});
+	window.addEventListener("pointerup", () => { pointerDown = false; });
+	canvas.addEventListener("pointerleave", () => { pointerDown = false; });
+
+	// リサイズ追従(描画中バッファ破壊を避けるため再構築のみ)
+	let resizeTimer = 0;
+	window.addEventListener("resize", () => {
+		clearTimeout(resizeTimer);
+		resizeTimer = setTimeout(resize, 120);
+	});
+
+	// モーション設定の変化に追従
+	if (reduceMotionQuery.addEventListener) {
+		reduceMotionQuery.addEventListener("change", (e) => { reduceMotion = e.matches; });
+	}
+
+	// 初期化と開始
+	resize();
+	// 起動時に静かな波紋を数個置いて水面に表情を与える
+	for (let i = 0; i < 3; i++) {
+		disturb(Math.random() * viewW, Math.random() * viewH, -3.0, 3.0);
+	}
+	requestAnimationFrame(frame);
+	</script>
+</body>
+</html>

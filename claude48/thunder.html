@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<!-- AIメタデータ（このデモはClaude Opus 4.8が生成） -->
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="description" content="Electrifying Thunderstorm - Claude Opus 4.8版。多層ブルームの稲妻、雲のシルエット、奥行きのある雨、画面フラッシュによる雷雨表現。">
+	<title>Electrifying Thunderstorm - Claude Opus 4.8版</title>
+	<style>
+		/* 全画面・はみ出し抑制・暗い夜空のベース */
+		html, body {
+			margin: 0;
+			padding: 0;
+			width: 100vw;
+			height: 100vh;
+			overflow: hidden;
+			background: #03040a;
+			cursor: crosshair;
+		}
+		/* 稲妻用キャンバスを画面いっぱいに敷く */
+		canvas {
+			display: block;
+			width: 100vw;
+			height: 100vh;
+		}
+		/* 操作ヒント（最小限のUI） */
+		.hint {
+			position: fixed;
+			left: 18px;
+			bottom: 16px;
+			font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", system-ui, sans-serif;
+			font-size: 12px;
+			letter-spacing: 0.18em;
+			color: rgba(180, 200, 255, 0.45);
+			text-transform: uppercase;
+			pointer-events: none;
+			user-select: none;
+			text-shadow: 0 0 8px rgba(120, 160, 255, 0.4);
+			transition: opacity 1.2s ease;
+		}
+		.brand {
+			position: fixed;
+			right: 18px;
+			bottom: 16px;
+			font-family: "Segoe UI", system-ui, sans-serif;
+			font-size: 12px;
+			letter-spacing: 0.3em;
+			color: rgba(150, 180, 255, 0.5);
+			text-transform: uppercase;
+			pointer-events: none;
+			user-select: none;
+			text-shadow: 0 0 10px rgba(120, 160, 255, 0.5);
+		}
+	</style>
+</head>
+<body>
+	<canvas id="sky"></canvas>
+	<div class="hint" id="hint">Click / Tap to strike</div>
+	<div class="brand">Claude Opus 4.8</div>
+
+	<script>
+	(() => {
+		"use strict";
+
+		// ===== 基本セットアップ =====
+		const canvas = document.getElementById("sky");
+		const ctx = canvas.getContext("2d", { alpha: false });
+		const hint = document.getElementById("hint");
+
+		// アクセシビリティ: 動きを抑える設定を尊重
+		const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+		let W = 0, H = 0, DPR = 1;
+
+		// 高解像度ディスプレイでも鮮明に描くためDPRを反映
+		function resize() {
+			DPR = Math.min(window.devicePixelRatio || 1, 2); // 性能のため上限2
+			W = window.innerWidth;
+			H = window.innerHeight;
+			canvas.width = Math.floor(W * DPR);
+			canvas.height = Math.floor(H * DPR);
+			canvas.style.width = W + "px";
+			canvas.style.height = H + "px";
+			ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+			buildClouds();
+			buildStars();
+		}
+
+		// ===== ユーティリティ =====
+		const rand = (a, b) => a + Math.random() * (b - a);
+		const choose = (arr) => arr[(Math.random() * arr.length) | 0];
+
+		// ===== 星（雲の隙間から覗く微光） =====
+		let stars = [];
+		function buildStars() {
+			const count = Math.round((W * H) / 14000);
+			stars = [];
+			for (let i = 0; i < count; i++) {
+				stars.push({
+					x: Math.random() * W,
+					y: Math.random() * H * 0.6,
+					r: rand(0.3, 1.2),
+					base: rand(0.05, 0.3),
+					tw: rand(0, Math.PI * 2),
+					sp: rand(0.5, 1.5)
+				});
+			}
+		}
+
+		// ===== 雲（複数の柔らかいブロブを重ねたシルエット） =====
+		let clouds = [];
+		function buildClouds() {
+			clouds = [];
+			const layers = 3;
+			for (let l = 0; l < layers; l++) {
+				const blobCount = 5 + l * 3;
+				const yBand = H * (0.0 + l * 0.12);
+				for (let i = 0; i < blobCount; i++) {
+					clouds.push({
+						x: Math.random() * W,
+						y: yBand + rand(-H * 0.05, H * 0.18),
+						r: rand(W * 0.08, W * 0.22) * (1 + l * 0.25),
+						drift: rand(0.05, 0.25) * (l + 1) * 0.3,
+						alpha: rand(0.12, 0.30) - l * 0.02,
+						layer: l
+					});
+				}
+			}
+		}
+
+		// ===== 雨（奥行きごとに速度・太さを変える） =====
+		let rain = [];
+		function buildRain() {
+			const count = reduceMotion ? 0 : Math.round((W * H) / 4500);
+			rain = [];
+			for (let i = 0; i < count; i++) {
+				const depth = Math.random(); // 0:遠い 1:近い
+				rain.push({
+					x: Math.random() * (W + 200) - 100,
+					y: Math.random() * H,
+					depth,
+					len: 8 + depth * 22,
+					speed: 9 + depth * 16,
+					alpha: 0.06 + depth * 0.22
+				});
+			}
+		}
+
+		// 風（雷の前後で強まる）
+		let wind = 1.2;
+		let windTarget = 1.2;
+
+		// ===== 稲妻のクラス =====
+		// フラクタル的に中点変位させた折れ線。複数のサブボルト（分岐）を持つ。
+		class Bolt {
+			constructor(x1, y1, x2, y2, thickness, hue) {
+				this.points = this.generate(x1, y1, x2, y2);
+				this.children = [];
+				this.thickness = thickness;
+				this.life = 1.0;           // 残光寿命 1→0
+				this.flicker = 1.0;         // 明滅
+				this.hue = hue;             // 色味（青〜白〜紫）
+				this.decay = rand(0.012, 0.03);
+				this.spawnBranches(x1, y1, x2, y2, thickness);
+			}
+
+			// 中点変位法で稲妻のジグザグを生成
+			generate(x1, y1, x2, y2) {
+				let segments = [{ x1, y1, x2, y2 }];
+				const offsetBase = Math.hypot(x2 - x1, y2 - y1) * 0.18;
+				let offset = offsetBase;
+				const iterations = 6;
+				for (let it = 0; it < iterations; it++) {
+					const next = [];
+					for (const s of segments) {
+						const mx = (s.x1 + s.x2) / 2;
+						const my = (s.y1 + s.y2) / 2;
+						// セグメントに垂直な方向へずらす
+						const dx = s.x2 - s.x1;
+						const dy = s.y2 - s.y1;
+						const len = Math.hypot(dx, dy) || 1;
+						const nx = -dy / len;
+						const ny = dx / len;
+						const disp = rand(-offset, offset);
+						const px = mx + nx * disp;
+						const py = my + ny * disp;
+						next.push({ x1: s.x1, y1: s.y1, x2: px, y2: py });
+						next.push({ x1: px, y1: py, x2: s.x2, y2: s.y2 });
+					}
+					segments = next;
+					offset *= 0.55; // 反復ごとに変位を縮小（自己相似）
+				}
+				// 連続した点列に変換
+				const pts = [{ x: segments[0].x1, y: segments[0].y1 }];
+				for (const s of segments) pts.push({ x: s.x2, y: s.y2 });
+				return pts;
+			}
+
+			// 分岐ボルトを生成（親の途中から枝分かれ）
+			spawnBranches(x1, y1, x2, y2, thickness) {
+				if (thickness < 1.4) return;
+				const branchCount = (Math.random() * 3) | 0;
+				for (let i = 0; i < branchCount; i++) {
+					const t = rand(0.2, 0.85);
+					const idx = Math.floor(this.points.length * t);
+					const p = this.points[idx];
+					if (!p) continue;
+					const angle = Math.atan2(y2 - y1, x2 - x1) + rand(-0.9, 0.9);
+					const length = rand(60, 200) * (thickness / 3);
+					const ex = p.x + Math.cos(angle) * length;
+					const ey = p.y + Math.sin(angle) * length + rand(20, 80);
+					this.children.push(new Bolt(p.x, p.y, ex, ey, thickness * 0.55, this.hue));
+				}
+			}
+
+			update() {
+				this.life -= this.decay;
+				// ランダムな明滅で「ジリジリ」した放電感を出す
+				this.flicker = 0.55 + Math.random() * 0.45;
+				for (const c of this.children) {
+					c.life = this.life;
+					c.flicker = 0.4 + Math.random() * 0.6;
+				}
+			}
+
+			// グロー（広い発光）と芯（白い中心線）を別パスで描画
+			drawStroke(width, color, blur) {
+				ctx.strokeStyle = color;
+				ctx.lineWidth = width;
+				ctx.shadowColor = color;
+				ctx.shadowBlur = blur;
+				ctx.beginPath();
+				ctx.moveTo(this.points[0].x, this.points[0].y);
+				for (let i = 1; i < this.points.length; i++) {
+					ctx.lineTo(this.points[i].x, this.points[i].y);
+				}
+				ctx.stroke();
+				for (const c of this.children) c.drawStroke(width * 0.7, color, blur * 0.7);
+			}
+
+			draw() {
+				if (this.life <= 0) return;
+				const a = Math.max(0, this.life) * this.flicker;
+				const h = this.hue;
+				ctx.lineCap = "round";
+				ctx.lineJoin = "round";
+
+				// 1) 外側の広いグロー（色付き）
+				this.drawStroke(this.thickness * 5, `hsla(${h}, 90%, 65%, ${a * 0.18})`, 30);
+				// 2) 中間のグロー
+				this.drawStroke(this.thickness * 2.4, `hsla(${h}, 95%, 72%, ${a * 0.4})`, 18);
+				// 3) 芯（ほぼ白）
+				this.drawStroke(this.thickness, `hsla(${h}, 60%, 97%, ${Math.min(1, a * 1.1)})`, 8);
+				ctx.shadowBlur = 0;
+			}
+
+			isDead() {
+				return this.life <= 0;
+			}
+		}
+
+		const bolts = [];
+		let flash = 0;     // 画面全体のフラッシュ強度
+		let flashHue = 220;
+
+		// 稲妻を落とす（クリック位置 or ランダム）
+		function strike(targetX) {
+			const startX = (targetX ?? rand(W * 0.15, W * 0.85));
+			const startY = rand(-40, -10);
+			// 終端は画面下〜地面付近へ。やや横に流れる。
+			const endX = startX + rand(-W * 0.18, W * 0.18);
+			const endY = rand(H * 0.65, H * 0.98);
+			const thickness = rand(2.4, 4.2);
+			// 色味: 青白〜白〜わずかに紫
+			const hue = choose([205, 210, 215, 220, 225, 235, 260]);
+			bolts.push(new Bolt(startX, startY, endX, endY, thickness, hue));
+
+			// フラッシュと風の突風
+			flash = Math.min(1, flash + rand(0.5, 0.85));
+			flashHue = hue;
+			windTarget = rand(2.5, 5.5) * (Math.random() < 0.5 ? -1 : 1);
+		}
+
+		// ===== 背景の描画 =====
+		let cloudFlash = 0; // 雲を裏から照らす内部発光
+
+		function drawSky() {
+			// 夜空のグラデーション（上が暗く、地平が少し明るい）
+			const g = ctx.createLinearGradient(0, 0, 0, H);
+			g.addColorStop(0, "#04050d");
+			g.addColorStop(0.55, "#070a18");
+			g.addColorStop(1, "#0b1024");
+			ctx.fillStyle = g;
+			ctx.fillRect(0, 0, W, H);
+		}
+
+		function drawStars(t) {
+			for (const s of stars) {
+				const tw = s.base + Math.sin(t * 0.002 * s.sp + s.tw) * s.base * 0.6;
+				ctx.globalAlpha = Math.max(0, tw);
+				ctx.fillStyle = "#cfe0ff";
+				ctx.beginPath();
+				ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+				ctx.fill();
+			}
+			ctx.globalAlpha = 1;
+		}
+
+		function drawClouds(dt) {
+			// 雷の瞬間は雲が内側から光る
+			const glow = cloudFlash;
+			for (const c of clouds) {
+				// ゆっくり横に流れる
+				c.x += c.drift * wind * dt * 0.06;
+				if (c.x - c.r > W) c.x = -c.r;
+				if (c.x + c.r < 0) c.x = W + c.r;
+
+				const rg = ctx.createRadialGradient(c.x, c.y, c.r * 0.1, c.x, c.y, c.r);
+				const lit = c.alpha + glow * (0.35 - c.layer * 0.08);
+				// 雷で照らされると青白く、通常は暗いシルエット
+				const lum = 30 + glow * 90;
+				rg.addColorStop(0, `hsla(220, 40%, ${lum}%, ${Math.min(0.85, lit)})`);
+				rg.addColorStop(1, `hsla(225, 50%, ${10 + glow * 30}%, 0)`);
+				ctx.fillStyle = rg;
+				ctx.beginPath();
+				ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+				ctx.fill();
+			}
+		}
+
+		function drawRain(dt) {
+			if (rain.length === 0) return;
+			ctx.lineCap = "round";
+			for (const d of rain) {
+				const sx = d.x;
+				const sy = d.y;
+				const ex = d.x + wind * d.depth * 2.2;
+				const ey = d.y + d.len;
+				ctx.strokeStyle = `rgba(150, 180, 230, ${d.alpha})`;
+				ctx.lineWidth = 0.6 + d.depth * 1.1;
+				ctx.beginPath();
+				ctx.moveTo(sx, sy);
+				ctx.lineTo(ex, ey);
+				ctx.stroke();
+
+				d.y += d.speed * dt;
+				d.x += wind * d.depth * 0.6 * dt;
+				if (d.y > H) {
+					d.y = -d.len;
+					d.x = Math.random() * (W + 200) - 100;
+				}
+				if (d.x > W + 100) d.x = -100;
+				else if (d.x < -100) d.x = W + 100;
+			}
+		}
+
+		// ===== メインループ =====
+		let last = performance.now();
+		let nextAutoStrike = 0;
+
+		function frame(now) {
+			// dtを正規化（60fps基準）。タブ復帰時の大ジャンプを抑制。
+			let dt = (now - last) / 16.667;
+			last = now;
+			if (dt > 3) dt = 3;
+
+			// 風の補間（突風が徐々に収まる）
+			wind += (windTarget - wind) * 0.02 * dt;
+			windTarget += (1.2 - windTarget) * 0.01 * dt;
+
+			// 背景・雲フラッシュの減衰
+			cloudFlash += (0 - cloudFlash) * 0.06 * dt;
+
+			// 描画
+			drawSky();
+			drawStars(now);
+			drawClouds(dt);
+
+			// 雷の合成は加算で（発光が重なって明るくなる）
+			ctx.globalCompositeOperation = "lighter";
+			for (let i = bolts.length - 1; i >= 0; i--) {
+				bolts[i].update();
+				bolts[i].draw();
+				if (bolts[i].isDead()) bolts.splice(i, 1);
+			}
+			ctx.globalCompositeOperation = "source-over";
+
+			drawRain(dt);
+
+			// 画面フラッシュ（雷光が空気全体を照らす）
+			if (flash > 0.001) {
+				ctx.fillStyle = `hsla(${flashHue}, 70%, 85%, ${flash * 0.35})`;
+				ctx.fillRect(0, 0, W, H);
+				cloudFlash = Math.max(cloudFlash, flash);
+				flash *= 0.86; // 余韻を残しつつ減衰
+			}
+
+			// 自動発雷（reduceMotion時は頻度を大きく下げる）
+			if (now > nextAutoStrike) {
+				strike();
+				const interval = reduceMotion ? rand(6000, 12000) : rand(1200, 3800);
+				nextAutoStrike = now + interval;
+				// たまに連続稲妻（雷鳴のドラマ性）
+				if (!reduceMotion && Math.random() < 0.3) {
+					setTimeout(() => strike(), rand(60, 220));
+				}
+			}
+
+			requestAnimationFrame(frame);
+		}
+
+		// ===== 入力 =====
+		function handlePointer(e) {
+			const x = (e.touches ? e.touches[0].clientX : e.clientX);
+			strike(x);
+			// 連打用に次の自動発雷を少し遅らせる
+		}
+		window.addEventListener("pointerdown", handlePointer);
+		window.addEventListener("resize", () => {
+			resize();
+			buildRain();
+		});
+
+		// ヒントを数秒後にフェードアウト
+		setTimeout(() => { hint.style.opacity = "0"; }, 6000);
+
+		// ===== 起動 =====
+		resize();
+		buildRain();
+		// 初回の一閃
+		strike();
+		requestAnimationFrame(frame);
+	})();
+	</script>
+</body>
+</html>

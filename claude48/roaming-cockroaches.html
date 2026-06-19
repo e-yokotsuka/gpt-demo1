@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="ai.note" content="Roaming Cockroaches - Claude Opus 4.8版。Canvas描画による群衆AI＋ライト追従の逃走行動。">
+	<title>Roaming Cockroaches - Claude Opus 4.8版</title>
+	<style>
+		/* ====== 全体レイアウト：画面いっぱい・はみ出し禁止 ====== */
+		* { box-sizing: border-box; }
+		html, body {
+			margin: 0;
+			padding: 0;
+			width: 100vw;
+			height: 100vh;
+			overflow: hidden;
+			background: #0a0806;
+			font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
+			color: #e8dcc8;
+			cursor: none; /* 独自の懐中電灯カーソルを使う */
+		}
+
+		/* 床のキャンバス（下地） */
+		#floor {
+			position: fixed;
+			inset: 0;
+			width: 100%;
+			height: 100%;
+			display: block;
+			z-index: 0;
+		}
+		/* ゴキブリ描画キャンバス */
+		#bugs {
+			position: fixed;
+			inset: 0;
+			width: 100%;
+			height: 100%;
+			display: block;
+			z-index: 1;
+		}
+		/* 懐中電灯のスポットライト（CSS合成）：マウス周辺だけ明るく */
+		#spotlight {
+			position: fixed;
+			inset: 0;
+			z-index: 2;
+			pointer-events: none;
+			mix-blend-mode: screen;
+			background: radial-gradient(
+				circle var(--r, 180px) at var(--mx, 50%) var(--my, 50%),
+				rgba(255, 244, 214, 0.42),
+				rgba(255, 226, 170, 0.16) 45%,
+				rgba(0, 0, 0, 0) 72%
+			);
+			transition: background 0.05s linear;
+		}
+
+		/* HUD（情報パネル） */
+		.hud {
+			position: fixed;
+			left: 16px;
+			top: 16px;
+			z-index: 3;
+			padding: 12px 16px;
+			border-radius: 12px;
+			border: 1px solid rgba(255, 222, 184, 0.18);
+			background: rgba(12, 10, 8, 0.55);
+			backdrop-filter: blur(6px);
+			-webkit-backdrop-filter: blur(6px);
+			font-size: 12px;
+			line-height: 1.75;
+			letter-spacing: 0.02em;
+			pointer-events: none;
+			user-select: none;
+			box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+		}
+		.hud h1 {
+			margin: 0 0 6px;
+			font-size: 14px;
+			font-weight: 700;
+			color: #fff3dd;
+			letter-spacing: 0.04em;
+		}
+		.hud .row { display: flex; justify-content: space-between; gap: 18px; }
+		.hud .k { color: #b8a98d; }
+		.hud .v { color: #ffe9c4; font-variant-numeric: tabular-nums; }
+		.hud .hint { margin-top: 6px; color: #9c8e74; font-size: 11px; }
+		.hud .danger { color: #ff9a7c; }
+
+		/* フッタークレジット */
+		.credit {
+			position: fixed;
+			right: 14px;
+			bottom: 12px;
+			z-index: 3;
+			color: #8a7c64;
+			font-size: 11px;
+			letter-spacing: 0.04em;
+			pointer-events: none;
+			user-select: none;
+		}
+
+		/* reduced-motion 時に表示する注記 */
+		.rm-note { display: none; }
+
+		@media (prefers-reduced-motion: reduce) {
+			html, body { cursor: auto; }
+			#spotlight { display: none; }
+			.rm-note { display: inline; }
+		}
+	</style>
+</head>
+<body>
+	<!-- 下地（床のテクスチャと薄い影） -->
+	<canvas id="floor"></canvas>
+	<!-- ゴキブリ本体 -->
+	<canvas id="bugs"></canvas>
+	<!-- 懐中電灯スポット -->
+	<div id="spotlight"></div>
+
+	<div class="hud">
+		<h1>Roaming Cockroaches</h1>
+		<div class="row"><span class="k">個体数</span><span class="v" id="count">0</span></div>
+		<div class="row"><span class="k">平均速度</span><span class="v" id="speed">0</span></div>
+		<div class="row"><span class="k">ライト忌避</span><span class="v danger">ON</span></div>
+		<div class="hint">クリック：その場から散らす ／ 動かすと光から逃げる<span class="rm-note">（静止モード）</span></div>
+	</div>
+	<div class="credit">Claude Opus 4.8 — Boids + Photophobia AI on Canvas</div>
+
+	<script>
+	(() => {
+		"use strict";
+
+		// ====== 環境・状態 ======
+		const floor = document.getElementById("floor");
+		const bugs = document.getElementById("bugs");
+		const fctx = floor.getContext("2d");
+		const ctx = bugs.getContext("2d");
+		const spotlight = document.getElementById("spotlight");
+		const countEl = document.getElementById("count");
+		const speedEl = document.getElementById("speed");
+
+		// アクセシビリティ：動きを抑える設定を尊重
+		const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+		let W = 0, H = 0, DPR = 1;
+		// スポットライト（マウス／指の位置）。初期は画面外で無効。
+		const light = { x: -9999, y: -9999, active: false, radius: 180 };
+
+		// ====== ユーティリティ ======
+		const rand = (a, b) => Math.random() * (b - a) + a;
+		const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+		// 角度を -PI..PI に正規化
+		const wrapAngle = (a) => {
+			while (a > Math.PI) a -= Math.PI * 2;
+			while (a < -Math.PI) a += Math.PI * 2;
+			return a;
+		};
+
+		// ====== ゴキブリのスプライト ======
+		// 元画像は上向き（頭が上）。進行方向(右=0rad)に合わせて +90度回転して描く。
+		const SPRITE_SRCS = ["../gokiburi1.png", "../gokiburi2.png", "../gokiburi3.png"];
+		const sprites = [];
+		let spritesReady = false;
+		let loaded = 0;
+		SPRITE_SRCS.forEach((src, i) => {
+			const img = new Image();
+			img.onload = () => {
+				sprites[i] = img;
+				if (++loaded === SPRITE_SRCS.length) spritesReady = true;
+			};
+			img.onerror = () => {
+				// 画像が無い場合でも動くよう、null のままにしてベクター描画にフォールバック
+				if (++loaded === SPRITE_SRCS.length) spritesReady = true;
+			};
+			img.src = src;
+		});
+
+		// ====== 個体群 ======
+		const roaches = [];
+
+		function spawn(x, y, panic = 0) {
+			const size = rand(26, 46);              // 見た目サイズ(px)
+			const angle = rand(-Math.PI, Math.PI);  // 進行方向
+			roaches.push({
+				x, y,
+				angle,
+				targetAngle: angle,
+				speed: rand(0.85, 1.4),  // 個体ごとの素早さ係数
+				size,
+				sprite: (Math.random() * SPRITE_SRCS.length) | 0,
+				walkPhase: rand(0, Math.PI * 2), // 脚の動き(ボディの伸縮)用
+				wanderBias: rand(-0.04, 0.04),   // 個性：わずかに片方へ曲がる癖
+				panic,                            // パニック度(0..1.5)
+				jitterTimer: rand(0, 1.4),        // 次に進路をランダムに変えるまで
+				vx: 0, vy: 0
+			});
+		}
+
+		// ====== リサイズ：高解像度対応 ======
+		function resize() {
+			DPR = Math.min(window.devicePixelRatio || 1, 2);
+			W = window.innerWidth;
+			H = window.innerHeight;
+			for (const cv of [floor, bugs]) {
+				cv.width = Math.floor(W * DPR);
+				cv.height = Math.floor(H * DPR);
+			}
+			fctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+			ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+			light.radius = Math.max(150, Math.min(W, H) * 0.22);
+			spotlight.style.setProperty("--r", light.radius + "px");
+			drawFloor();
+		}
+
+		// ====== 床の描画（一度だけ）：暗いタイル＋ヴィネット ======
+		function drawFloor() {
+			// ベースの放射グラデーション（中央がほんのり明るい古い床）
+			const g = fctx.createRadialGradient(W * 0.5, H * 0.42, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.75);
+			g.addColorStop(0, "#1a1410");
+			g.addColorStop(0.55, "#120d0a");
+			g.addColorStop(1, "#080605");
+			fctx.fillStyle = g;
+			fctx.fillRect(0, 0, W, H);
+
+			// 薄いタイルの目地（縦横の線）で台所/床らしさを出す
+			const tile = 96;
+			fctx.lineWidth = 1;
+			fctx.strokeStyle = "rgba(255, 230, 190, 0.025)";
+			fctx.beginPath();
+			for (let x = (W % tile) / 2; x <= W; x += tile) {
+				fctx.moveTo(x + 0.5, 0);
+				fctx.lineTo(x + 0.5, H);
+			}
+			for (let y = (H % tile) / 2; y <= H; y += tile) {
+				fctx.moveTo(0, y + 0.5);
+				fctx.lineTo(W, y + 0.5);
+			}
+			fctx.stroke();
+
+			// ほのかな汚れの斑点（決定論的でなくてよい・固定位置で焼き込む）
+			fctx.save();
+			for (let i = 0; i < 70; i++) {
+				const sx = Math.random() * W;
+				const sy = Math.random() * H;
+				const sr = Math.random() * 60 + 20;
+				const sg = fctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+				sg.addColorStop(0, "rgba(40, 28, 18, 0.18)");
+				sg.addColorStop(1, "rgba(40, 28, 18, 0)");
+				fctx.fillStyle = sg;
+				fctx.beginPath();
+				fctx.arc(sx, sy, sr, 0, Math.PI * 2);
+				fctx.fill();
+			}
+			fctx.restore();
+		}
+
+		// ====== ベクター描画フォールバック（画像が読めない時） ======
+		function drawVectorRoach(size) {
+			// 中心原点・右向き(=進行方向)で描く
+			const L = size * 0.55;
+			ctx.fillStyle = "#3a2616";
+			ctx.beginPath();
+			ctx.ellipse(0, 0, L, size * 0.32, 0, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.fillStyle = "#2a1a0e";
+			ctx.beginPath();
+			ctx.ellipse(L * 0.7, 0, size * 0.18, size * 0.2, 0, 0, Math.PI * 2);
+			ctx.fill();
+			// 触角
+			ctx.strokeStyle = "#2a1a0e";
+			ctx.lineWidth = Math.max(1, size * 0.05);
+			ctx.beginPath();
+			ctx.moveTo(L * 0.8, -size * 0.1);
+			ctx.lineTo(L * 1.3, -size * 0.3);
+			ctx.moveTo(L * 0.8, size * 0.1);
+			ctx.lineTo(L * 1.3, size * 0.3);
+			ctx.stroke();
+		}
+
+		// ====== 1体の更新 ======
+		function step(r, dt) {
+			// --- 進路のランダム変更（ウロウロ感） ---
+			r.jitterTimer -= dt;
+			if (r.jitterTimer <= 0) {
+				r.targetAngle += rand(-0.9, 0.9);
+				r.jitterTimer = rand(0.4, 1.6);
+			}
+
+			// --- ライト（マウス）からの逃走：光を嫌う性質 ---
+			let threat = 0;
+			if (light.active) {
+				const dx = r.x - light.x;
+				const dy = r.y - light.y;
+				const d = Math.hypot(dx, dy);
+				const range = light.radius + 60;
+				if (d < range) {
+					threat = 1 - d / range;            // 近いほど強い
+					const away = Math.atan2(dy, dx);   // 光と反対方向へ
+					r.targetAngle = away + rand(-0.2, 0.2);
+					r.panic = clamp(r.panic + threat * 2.4 * dt + 0.04, 0, 1.5);
+				}
+			}
+			// パニックは時間で収まる
+			r.panic = Math.max(0, r.panic - dt * 0.9);
+
+			// --- 壁ぎわでは内側へ向き直す ---
+			const m = r.size;
+			if (r.x < m) r.targetAngle = rand(-0.6, 0.6);
+			else if (r.x > W - m) r.targetAngle = Math.PI + rand(-0.6, 0.6);
+			if (r.y < m) r.targetAngle = Math.PI * 0.5 + rand(-0.6, 0.6);
+			else if (r.y > H - m) r.targetAngle = -Math.PI * 0.5 + rand(-0.6, 0.6);
+
+			// --- 旋回：目標角へなめらかに回頭（パニック時は俊敏） ---
+			const diff = wrapAngle(r.targetAngle - r.angle);
+			const turnRate = (3.2 + r.panic * 7) * dt;
+			r.angle += clamp(diff, -turnRate, turnRate) + r.wanderBias * (0.6 + r.panic);
+
+			// --- 速度：基礎速度＋パニックで加速。ゴキブリ特有のダッシュ＆停止 ---
+			const dash = 0.7 + 0.3 * Math.sin(r.walkPhase * 0.5); // 微妙な緩急
+			const px = r.speed * (52 + r.panic * 230) * dash;
+			r.vx = Math.cos(r.angle) * px;
+			r.vy = Math.sin(r.angle) * px;
+			r.x = clamp(r.x + r.vx * dt, 2, W - 2);
+			r.y = clamp(r.y + r.vy * dt, 2, H - 2);
+
+			// --- 脚の運動位相（速いほど速く動く） ---
+			r.walkPhase += dt * (14 + r.speed * 8 + r.panic * 26);
+
+			return threat;
+		}
+
+		// ====== 1体の描画 ======
+		function render(r) {
+			const img = sprites[r.sprite];
+			ctx.save();
+			ctx.translate(r.x, r.y);
+			// 進行方向(右=0)に合わせ、上向きスプライトを +90度
+			ctx.rotate(r.angle + Math.PI / 2);
+
+			// 歩行による微妙なボディ伸縮（脚を動かしているような錯覚）
+			const wob = Math.sin(r.walkPhase) * (0.04 + r.panic * 0.05);
+			const sx = 1 - wob * 0.5;
+			const sy = 1 + wob;
+			ctx.scale(sx, sy);
+
+			// 接地影
+			ctx.globalAlpha = 0.35;
+			ctx.fillStyle = "#000";
+			ctx.beginPath();
+			ctx.ellipse(0, r.size * 0.18, r.size * 0.42, r.size * 0.22, 0, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.globalAlpha = 1;
+
+			if (img) {
+				const s = r.size;
+				ctx.drawImage(img, -s / 2, -s / 2, s, s);
+			} else {
+				ctx.rotate(-Math.PI / 2); // ベクターは右向き基準で描く
+				drawVectorRoach(r.size);
+			}
+			ctx.restore();
+		}
+
+		// ====== 群れの初期生成 ======
+		// 画面サイズに応じて密度を調整（パフォーマンス配慮）
+		function initialCount() {
+			const area = W * H;
+			const n = Math.round(area / 26000);
+			return clamp(n, 26, 70);
+		}
+
+		// ====== メインループ ======
+		let prev = performance.now();
+		let speedAccum = 0, speedFrames = 0, hudTimer = 0;
+
+		function frame(now) {
+			let dt = (now - prev) / 1000;
+			prev = now;
+			dt = Math.min(dt, 0.04); // 大きなフレーム飛びを抑制
+
+			ctx.clearRect(0, 0, W, H);
+
+			let totalSpeed = 0;
+			for (let i = 0; i < roaches.length; i++) {
+				const r = roaches[i];
+				step(r, dt);
+				render(r);
+				totalSpeed += Math.hypot(r.vx, r.vy);
+			}
+
+			// HUD更新（負荷軽減のため間引き）
+			speedAccum += roaches.length ? totalSpeed / roaches.length : 0;
+			speedFrames++;
+			hudTimer += dt;
+			if (hudTimer >= 0.25) {
+				countEl.textContent = String(roaches.length);
+				speedEl.textContent = Math.round(speedAccum / speedFrames) + " px/s";
+				speedAccum = 0; speedFrames = 0; hudTimer = 0;
+			}
+
+			requestAnimationFrame(frame);
+		}
+
+		// reduced-motion：静止した群れを一度だけ描く
+		function renderStatic() {
+			ctx.clearRect(0, 0, W, H);
+			for (const r of roaches) render(r);
+			countEl.textContent = String(roaches.length);
+			speedEl.textContent = "0 px/s";
+		}
+
+		// ====== 入力イベント ======
+		function setLight(x, y) {
+			light.x = x; light.y = y; light.active = true;
+			spotlight.style.setProperty("--mx", x + "px");
+			spotlight.style.setProperty("--my", y + "px");
+		}
+
+		window.addEventListener("mousemove", (e) => setLight(e.clientX, e.clientY), { passive: true });
+		window.addEventListener("mouseleave", () => { light.active = false; light.x = light.y = -9999; });
+		window.addEventListener("touchmove", (e) => {
+			const t = e.touches[0];
+			if (t) setLight(t.clientX, t.clientY);
+		}, { passive: true });
+
+		// クリック：その地点からゴキブリを散らす（増殖＋周囲をパニックに）
+		function burst(x, y) {
+			for (let i = 0; i < 5; i++) {
+				const a = rand(-Math.PI, Math.PI);
+				const rr = rand(4, 26);
+				spawn(clamp(x + Math.cos(a) * rr, 4, W - 4), clamp(y + Math.sin(a) * rr, 4, H - 4), 1.4);
+			}
+			// 近くの既存個体もパニックにして散らす
+			for (const r of roaches) {
+				const d = Math.hypot(r.x - x, r.y - y);
+				if (d < 160) {
+					r.panic = clamp(r.panic + (1 - d / 160) * 1.4, 0, 1.5);
+					r.targetAngle = Math.atan2(r.y - y, r.x - x) + rand(-0.3, 0.3);
+				}
+			}
+			if (reduceMotion) renderStatic();
+		}
+		window.addEventListener("click", (e) => burst(e.clientX, e.clientY));
+		window.addEventListener("touchstart", (e) => {
+			const t = e.touches[0];
+			if (t) burst(t.clientX, t.clientY);
+		}, { passive: true });
+
+		window.addEventListener("resize", () => {
+			resize();
+			if (reduceMotion) renderStatic();
+		});
+
+		// ====== 起動 ======
+		resize();
+		const n = initialCount();
+		for (let i = 0; i < n; i++) spawn(rand(40, W - 40), rand(40, H - 40));
+
+		// スプライトの読み込みを待ってから開始（チラつき防止）。少し待っても来なければ開始。
+		function start() {
+			if (reduceMotion) {
+				renderStatic();
+			} else {
+				prev = performance.now();
+				requestAnimationFrame(frame);
+			}
+		}
+		if (spritesReady) {
+			start();
+		} else {
+			let waited = 0;
+			const iv = setInterval(() => {
+				waited += 50;
+				if (spritesReady || waited >= 1500) {
+					clearInterval(iv);
+					start();
+				}
+			}, 50);
+		}
+	})();
+	</script>
+</body>
+</html>

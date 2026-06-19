@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 作者情報（AIメタデータ） -->
+  <meta name="ai.author" content="Claude Opus 4.8">
+  <meta name="ai.model" content="claude-opus-4-8">
+  <meta name="ai.note" content="Lorenz Attractor を RK4 積分・深度ソート 3D・グロー描画で表現した Claude Opus 4.8 オリジナル版。">
+  <title>Lorenz Attractor Demo - Claude Opus 4.8版</title>
+  <style>
+    :root {
+      --bg-0: #03060f;
+      --bg-1: #070b1c;
+      --panel: rgba(12, 18, 38, 0.72);
+      --border: rgba(120, 180, 255, 0.22);
+      --text: #e6efff;
+      --muted: #93a6cf;
+      --accent: #7fd4ff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    body {
+      width: 100vw;
+      height: 100vh;
+      background:
+        radial-gradient(circle at 22% 14%, rgba(96, 168, 255, 0.18), transparent 42%),
+        radial-gradient(circle at 80% 86%, rgba(255, 96, 168, 0.14), transparent 42%),
+        linear-gradient(160deg, var(--bg-1), var(--bg-0));
+      color: var(--text);
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* 描画キャンバスは画面全体に固定 */
+    #scene {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      cursor: grab;
+    }
+    #scene:active { cursor: grabbing; }
+
+    /* 操作パネル（HUD） */
+    .hud {
+      position: fixed;
+      left: 14px;
+      top: 14px;
+      width: min(300px, calc(100vw - 28px));
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      backdrop-filter: blur(10px) saturate(140%);
+      -webkit-backdrop-filter: blur(10px) saturate(140%);
+      padding: 14px 16px 16px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+      user-select: none;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    .hud.collapsed {
+      opacity: 0;
+      transform: translateX(-115%);
+      pointer-events: none;
+    }
+    .hud h1 {
+      margin: 0 0 2px;
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .hud .sub {
+      margin: 0 0 12px;
+      font-size: 10.5px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 42px 1fr 50px;
+      gap: 9px;
+      align-items: center;
+      margin: 9px 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .row label { letter-spacing: 0.03em; }
+    .row output {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(127, 212, 255, 0.18);
+      border-radius: 4px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px rgba(127, 212, 255, 0.8);
+      cursor: pointer;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border: none;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px rgba(127, 212, 255, 0.8);
+      cursor: pointer;
+    }
+    .buttons {
+      display: flex;
+      gap: 7px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    button {
+      flex: 1 1 auto;
+      border: 1px solid rgba(120, 180, 255, 0.28);
+      background: rgba(23, 37, 68, 0.85);
+      color: #eaf2ff;
+      border-radius: 9px;
+      font-size: 11.5px;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: background 0.18s ease, border-color 0.18s ease;
+    }
+    button:hover { background: rgba(33, 52, 92, 0.95); border-color: rgba(127, 212, 255, 0.55); }
+    button.active { background: rgba(127, 212, 255, 0.22); border-color: var(--accent); color: #fff; }
+    .note {
+      margin-top: 12px;
+      font-size: 10.5px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    /* HUD 開閉トグル */
+    #toggle {
+      position: fixed;
+      left: 14px;
+      top: 14px;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: var(--accent);
+      font-size: 17px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+    }
+    #toggle.show { display: flex; }
+    /* 右下クレジット */
+    .credit {
+      position: fixed;
+      right: 14px;
+      bottom: 12px;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      color: rgba(147, 166, 207, 0.55);
+      user-select: none;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <button id="toggle" title="パネル表示">≡</button>
+
+  <section class="hud" id="hud">
+    <h1>LORENZ ATTRACTOR</h1>
+    <p class="sub">Claude Opus 4.8 — RK4 / depth-sorted 3D</p>
+
+    <div class="row">
+      <label for="sigma">σ</label>
+      <input id="sigma" type="range" min="2" max="30" step="0.1" value="10">
+      <output id="sigma-v">10.0</output>
+    </div>
+    <div class="row">
+      <label for="rho">ρ</label>
+      <input id="rho" type="range" min="1" max="80" step="0.1" value="28">
+      <output id="rho-v">28.0</output>
+    </div>
+    <div class="row">
+      <label for="beta">β</label>
+      <input id="beta" type="range" min="0.5" max="6" step="0.01" value="2.67">
+      <output id="beta-v">2.67</output>
+    </div>
+    <div class="row">
+      <label for="speed">速度</label>
+      <input id="speed" type="range" min="1" max="20" step="1" value="9">
+      <output id="speed-v">9</output>
+    </div>
+    <div class="row">
+      <label for="trails">軌道数</label>
+      <input id="trails" type="range" min="1" max="6" step="1" value="3">
+      <output id="trails-v">3</output>
+    </div>
+
+    <div class="buttons">
+      <button id="btn-rotate" class="active" title="自動回転">自動回転</button>
+      <button id="btn-pause" title="一時停止">一時停止</button>
+      <button id="btn-reset" title="初期化">リセット</button>
+    </div>
+
+    <p class="note">
+      ドラッグで回転 / ホイールでズーム<br>
+      Hキーでパネル開閉。複数軌道はわずかに異なる初期値で開始し、
+      カオス的に分岐する「バタフライ効果」を可視化します。
+    </p>
+  </section>
+
+  <div class="credit">Claude Opus 4.8</div>
+
+  <script>
+  "use strict";
+  (() => {
+    const canvas = document.getElementById("scene");
+    const ctx = canvas.getContext("2d", { alpha: false });
+
+    // reduced-motion 設定の尊重
+    const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let reduceMotion = reduceMotionQuery.matches;
+
+    // ---- UI 参照 ----
+    const ui = {
+      sigma: document.getElementById("sigma"),
+      rho: document.getElementById("rho"),
+      beta: document.getElementById("beta"),
+      speed: document.getElementById("speed"),
+      trails: document.getElementById("trails"),
+      sigmaV: document.getElementById("sigma-v"),
+      rhoV: document.getElementById("rho-v"),
+      betaV: document.getElementById("beta-v"),
+      speedV: document.getElementById("speed-v"),
+      trailsV: document.getElementById("trails-v"),
+      rotate: document.getElementById("btn-rotate"),
+      pause: document.getElementById("btn-pause"),
+      reset: document.getElementById("btn-reset"),
+      hud: document.getElementById("hud"),
+      toggle: document.getElementById("toggle"),
+    };
+
+    // ---- シミュレーション状態 ----
+    const state = {
+      sigma: 10,
+      rho: 28,
+      beta: 8 / 3,
+      dt: 0.006,
+      stepsPerFrame: 9,
+      trailCount: 3,
+      maxPoints: 1400,    // 1軌道あたりの保持点数
+      zoom: 11,
+      targetZoom: 11,
+      yaw: 0.6,
+      pitch: 0.42,
+      autoRotate: true,
+      paused: false,
+      drag: false,
+      lastX: 0,
+      lastY: 0,
+    };
+
+    // 各軌道の色相（バタフライ効果用）
+    const HUES = [196, 320, 142, 48, 270, 14];
+
+    /** 軌道（trajectory）配列 */
+    let trails = [];
+
+    /** 軌道を初期化。わずかに異なる初期値で発散を見せる */
+    function initTrails() {
+      trails = [];
+      for (let i = 0; i < state.trailCount; i++) {
+        trails.push({
+          x: 0.1 + i * 1e-4,   // 微小な差からカオス的に分岐
+          y: 0.0,
+          z: 0.0,
+          hue: HUES[i % HUES.length],
+          pts: [],             // {x,y,z} を保持
+        });
+      }
+    }
+
+    // ---- ローレンツ方程式（微分） ----
+    function deriv(x, y, z, out) {
+      out[0] = state.sigma * (y - x);
+      out[1] = x * (state.rho - z) - y;
+      out[2] = x * y - state.beta * z;
+    }
+
+    // 4次ルンゲ＝クッタ法による高精度積分。再利用バッファでGC負荷を抑制
+    const k1 = [0, 0, 0], k2 = [0, 0, 0], k3 = [0, 0, 0], k4 = [0, 0, 0];
+    function rk4(t, dt) {
+      const { x, y, z } = t;
+      deriv(x, y, z, k1);
+      deriv(x + k1[0] * dt / 2, y + k1[1] * dt / 2, z + k1[2] * dt / 2, k2);
+      deriv(x + k2[0] * dt / 2, y + k2[1] * dt / 2, z + k2[2] * dt / 2, k3);
+      deriv(x + k3[0] * dt, y + k3[1] * dt, z + k3[2] * dt, k4);
+      t.x += dt * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]) / 6;
+      t.y += dt * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]) / 6;
+      t.z += dt * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]) / 6;
+    }
+
+    /** 全軌道を stepsPerFrame 回積分し、点列を更新 */
+    function integrate() {
+      for (const t of trails) {
+        for (let s = 0; s < state.stepsPerFrame; s++) {
+          rk4(t, state.dt);
+          // アトラクタ中心（おおよそ z≈25）を原点に寄せて保存
+          t.pts.push({ x: t.x, y: t.y, z: t.z - 25 });
+        }
+        if (t.pts.length > state.maxPoints) {
+          t.pts.splice(0, t.pts.length - state.maxPoints);
+        }
+      }
+    }
+
+    // ---- 3D 投影（yaw/pitch 回転 + 透視投影） ----
+    let cx = 0, cy = 0, cosY = 1, sinY = 0, cosP = 1, sinP = 0;
+    function updateView() {
+      cx = window.innerWidth * 0.5;
+      cy = window.innerHeight * 0.52;
+      cosY = Math.cos(state.yaw); sinY = Math.sin(state.yaw);
+      cosP = Math.cos(state.pitch); sinP = Math.sin(state.pitch);
+    }
+    // 投影結果を {sx, sy, depth} で返す。depth は手前ほど大
+    function project(p, out) {
+      // Y軸（yaw）回転
+      const x1 = p.x * cosY - p.y * sinY;
+      const y1 = p.x * sinY + p.y * cosY;
+      // X軸（pitch）回転
+      const z2 = p.z * cosP - y1 * sinP;
+      const y2 = p.z * sinP + y1 * cosP;
+      // 透視投影
+      const persp = 220 / (220 + z2 * 2.4);
+      out.sx = cx + x1 * state.zoom * persp;
+      out.sy = cy - y2 * state.zoom * persp;
+      out.depth = persp;
+    }
+
+    // ---- 描画 ----
+    const pa = { sx: 0, sy: 0, depth: 1 };
+    const pb = { sx: 0, sy: 0, depth: 1 };
+
+    function drawBackground() {
+      const w = window.innerWidth, h = window.innerHeight;
+      // 残像トレイル: 半透明黒で前フレームを徐々に減衰
+      ctx.fillStyle = "rgba(3, 6, 15, 0.16)";
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    function drawTrails(time) {
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      for (const t of trails) {
+        const n = t.pts.length;
+        if (n < 2) continue;
+
+        // 時間で色相をゆっくり回す
+        const baseHue = (t.hue + time * 0.004) % 360;
+
+        for (let i = 1; i < n; i++) {
+          project(t.pts[i - 1], pa);
+          project(t.pts[i], pb);
+
+          const age = i / n;                       // 新しい点ほど 1 に近い
+          const depth = (pa.depth + pb.depth) * 0.5;
+          // 奥行きで明度・太さ・不透明度を変調 → 立体感
+          const hue = (baseHue + age * 40) % 360;
+          const light = 48 + depth * 26 + age * 12;
+          const alpha = (0.05 + age * 0.85) * (0.5 + depth * 0.5);
+          const lw = (0.6 + age * 1.9) * depth;
+
+          ctx.strokeStyle = `hsla(${hue}, 92%, ${light}%, ${alpha})`;
+          ctx.lineWidth = lw;
+          ctx.beginPath();
+          ctx.moveTo(pa.sx, pa.sy);
+          ctx.lineTo(pb.sx, pb.sy);
+          ctx.stroke();
+        }
+
+        // 先頭（現在位置）に発光する粒子
+        project(t.pts[n - 1], pa);
+        const r = 2.6 * pa.depth;
+        const glow = ctx.createRadialGradient(pa.sx, pa.sy, 0, pa.sx, pa.sy, r * 5);
+        glow.addColorStop(0, `hsla(${baseHue}, 100%, 78%, 0.95)`);
+        glow.addColorStop(0.4, `hsla(${baseHue}, 100%, 64%, 0.4)`);
+        glow.addColorStop(1, `hsla(${baseHue}, 100%, 60%, 0)`);
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(pa.sx, pa.sy, r * 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        ctx.beginPath();
+        ctx.arc(pa.sx, pa.sy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // ---- メインループ ----
+    let lastT = performance.now();
+    function frame(now) {
+      const elapsed = now - lastT;
+      lastT = now;
+
+      if (!state.paused) {
+        integrate();
+        // 自動回転（reduced-motion 時は停止）
+        if (state.autoRotate && !reduceMotion) {
+          state.yaw += 0.0024 * Math.min(elapsed, 50);
+          state.yaw %= Math.PI * 2;
+        }
+      }
+
+      // ズームを滑らかに追従
+      state.zoom += (state.targetZoom - state.zoom) * 0.12;
+
+      updateView();
+      drawBackground();
+      drawTrails(now);
+
+      requestAnimationFrame(frame);
+    }
+
+    // reduced-motion の場合は加算合成（グロー強調）をオフにして負荷低減＋静的寄りに
+    function applyCompositeMode() {
+      ctx.globalCompositeOperation = reduceMotion ? "source-over" : "lighter";
+    }
+
+    // ---- 描画解像度（HiDPI 対応） ----
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      canvas.style.width = window.innerWidth + "px";
+      canvas.style.height = window.innerHeight + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // 背景を一旦塗りつぶし（残像のための下地）
+      ctx.fillStyle = "#03060f";
+      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+      applyCompositeMode();
+    }
+
+    // ---- ラベル更新 ----
+    function updateLabels() {
+      ui.sigmaV.textContent = state.sigma.toFixed(1);
+      ui.rhoV.textContent = state.rho.toFixed(1);
+      ui.betaV.textContent = state.beta.toFixed(2);
+      ui.speedV.textContent = String(parseInt(ui.speed.value, 10));
+      ui.trailsV.textContent = String(state.trailCount);
+    }
+
+    // ---- パラメータ反映 ----
+    function syncParams() {
+      state.sigma = parseFloat(ui.sigma.value);
+      state.rho = parseFloat(ui.rho.value);
+      state.beta = parseFloat(ui.beta.value);
+      const sp = parseInt(ui.speed.value, 10);
+      state.stepsPerFrame = sp;
+      updateLabels();
+    }
+
+    // ---- イベント登録 ----
+    ui.sigma.addEventListener("input", syncParams);
+    ui.rho.addEventListener("input", syncParams);
+    ui.beta.addEventListener("input", syncParams);
+    ui.speed.addEventListener("input", syncParams);
+    ui.trails.addEventListener("input", () => {
+      state.trailCount = parseInt(ui.trails.value, 10);
+      updateLabels();
+      initTrails();
+    });
+
+    ui.rotate.addEventListener("click", () => {
+      state.autoRotate = !state.autoRotate;
+      ui.rotate.classList.toggle("active", state.autoRotate);
+    });
+    ui.pause.addEventListener("click", () => {
+      state.paused = !state.paused;
+      ui.pause.textContent = state.paused ? "再生" : "一時停止";
+      ui.pause.classList.toggle("active", state.paused);
+    });
+    ui.reset.addEventListener("click", () => {
+      initTrails();
+      // 背景をクリアして残像を消す
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = "#03060f";
+      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+      applyCompositeMode();
+    });
+
+    // HUD 開閉
+    function toggleHud() {
+      const collapsed = ui.hud.classList.toggle("collapsed");
+      ui.toggle.classList.toggle("show", collapsed);
+    }
+    ui.toggle.addEventListener("click", toggleHud);
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "h" || e.key === "H") toggleHud();
+    });
+
+    // ---- ポインタ操作（ドラッグ回転 / ホイールズーム） ----
+    canvas.addEventListener("pointerdown", (e) => {
+      state.drag = true;
+      state.lastX = e.clientX;
+      state.lastY = e.clientY;
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!state.drag) return;
+      const dx = e.clientX - state.lastX;
+      const dy = e.clientY - state.lastY;
+      state.lastX = e.clientX;
+      state.lastY = e.clientY;
+      state.yaw += dx * 0.006;
+      state.pitch += dy * 0.005;
+      state.pitch = Math.max(-1.45, Math.min(1.45, state.pitch));
+    });
+    canvas.addEventListener("pointerup", () => { state.drag = false; });
+    canvas.addEventListener("pointercancel", () => { state.drag = false; });
+
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      state.targetZoom = Math.max(4, Math.min(28, state.targetZoom - e.deltaY * 0.012));
+    }, { passive: false });
+
+    window.addEventListener("resize", resize);
+
+    // reduced-motion 設定が変わったら追従
+    reduceMotionQuery.addEventListener("change", (e) => {
+      reduceMotion = e.matches;
+      applyCompositeMode();
+    });
+
+    // ---- 起動 ----
+    resize();
+    syncParams();
+    initTrails();
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>

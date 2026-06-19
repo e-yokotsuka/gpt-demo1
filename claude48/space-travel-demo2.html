@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- AI 作者メタ情報（必須） -->
+  <meta name="ai.author" content="Claude Opus 4.8">
+  <meta name="ai.model" content="claude-opus-4-8">
+  <meta name="ai.note" content="Self-contained WebGL2 hyperspace warp. No external CDN.">
+  <title>Space Travel Demo Part.2 - Claude Opus 4.8版</title>
+  <style>
+    /* ===== 基本レイアウト：画面全体・はみ出し禁止 ===== */
+    :root {
+      --glass: rgba(8, 14, 32, 0.55);
+      --line: rgba(140, 200, 255, 0.28);
+      --text: #cfe7ff;
+      --accent: #6cc6ff;
+      --accent-soft: rgba(108, 198, 255, 0.18);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #02050e;
+      color: var(--text);
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* 描画キャンバスは背面いっぱいに */
+    #gl {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    /* 画面端のソフトなビネット（没入感の演出） */
+    #vignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+      background: radial-gradient(ellipse at center,
+        transparent 52%,
+        rgba(2, 4, 12, 0.35) 82%,
+        rgba(2, 4, 12, 0.78) 100%);
+      mix-blend-mode: multiply;
+    }
+
+    /* ===== HUD（操作パネル） ===== */
+    .hud {
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--glass);
+      backdrop-filter: blur(10px) saturate(120%);
+      -webkit-backdrop-filter: blur(10px) saturate(120%);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      max-width: min(360px, calc(100vw - 32px));
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+    .hud.faded { opacity: 0.18; transform: translateY(4px); }
+    .hud:hover { opacity: 1 !important; transform: none !important; }
+
+    .hud .row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+    .hud .label {
+      width: 56px;
+      color: rgba(207, 231, 255, 0.7);
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+    }
+    .hud input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1;
+      height: 4px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--accent), rgba(108, 198, 255, 0.15));
+      outline: none;
+    }
+    .hud input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #eaf6ff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+      cursor: pointer;
+    }
+    .hud input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #eaf6ff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+      cursor: pointer;
+    }
+    .hud .val {
+      width: 44px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+    }
+    .hud .buttons { display: flex; gap: 8px; }
+    .hud button {
+      flex: 1;
+      border: 1px solid var(--line);
+      background: var(--accent-soft);
+      color: var(--text);
+      border-radius: 9px;
+      padding: 7px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.1s ease;
+    }
+    .hud button:hover { background: rgba(108, 198, 255, 0.32); }
+    .hud button:active { transform: scale(0.96); }
+
+    /* タイトル表記 */
+    .title {
+      position: fixed;
+      top: 18px;
+      left: 20px;
+      z-index: 10;
+      font-size: 13px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: rgba(207, 231, 255, 0.55);
+      text-shadow: 0 0 18px rgba(108, 198, 255, 0.35);
+      pointer-events: none;
+    }
+    .title b { color: var(--accent); font-weight: 700; }
+    .title .sub {
+      display: block;
+      margin-top: 4px;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: rgba(207, 231, 255, 0.35);
+    }
+
+    /* WebGL 非対応時のフォールバック */
+    .fallback {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
+      background: radial-gradient(circle at 50% 40%, #0a1430, #02050e);
+    }
+    .fallback.show { display: grid; }
+  </style>
+</head>
+<body>
+  <!-- 描画対象 -->
+  <canvas id="gl"></canvas>
+  <div id="vignette"></div>
+
+  <div class="title">
+    Space Travel <b>Part.2</b>
+    <span class="sub">Claude Opus 4.8版 / Hyperspace Drive</span>
+  </div>
+
+  <!-- 操作 HUD -->
+  <div class="hud" id="hud">
+    <div class="row">
+      <span class="label">Warp</span>
+      <input id="speed" type="range" min="0.15" max="2.5" step="0.01" value="1.0">
+      <span class="val" id="speedVal">1.00x</span>
+    </div>
+    <div class="row">
+      <span class="label">Hue</span>
+      <input id="hue" type="range" min="0" max="1" step="0.001" value="0.58">
+      <span class="val" id="hueVal">58</span>
+    </div>
+    <div class="buttons">
+      <button id="pause">一時停止</button>
+      <button id="boost">ハイパードライブ</button>
+    </div>
+  </div>
+
+  <div class="fallback" id="fallback">
+    <div>
+      <h2>WebGL2 を利用できません</h2>
+      <p>このデモは WebGL2 対応ブラウザでご覧ください。</p>
+    </div>
+  </div>
+
+  <script>
+  /* =========================================================================
+     Space Travel Demo Part.2 — Claude Opus 4.8 オリジナル版
+     -------------------------------------------------------------------------
+     設計方針：
+       ・外部CDN/ライブラリ非依存。生の WebGL2 + GLSL で完結。
+       ・GPU インスタンシングで数千本の星をワンドローコール描画し、
+         CPU 側のループを排して既存3版より高フレームレートを狙う。
+       ・星は「点」ではなく速度に応じて伸びる光跡（ストリーク）として
+         シェーダ内で生成。ワープ感と滑らかさを両立。
+       ・背景にはフルスクリーン三角形で手続き型ネビュラ（FBMノイズ）を
+         描画し、奥行きと色彩の深みを与える。
+       ・prefers-reduced-motion を尊重し、動きを抑えた静謐モードに切替。
+     ========================================================================= */
+  (() => {
+    'use strict';
+
+    const canvas = document.getElementById('gl');
+    const gl = canvas.getContext('webgl2', {
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
+      premultipliedAlpha: false,
+    });
+
+    // WebGL2 非対応ならフォールバック表示して終了
+    if (!gl) {
+      document.getElementById('fallback').classList.add('show');
+      return;
+    }
+
+    // モーション抑制設定の検出
+    const reduceMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let reduceMotion = reduceMotionQuery.matches;
+
+    /* ---------------------------------------------------------------------
+       シェーダユーティリティ
+       --------------------------------------------------------------------- */
+    function compileShader(type, src) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(sh), src);
+        throw new Error('シェーダのコンパイルに失敗しました');
+      }
+      return sh;
+    }
+    function makeProgram(vsSrc, fsSrc) {
+      const p = gl.createProgram();
+      gl.attachShader(p, compileShader(gl.VERTEX_SHADER, vsSrc));
+      gl.attachShader(p, compileShader(gl.FRAGMENT_SHADER, fsSrc));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        console.error(gl.getProgramInfoLog(p));
+        throw new Error('プログラムのリンクに失敗しました');
+      }
+      return p;
+    }
+
+    /* =====================================================================
+       1) 背景ネビュラ（フルスクリーン三角形 + FBMノイズ）
+       ===================================================================== */
+    const bgVert = `#version 300 es
+      // 巨大三角形で画面全体を覆う（頂点バッファ不要）
+      out vec2 vUv;
+      void main() {
+        vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+        vUv = p;
+        gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+      }`;
+
+    const bgFrag = `#version 300 es
+      precision highp float;
+      in vec2 vUv;
+      out vec4 outColor;
+      uniform float uTime;
+      uniform vec2  uRes;
+      uniform float uHue;     // 全体の色相シフト 0..1
+      uniform float uSpeed;   // ワープ速度（ネビュラの流れに反映）
+
+      // --- 値ノイズ + FBM -----------------------------------------------
+      float hash(vec2 p){
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
+      float noise(vec2 p){
+        vec2 i = floor(p), f = fract(p);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+      }
+      float fbm(vec2 p){
+        float v = 0.0, amp = 0.55;
+        mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+        for (int i = 0; i < 5; i++){
+          v += amp * noise(p);
+          p = m * p;
+          amp *= 0.5;
+        }
+        return v;
+      }
+      // 色相回転（HSV 風）を RGB に適用
+      vec3 hueShift(vec3 col, float h){
+        const vec3 k = vec3(0.57735);
+        float c = cos(h * 6.2831853), s = sin(h * 6.2831853);
+        return col * c + cross(k, col) * s + k * dot(k, col) * (1.0 - c);
+      }
+
+      void main(){
+        // アスペクト補正した中心座標
+        vec2 uv = (vUv - 0.5);
+        uv.x *= uRes.x / uRes.y;
+
+        float t = uTime * 0.02 * (0.4 + uSpeed * 0.6);
+        // 奥へ吸い込まれるような放射状ドリフト
+        float r = length(uv);
+        vec2 flow = uv * (0.6 + 0.4 * sin(t)) - vec2(0.0, t * 0.3);
+
+        // 二層のネビュラを重ねて雲状の濃淡を作る
+        float n1 = fbm(flow * 2.4 + vec2(t, -t * 0.5));
+        float n2 = fbm(flow * 5.0 - vec2(t * 0.6, t));
+        float clouds = pow(clamp(n1 * 0.7 + n2 * 0.5, 0.0, 1.0), 1.8);
+
+        // 中心ほど暗い「ワープの奥」を作るための減衰
+        float core = smoothstep(0.85, 0.0, r);
+
+        // ベースカラー（青〜紫〜シアンの宇宙的グラデ）
+        vec3 deep   = vec3(0.02, 0.03, 0.09);
+        vec3 mid    = vec3(0.10, 0.16, 0.42);
+        vec3 bright = vec3(0.35, 0.55, 0.95);
+        vec3 col = mix(deep, mid, clouds);
+        col = mix(col, bright, clouds * clouds * core * 0.9);
+
+        // ほのかな星雲の発光
+        col += bright * pow(clouds, 3.0) * 0.4;
+
+        // ユーザー指定の色相へ回転
+        col = hueShift(col, (uHue - 0.58));
+
+        // 中央の「特異点」グロー
+        col += vec3(0.5, 0.7, 1.0) * smoothstep(0.25, 0.0, r) * 0.25;
+
+        // 軽いビネット
+        col *= 1.0 - r * 0.35;
+
+        outColor = vec4(col, 1.0);
+      }`;
+
+    const bgProg = makeProgram(bgVert, bgFrag);
+    const bgU = {
+      time:  gl.getUniformLocation(bgProg, 'uTime'),
+      res:   gl.getUniformLocation(bgProg, 'uRes'),
+      hue:   gl.getUniformLocation(bgProg, 'uHue'),
+      speed: gl.getUniformLocation(bgProg, 'uSpeed'),
+    };
+
+    /* =====================================================================
+       2) 星のストリーク（インスタンシング描画）
+          ・1本のクワッド（4頂点）を STAR_COUNT 回インスタンス描画。
+          ・各星の (x, y, z) と固有値はインスタンス属性で与える。
+          ・頂点シェーダ内で透視投影し、速度に応じて尾を引かせる。
+       ===================================================================== */
+    const STAR_COUNT = 9000;
+    const FIELD_DEPTH = 90.0;   // 星が湧き出す奥行き
+    const FIELD_RADIUS = 42.0;  // 円筒状フィールドの半径
+
+    // クワッドの基準頂点（-0.5..0.5）。x が尾方向、y が太さ方向。
+    const quad = new Float32Array([
+      -0.5, -0.5,
+       0.5, -0.5,
+      -0.5,  0.5,
+       0.5,  0.5,
+    ]);
+
+    // インスタンスデータ： pos(x,y,z), seed
+    const instData = new Float32Array(STAR_COUNT * 4);
+    function spawnStar(i, randomZ) {
+      const a = Math.random() * Math.PI * 2;
+      // 中心を避けつつ外周まで分布（平方根で面積均一）
+      const r = FIELD_RADIUS * Math.sqrt(Math.random()) + 1.2;
+      instData[i * 4 + 0] = Math.cos(a) * r;
+      instData[i * 4 + 1] = Math.sin(a) * r;
+      instData[i * 4 + 2] = randomZ ? -Math.random() * FIELD_DEPTH : -FIELD_DEPTH;
+      instData[i * 4 + 3] = Math.random(); // seed：色温度・明滅・太さに使用
+    }
+    for (let i = 0; i < STAR_COUNT; i++) spawnStar(i, true);
+
+    const starVert = `#version 300 es
+      precision highp float;
+      layout(location = 0) in vec2 aQuad;     // クワッド頂点
+      layout(location = 1) in vec4 aInst;     // xyz=位置, w=seed
+
+      uniform mat4 uProj;
+      uniform float uStreak;   // 尾の長さ（速度依存）
+      uniform float uTime;
+
+      out float vAlong;   // 尾方向 0..1
+      out float vAcross;  // 太さ方向 -1..1
+      out float vSeed;
+      out float vDepth;   // カメラからの近さ 0..1
+
+      void main(){
+        vec3 p = aInst.xyz;
+        vSeed = aInst.w;
+
+        // 近いほど（z が 0 に近いほど）明るく太く
+        float depth = clamp(1.0 + p.z / ${FIELD_DEPTH.toFixed(1)}, 0.0, 1.0);
+        vDepth = depth;
+
+        // 尾は -Z 方向（進行方向の後方）へ伸ばす
+        float streakLen = uStreak * (0.4 + depth * 1.6);
+        float thickness = 0.045 + depth * 0.10 + vSeed * 0.02;
+
+        // クワッドのローカル座標をワールドのオフセットへ
+        // aQuad.x（-0.5..0.5）→ z 方向の尾、aQuad.y → スクリーン上の太さ
+        vec3 offset = vec3(0.0, 0.0, aQuad.x * streakLen);
+        vec4 world = vec4(p + offset, 1.0);
+
+        // 投影
+        vec4 clip = uProj * world;
+
+        // 太さはクリップ空間で画面に対して一定になるよう付与（ビルボード）
+        clip.x += aQuad.y * thickness * clip.w;
+        clip.y += aQuad.y * thickness * clip.w;
+
+        vAlong = aQuad.x + 0.5;       // 0(後端)..1(先端)
+        vAcross = aQuad.y * 2.0;      // -1..1
+        gl_Position = clip;
+      }`;
+
+    const starFrag = `#version 300 es
+      precision highp float;
+      in float vAlong;
+      in float vAcross;
+      in float vSeed;
+      in float vDepth;
+      out vec4 outColor;
+      uniform float uTime;
+      uniform float uHue;
+
+      vec3 hueShift(vec3 col, float h){
+        const vec3 k = vec3(0.57735);
+        float c = cos(h * 6.2831853), s = sin(h * 6.2831853);
+        return col * c + cross(k, col) * s + k * dot(k, col) * (1.0 - c);
+      }
+
+      void main(){
+        // 横方向はソフトな線（中心ほど明るい）
+        float across = 1.0 - abs(vAcross);
+        across = pow(clamp(across, 0.0, 1.0), 1.5);
+
+        // 縦（尾）方向は先端を明るく後端をフェードさせて流星感を出す
+        float head = smoothstep(0.0, 0.35, vAlong);          // 後端フェード
+        float tip  = smoothstep(1.0, 0.55, vAlong) * 0.6 + 0.4;
+        float along = head * tip;
+
+        float intensity = across * along;
+        if (intensity < 0.004) discard;
+
+        // 星ごとの色温度（青白〜暖色）
+        vec3 cool = vec3(0.75, 0.86, 1.0);
+        vec3 warm = vec3(1.0, 0.88, 0.72);
+        vec3 base = mix(cool, warm, smoothstep(0.7, 1.0, vSeed));
+
+        // ゆらぎ（わずかな明滅）
+        float twinkle = 0.85 + 0.15 * sin(uTime * 3.0 + vSeed * 40.0);
+
+        vec3 col = base * (0.4 + vDepth * 1.6) * twinkle;
+        col = hueShift(col, (uHue - 0.58) * 0.7);
+
+        // 先端の白い芯
+        col += vec3(1.0) * pow(intensity, 4.0) * vDepth * 0.8;
+
+        outColor = vec4(col * intensity, intensity);
+      }`;
+
+    const starProg = makeProgram(starVert, starFrag);
+    const starU = {
+      proj:   gl.getUniformLocation(starProg, 'uProj'),
+      streak: gl.getUniformLocation(starProg, 'uStreak'),
+      time:   gl.getUniformLocation(starProg, 'uTime'),
+      hue:    gl.getUniformLocation(starProg, 'uHue'),
+    };
+
+    // VAO のセットアップ
+    const starVAO = gl.createVertexArray();
+    gl.bindVertexArray(starVAO);
+
+    const quadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    const instBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, instData, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(1, 1); // インスタンスごとに進める
+
+    gl.bindVertexArray(null);
+
+    /* ---------------------------------------------------------------------
+       透視投影行列（簡易・自前実装）
+       --------------------------------------------------------------------- */
+    const proj = new Float32Array(16);
+    function setPerspective(fovy, aspect, near, far) {
+      const f = 1.0 / Math.tan(fovy / 2);
+      const nf = 1 / (near - far);
+      proj[0] = f / aspect; proj[1] = 0; proj[2] = 0;  proj[3] = 0;
+      proj[4] = 0; proj[5] = f; proj[6] = 0; proj[7] = 0;
+      proj[8] = 0; proj[9] = 0; proj[10] = (far + near) * nf; proj[11] = -1;
+      proj[12] = 0; proj[13] = 0; proj[14] = 2 * far * near * nf; proj[15] = 0;
+    }
+
+    /* ---------------------------------------------------------------------
+       リサイズ処理（DPR 上限 2 で過剰負荷を防ぐ）
+       --------------------------------------------------------------------- */
+    let viewW = 1, viewH = 1;
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      viewW = Math.floor(window.innerWidth * dpr);
+      viewH = Math.floor(window.innerHeight * dpr);
+      canvas.width = viewW;
+      canvas.height = viewH;
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      gl.viewport(0, 0, viewW, viewH);
+      setPerspective(Math.PI / 3.2, viewW / viewH, 0.1, FIELD_DEPTH + 20);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    /* ---------------------------------------------------------------------
+       入力（HUD）
+       --------------------------------------------------------------------- */
+    const speedSlider = document.getElementById('speed');
+    const hueSlider   = document.getElementById('hue');
+    const speedVal    = document.getElementById('speedVal');
+    const hueVal      = document.getElementById('hueVal');
+    const pauseBtn    = document.getElementById('pause');
+    const boostBtn    = document.getElementById('boost');
+    const hud         = document.getElementById('hud');
+
+    let userSpeed = parseFloat(speedSlider.value);
+    let hue = parseFloat(hueSlider.value);
+    let paused = false;
+    let boosting = false;
+    let boostFactor = 1.0;        // ブースト時に滑らかに加速する係数
+    let curStreak = 1.0;          // 実際に描画に使う尾の長さ（補間値）
+
+    // reduce-motion 時は初期速度を抑える
+    if (reduceMotion) { userSpeed = 0.3; speedSlider.value = '0.3'; }
+
+    speedSlider.addEventListener('input', () => {
+      userSpeed = parseFloat(speedSlider.value);
+      speedVal.textContent = userSpeed.toFixed(2) + 'x';
+    });
+    hueSlider.addEventListener('input', () => {
+      hue = parseFloat(hueSlider.value);
+      hueVal.textContent = Math.round(hue * 100);
+    });
+    speedVal.textContent = userSpeed.toFixed(2) + 'x';
+    hueVal.textContent = Math.round(hue * 100);
+
+    pauseBtn.addEventListener('click', () => {
+      paused = !paused;
+      pauseBtn.textContent = paused ? '再生' : '一時停止';
+    });
+
+    // ハイパードライブ：押している間だけ強烈に加速
+    function startBoost(){ boosting = true; boostBtn.classList.add('active'); }
+    function endBoost(){ boosting = false; }
+    boostBtn.addEventListener('mousedown', startBoost);
+    boostBtn.addEventListener('mouseup', endBoost);
+    boostBtn.addEventListener('mouseleave', endBoost);
+    boostBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startBoost(); }, { passive: false });
+    boostBtn.addEventListener('touchend', (e) => { e.preventDefault(); endBoost(); });
+
+    // ポインタによる視点のわずかなパララックス（カメラを傾ける）
+    let targetTilt = { x: 0, y: 0 };
+    let camTilt = { x: 0, y: 0 };
+    window.addEventListener('pointermove', (e) => {
+      targetTilt.x = ((e.clientX / window.innerWidth) * 2 - 1) * 0.12;
+      targetTilt.y = ((e.clientY / window.innerHeight) * 2 - 1) * 0.09;
+    });
+
+    // 操作がないと HUD をフェード（没入感）
+    let idleTimer = null;
+    function wake() {
+      hud.classList.remove('faded');
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => hud.classList.add('faded'), 3500);
+    }
+    window.addEventListener('pointermove', wake);
+    window.addEventListener('pointerdown', wake);
+    window.addEventListener('keydown', wake);
+    wake();
+
+    // reduce-motion 設定の動的変更に追従
+    reduceMotionQuery.addEventListener('change', (e) => {
+      reduceMotion = e.matches;
+    });
+
+    /* ---------------------------------------------------------------------
+       描画ステート（加算合成で光を重ねる）
+       --------------------------------------------------------------------- */
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // 加算合成
+
+    /* =====================================================================
+       メインループ
+       ===================================================================== */
+    let last = performance.now();
+    let time = 0;
+
+    function frame(now) {
+      requestAnimationFrame(frame);
+
+      // デルタタイム（タブ復帰時の飛びを抑制）
+      let dt = (now - last) / 1000;
+      last = now;
+      dt = Math.min(dt, 0.05);
+      time += dt;
+
+      // ブースト係数を滑らかに補間
+      const boostTarget = boosting ? (reduceMotion ? 1.6 : 3.2) : 1.0;
+      boostFactor += (boostTarget - boostFactor) * Math.min(dt * 6.0, 1.0);
+
+      // 実効速度
+      const effSpeed = paused ? 0.0 : userSpeed * boostFactor;
+
+      // 星の前進（CPU では z 更新のみ。描画は GPU）
+      if (effSpeed > 0.0) {
+        const advance = effSpeed * 24.0 * dt;
+        for (let i = 0; i < STAR_COUNT; i++) {
+          const zi = i * 4 + 2;
+          instData[zi] += advance;
+          if (instData[zi] > 1.5) {
+            spawnStar(i, false); // 奥へ再投入
+          }
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, instData, gl.DYNAMIC_DRAW);
+      }
+
+      // 尾の長さは速度に追従して滑らかに変化（静止時は点に近づく）
+      const streakTarget = reduceMotion ? 0.25 : (0.4 + effSpeed * 2.2 + (boostFactor - 1) * 1.5);
+      curStreak += (streakTarget - curStreak) * Math.min(dt * 5.0, 1.0);
+
+      // カメラの傾きをイージング
+      camTilt.x += (targetTilt.x - camTilt.x) * Math.min(dt * 3.0, 1.0);
+      camTilt.y += (targetTilt.y - camTilt.y) * Math.min(dt * 3.0, 1.0);
+
+      // 傾きを投影行列に薄く反映（簡易シア）
+      setPerspective(Math.PI / 3.2, viewW / viewH, 0.1, FIELD_DEPTH + 20);
+      proj[8]  += camTilt.x;   // x のシア
+      proj[9]  += -camTilt.y;  // y のシア
+
+      // --- 描画 ---
+      gl.viewport(0, 0, viewW, viewH);
+
+      // 背景ネビュラ（不透明・ブレンド無効）
+      gl.disable(gl.BLEND);
+      gl.useProgram(bgProg);
+      gl.uniform1f(bgU.time, time);
+      gl.uniform2f(bgU.res, viewW, viewH);
+      gl.uniform1f(bgU.hue, hue);
+      gl.uniform1f(bgU.speed, effSpeed);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      // 星ストリーク（加算合成）
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.useProgram(starProg);
+      gl.uniformMatrix4fv(starU.proj, false, proj);
+      gl.uniform1f(starU.streak, curStreak);
+      gl.uniform1f(starU.time, time);
+      gl.uniform1f(starU.hue, hue);
+      gl.bindVertexArray(starVAO);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, STAR_COUNT);
+      gl.bindVertexArray(null);
+    }
+
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 作者情報（AIメタデータ） -->
+  <meta name="ai.author" content="Claude Opus 4.8">
+  <meta name="ai.model" content="claude-opus-4-8">
+  <meta name="ai.note" content="OpenLayers の ImageCanvas に WebGL で描画する GPU マンデルブロ集合。スムーズ着色・シネマティック自動ズーム・地図インタラクション対応の Claude Opus 4.8 オリジナル版。">
+  <title>Mandelbrot OpenLayers - Claude Opus 4.8版</title>
+  <!-- OpenLayers 本体（テーマ踏襲のため利用） -->
+  <script src="https://cdn.jsdelivr.net/npm/ol@v7.3.0/dist/ol.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v7.3.0/ol.css">
+  <style>
+    :root {
+      --panel: rgba(8, 12, 26, 0.74);
+      --border: rgba(130, 190, 255, 0.26);
+      --text: #e9f2ff;
+      --muted: #9fb4dc;
+      --accent: #7fd4ff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #02030a;
+      color: var(--text);
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    /* 地図は画面全体に表示 */
+    #map {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+    /* OpenLayers の既定背景を黒に（描画前のちらつき防止） */
+    .ol-viewport { background: #02030a; }
+
+    /* 左上 HUD */
+    .hud {
+      position: fixed;
+      left: 14px;
+      top: 14px;
+      z-index: 1000;
+      min-width: 196px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      font-size: 12px;
+      line-height: 1.7;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+    }
+    .hud h1 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .hud .row { display: flex; justify-content: space-between; gap: 14px; }
+    .hud .k { color: var(--muted); }
+    .hud .v { font-variant-numeric: tabular-nums; }
+
+    /* 右下 操作パネル */
+    .controls {
+      position: fixed;
+      right: 14px;
+      bottom: 14px;
+      z-index: 1000;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      max-width: 60vw;
+    }
+    .btn {
+      pointer-events: auto;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: var(--text);
+      font-size: 12px;
+      padding: 9px 13px;
+      transition: transform 0.12s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: var(--accent); color: var(--accent); }
+    .btn:active { transform: translateY(0); }
+    .btn.active { color: #04101f; background: var(--accent); border-color: var(--accent); }
+
+    /* ヒント（下中央・自動フェード） */
+    .hint {
+      position: fixed;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      z-index: 999;
+      padding: 7px 14px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      font-size: 12px;
+      color: var(--muted);
+      transition: opacity 0.6s ease;
+      pointer-events: none;
+    }
+    /* 起動直後のフォールバック表示（WebGL 非対応時のみ表示） */
+    .fallback-note {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1001;
+      max-width: 80vw;
+      padding: 14px 18px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      text-align: center;
+      font-size: 13px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- 情報表示 HUD -->
+  <div class="hud" id="hud">
+    <h1>Mandelbrot · OpenLayers</h1>
+    <div class="row"><span class="k">ズーム倍率</span><span class="v" id="hudZoom">--</span></div>
+    <div class="row"><span class="k">中心 Re</span><span class="v" id="hudRe">--</span></div>
+    <div class="row"><span class="k">中心 Im</span><span class="v" id="hudIm">--</span></div>
+    <div class="row"><span class="k">最大反復</span><span class="v" id="hudIter">--</span></div>
+    <div class="row"><span class="k">描画</span><span class="v" id="hudEngine">--</span></div>
+  </div>
+
+  <!-- 操作パネル -->
+  <div class="controls">
+    <button class="btn active" id="btnAuto">自動ズーム: ON</button>
+    <button class="btn" id="btnTour">名所ツアー</button>
+    <button class="btn" id="btnPalette">配色変更</button>
+    <button class="btn" id="btnReset">リセット</button>
+  </div>
+
+  <div class="hint" id="hint">ドラッグで移動 / ホイールで拡大縮小 / Space で自動ズーム切替</div>
+  <div class="fallback-note" id="fallbackNote">WebGL が利用できないため、Canvas2D で描画しています。</div>
+
+  <script>
+    "use strict";
+
+    /* =========================================================================
+       Claude Opus 4.8 版 Mandelbrot × OpenLayers
+
+       設計方針:
+       - OpenLayers の ImageCanvas レイヤーに「自前の Canvas」を返すことでテーマを踏襲。
+       - 計算は WebGL フラグメントシェーダで GPU 実行し、全画素を一括処理（高速・滑らか）。
+       - スムーズ着色（連続反復回数）で帯状の段差を排除。
+       - 地図座標(EPSG:3857)→複素平面へ線形写像。地図の移動/拡大がそのまま深掘りに。
+       - シネマティック自動ズーム＋名所ツアーで「永遠に潜る」演出。
+       - prefers-reduced-motion を尊重し、その場合は自動アニメーションを無効化。
+       - WebGL 非対応環境では Canvas2D にフォールバック。
+       ========================================================================= */
+
+    /* ------------------------------------------------------------------ */
+    /* 0. 環境設定                                                          */
+    /* ------------------------------------------------------------------ */
+    const prefersReduced =
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // 複素平面の写像基準: 地図 x=0 を Re=BASE_RE、半幅 BASE_SPAN を割り当てる。
+    // ズームが上がるほど resolution が小さくなり、自然に深掘りされる。
+    const BASE_SPAN = 3.2;          // ズーム0相当の表示横幅（複素平面）
+    const WORLD_HALF = 20037508.34; // EPSG:3857 の半幅（メートル）
+    // 地図メートル → 複素平面実数 の換算係数
+    const METER_TO_C = BASE_SPAN / (2 * WORLD_HALF);
+
+    /* ------------------------------------------------------------------ */
+    /* 1. WebGL レンダラ（マンデルブロ計算の本体）                          */
+    /* ------------------------------------------------------------------ */
+    const GLRenderer = (() => {
+      const glCanvas = document.createElement("canvas");
+      let gl =
+        glCanvas.getContext("webgl", { antialias: false, preserveDrawingBuffer: true }) ||
+        glCanvas.getContext("experimental-webgl", { preserveDrawingBuffer: true });
+
+      if (!gl) return null;
+
+      // 頂点シェーダ: 画面全体を覆う三角形2枚
+      const VS = `
+        attribute vec2 aPos;
+        void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+      `;
+
+      // フラグメントシェーダ: 各画素で複素数 c を構成し反復、スムーズ着色。
+      const FS = `
+        precision highp float;
+        uniform vec2  uResolution;  // 描画解像度(px)
+        uniform vec2  uCenter;      // 複素平面の中心 (Re, Im)
+        uniform float uScale;       // 1px あたりの複素平面幅
+        uniform float uMaxIter;     // 最大反復回数
+        uniform float uPalette;     // 配色番号
+        uniform float uTime;        // 配色アニメ用の位相
+
+        // HSV → RGB
+        vec3 hsv2rgb(vec3 c) {
+          vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
+          return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+        }
+
+        // 反復回数(連続値)から色を決める
+        vec3 colorize(float t, float palette) {
+          if (palette < 0.5) {
+            // 0: ネオン・スペクトラム
+            float h = fract(0.95 + t * 0.12 + uTime * 0.03);
+            float s = 0.62 + 0.30 * sin(t * 0.30);
+            float v = 0.55 + 0.45 * sin(t * 0.20 + 1.2);
+            return hsv2rgb(vec3(h, clamp(s, 0.0, 1.0), clamp(v, 0.05, 1.0)));
+          } else if (palette < 1.5) {
+            // 1: 蒼炎（ブルー〜シアン〜白）
+            float u = sqrt(fract(t * 0.045));
+            vec3 a = vec3(0.02, 0.04, 0.12);
+            vec3 b = vec3(0.10, 0.45, 0.95);
+            vec3 cc = vec3(0.55, 0.95, 1.00);
+            vec3 col = mix(a, b, smoothstep(0.0, 0.55, u));
+            col = mix(col, cc, smoothstep(0.5, 1.0, u));
+            return col;
+          } else if (palette < 2.5) {
+            // 2: 溶岩（黒〜赤〜橙〜黄）
+            float u = fract(t * 0.05);
+            vec3 col = vec3(0.0);
+            col = mix(vec3(0.05, 0.0, 0.0), vec3(0.75, 0.07, 0.02), smoothstep(0.0, 0.4, u));
+            col = mix(col, vec3(1.0, 0.55, 0.05), smoothstep(0.35, 0.75, u));
+            col = mix(col, vec3(1.0, 0.97, 0.7), smoothstep(0.75, 1.0, u));
+            return col;
+          } else {
+            // 3: 真珠グレースケール（金属質）
+            float u = 0.5 + 0.5 * sin(t * 0.18 + uTime * 0.05);
+            float g = pow(u, 0.8);
+            return vec3(g) * vec3(0.92, 0.96, 1.05);
+          }
+        }
+
+        void main() {
+          // 画面中心を原点とした複素座標へ
+          vec2 uv = gl_FragCoord.xy - 0.5 * uResolution;
+          vec2 c = uCenter + uv * uScale;
+
+          // 主カージオイド／周期2バルブの早期判定（無駄な反復を削減）
+          float q = (c.x - 0.25) * (c.x - 0.25) + c.y * c.y;
+          bool inside = (q * (q + (c.x - 0.25)) <= 0.25 * c.y * c.y) ||
+                        ((c.x + 1.0) * (c.x + 1.0) + c.y * c.y <= 0.0625);
+
+          float n = 0.0;
+          vec2 z = vec2(0.0);
+          float zz = 0.0;
+          const float ESCAPE = 256.0; // 大きめの脱出半径でスムーズ着色を綺麗に
+
+          if (!inside) {
+            // 反復ループ（GLSL は定数上限が必要なため大きめに確保し break で制御）
+            for (int i = 0; i < 2000; i++) {
+              if (float(i) >= uMaxIter) break;
+              // z = z^2 + c
+              z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+              zz = dot(z, z);
+              if (zz > ESCAPE * ESCAPE) break;
+              n += 1.0;
+            }
+          } else {
+            n = uMaxIter;
+          }
+
+          if (n >= uMaxIter) {
+            // 集合内部は深い黒（わずかに青みを残す）
+            gl_FragColor = vec4(0.0, 0.0, 0.01, 1.0);
+          } else {
+            // スムーズ反復: nu = n + 1 - log2(log(|z|))
+            float smoothN = n + 1.0 - log(log(sqrt(zz)) / log(2.0)) / log(2.0);
+            gl_FragColor = vec4(colorize(smoothN, uPalette), 1.0);
+          }
+        }
+      `;
+
+      function compile(type, src) {
+        const sh = gl.createShader(type);
+        gl.shaderSource(sh, src);
+        gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+          console.error(gl.getShaderInfoLog(sh));
+          return null;
+        }
+        return sh;
+      }
+
+      const vs = compile(gl.VERTEX_SHADER, VS);
+      const fs = compile(gl.FRAGMENT_SHADER, FS);
+      if (!vs || !fs) return null;
+
+      const prog = gl.createProgram();
+      gl.attachShader(prog, vs);
+      gl.attachShader(prog, fs);
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        console.error(gl.getProgramInfoLog(prog));
+        return null;
+      }
+      gl.useProgram(prog);
+
+      // 全画面四角形
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+        gl.STATIC_DRAW
+      );
+      const aPos = gl.getAttribLocation(prog, "aPos");
+      gl.enableVertexAttribArray(aPos);
+      gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+      const uni = {
+        resolution: gl.getUniformLocation(prog, "uResolution"),
+        center: gl.getUniformLocation(prog, "uCenter"),
+        scale: gl.getUniformLocation(prog, "uScale"),
+        maxIter: gl.getUniformLocation(prog, "uMaxIter"),
+        palette: gl.getUniformLocation(prog, "uPalette"),
+        time: gl.getUniformLocation(prog, "uTime"),
+      };
+
+      // GPU 描画 → glCanvas に結果が残る
+      function render(w, h, centerRe, centerIm, scale, maxIter, palette, time) {
+        if (glCanvas.width !== w || glCanvas.height !== h) {
+          glCanvas.width = w;
+          glCanvas.height = h;
+          gl.viewport(0, 0, w, h);
+        }
+        gl.uniform2f(uni.resolution, w, h);
+        gl.uniform2f(uni.center, centerRe, centerIm);
+        gl.uniform1f(uni.scale, scale);
+        gl.uniform1f(uni.maxIter, maxIter);
+        gl.uniform1f(uni.palette, palette);
+        gl.uniform1f(uni.time, time);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        return glCanvas;
+      }
+
+      return { render, canvas: glCanvas };
+    })();
+
+    const USE_GL = !!GLRenderer;
+    if (!USE_GL) {
+      document.getElementById("fallbackNote").style.display = "block";
+      setTimeout(() => (document.getElementById("fallbackNote").style.display = "none"), 4000);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 2. Canvas2D フォールバック（WebGL 非対応時）                         */
+    /* ------------------------------------------------------------------ */
+    function renderCanvas2D(w, h, centerRe, centerIm, scale, maxIter, palette) {
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      const img = ctx.createImageData(w, h);
+      const d = img.data;
+      const ESC = 256;
+      for (let py = 0; py < h; py++) {
+        const ci = centerIm + (py - h / 2) * scale; // 画面下方向が +Im（描画は反転不要）
+        for (let px = 0; px < w; px++) {
+          const cr = centerRe + (px - w / 2) * scale;
+          let zr = 0, zi = 0, zz = 0, n = 0;
+          while (n < maxIter) {
+            const t = zr * zr - zi * zi + cr;
+            zi = 2 * zr * zi + ci;
+            zr = t;
+            zz = zr * zr + zi * zi;
+            if (zz > ESC * ESC) break;
+            n++;
+          }
+          const p = (py * w + px) * 4;
+          if (n >= maxIter) {
+            d[p] = 0; d[p + 1] = 0; d[p + 2] = 2; d[p + 3] = 255;
+          } else {
+            const sn = n + 1 - Math.log(Math.log(Math.sqrt(zz)) / Math.LN2) / Math.LN2;
+            const [r, g, b] = paletteJS(sn, palette);
+            d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
+          }
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return canvas;
+    }
+
+    // フォールバック用の簡易配色（GLSL と概ね対応）
+    function paletteJS(t, palette) {
+      const hsv = (h, s, v) => {
+        h = ((h % 1) + 1) % 1;
+        const i = Math.floor(h * 6), f = h * 6 - i;
+        const p = v * (1 - s), q = v * (1 - f * s), u = v * (1 - (1 - f) * s);
+        let r, g, b;
+        switch (i % 6) {
+          case 0: r = v; g = u; b = p; break;
+          case 1: r = q; g = v; b = p; break;
+          case 2: r = p; g = v; b = u; break;
+          case 3: r = p; g = q; b = v; break;
+          case 4: r = u; g = p; b = v; break;
+          default: r = v; g = p; b = q; break;
+        }
+        return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+      };
+      if (palette === 0) {
+        return hsv(0.95 + t * 0.012, 0.7, Math.min(1, 0.6 + 0.4 * Math.sin(t * 0.2)));
+      } else if (palette === 1) {
+        const u = Math.sqrt((t * 0.045) % 1);
+        return [Math.round(255 * (0.1 + 0.45 * u)), Math.round(255 * (0.2 + 0.6 * u)), Math.round(255 * (0.3 + 0.7 * u))];
+      } else if (palette === 2) {
+        const u = (t * 0.05) % 1;
+        return [Math.round(255 * Math.min(1, u * 1.6)), Math.round(255 * Math.max(0, u * u)), Math.round(255 * Math.max(0, (u - 0.6) * 2.5))];
+      } else {
+        const g = Math.round(255 * (0.5 + 0.5 * Math.sin(t * 0.18)));
+        return [g, g, Math.min(255, g + 8)];
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 3. 状態管理                                                          */
+    /* ------------------------------------------------------------------ */
+    const state = {
+      palette: 0,
+      auto: !prefersReduced, // reduced-motion なら自動ズームは初期OFF
+      time: 0,
+    };
+
+    // 名所（複素平面の見どころ）: [Re, Im, 表示幅]
+    const LANDMARKS = [
+      [-0.743643887037151, 0.13182590420533, 0.00012], // Seahorse Valley の渦
+      [-0.74364388703, 0.13182590421, 0.0000007],       // 同・深掘り
+      [0.2750142,       0.0066,        0.0008],          // 触手状
+      [-0.16070135,    1.0375665,      0.004],           // 周期バルブ
+      [-1.25066,        0.02012,       0.0009],          // ミニブロ
+      [-0.7453,         0.1127,        0.0055],          // 古典スパイラル
+    ];
+    let tourIndex = 0;
+
+    /* ------------------------------------------------------------------ */
+    /* 4. OpenLayers セットアップ                                           */
+    /* ------------------------------------------------------------------ */
+    // ImageCanvas: OpenLayers が要求する範囲(extent)に対し自前 Canvas を返す。
+    const source = new ol.source.ImageCanvas({
+      ratio: 1,
+      canvasFunction: function (extent, resolution, pixelRatio, size) {
+        const w = Math.max(1, Math.round(size[0]));
+        const h = Math.max(1, Math.round(size[1]));
+
+        // extent(メートル) の中心 → 複素平面中心
+        const cxMeter = (extent[0] + extent[2]) / 2;
+        const cyMeter = (extent[1] + extent[3]) / 2;
+        const centerRe = cxMeter * METER_TO_C;
+        const centerIm = cyMeter * METER_TO_C;
+
+        // 1px あたりの複素平面幅（resolution はメートル/px）
+        const scale = resolution * METER_TO_C;
+
+        // 深さ（=スケールの小ささ）に応じて反復回数を動的に増やす
+        const depth = Math.max(0, -Math.log2(scale * w / BASE_SPAN));
+        const maxIter = Math.min(1500, Math.round(120 + depth * 60));
+        currentMaxIter = maxIter;
+
+        if (USE_GL) {
+          // GPU 描画結果を ImageCanvas 用の2D Canvas へ転写
+          const glCanvas = GLRenderer.render(
+            w, h, centerRe, centerIm, scale, maxIter, state.palette, state.time
+          );
+          const out = document.createElement("canvas");
+          out.width = w;
+          out.height = h;
+          const octx = out.getContext("2d");
+          // WebGL は左下原点・地図 Canvas は左上原点 → 上下反転して転写
+          octx.translate(0, h);
+          octx.scale(1, -1);
+          octx.drawImage(glCanvas, 0, 0);
+          return out;
+        }
+        return renderCanvas2D(w, h, centerRe, centerIm, scale, maxIter, state.palette);
+      },
+    });
+
+    const layer = new ol.layer.Image({ source });
+
+    const view = new ol.View({
+      center: [0, 0],
+      zoom: 2,
+      minZoom: 1,
+      maxZoom: 42,           // 深いズームを許容
+      constrainResolution: false,
+      enableRotation: false,
+    });
+
+    const map = new ol.Map({
+      target: "map",
+      layers: [layer],
+      controls: [],          // 既定のズームボタン等は非表示（自前 HUD を使用）
+      view,
+    });
+
+    let currentMaxIter = 120;
+
+    /* ------------------------------------------------------------------ */
+    /* 5. ビュー操作ヘルパ（複素座標 ↔ 地図座標）                           */
+    /* ------------------------------------------------------------------ */
+    function complexToMeter(re, im) {
+      return [re / METER_TO_C, im / METER_TO_C];
+    }
+    // 表示幅(複素平面) → resolution(メートル/px)
+    function spanToResolution(spanC) {
+      const w = map.getSize() ? map.getSize()[0] : window.innerWidth;
+      return (spanC / METER_TO_C) / w;
+    }
+
+    function flyToComplex(re, im, spanC, durationMs) {
+      const center = complexToMeter(re, im);
+      const res = spanToResolution(spanC);
+      view.animate({
+        center,
+        resolution: res,
+        duration: prefersReduced ? 0 : durationMs,
+        easing: ol.easing.inAndOut,
+      });
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 6. HUD 更新                                                          */
+    /* ------------------------------------------------------------------ */
+    const el = {
+      zoom: document.getElementById("hudZoom"),
+      re: document.getElementById("hudRe"),
+      im: document.getElementById("hudIm"),
+      iter: document.getElementById("hudIter"),
+      engine: document.getElementById("hudEngine"),
+    };
+    el.engine.textContent = USE_GL ? "WebGL (GPU)" : "Canvas2D";
+
+    function updateHud() {
+      const c = view.getCenter();
+      const re = c[0] * METER_TO_C;
+      const im = c[1] * METER_TO_C;
+      const res = view.getResolution();
+      const spanC = res * METER_TO_C * (map.getSize() ? map.getSize()[0] : window.innerWidth);
+      const magnification = BASE_SPAN / spanC; // ズーム0比の倍率
+      el.zoom.textContent =
+        magnification >= 1e6 ? magnification.toExponential(2) + "×" : Math.round(magnification).toLocaleString() + "×";
+      el.re.textContent = re.toFixed(re.toString().length > 6 ? 12 : 6);
+      el.im.textContent = im.toFixed(6);
+      el.iter.textContent = currentMaxIter;
+    }
+    view.on("change", updateHud);
+
+    /* ------------------------------------------------------------------ */
+    /* 7. アニメーションループ（自動ズーム・配色アニメ）                    */
+    /* ------------------------------------------------------------------ */
+    let last = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      state.time += dt;
+
+      if (state.auto && !view.getAnimating()) {
+        // 緩やかに深く潜る（解像度を漸減）
+        const res = view.getResolution();
+        view.setResolution(res * (1 - 0.9 * dt)); // ≒毎秒 0.9 倍に縮小
+      }
+
+      // 配色アニメ or 自動ズーム中は再描画を促す
+      if ((state.auto || state.palette === 0 || state.palette === 3) && !prefersReduced) {
+        source.changed();
+      }
+      requestAnimationFrame(loop);
+    }
+    if (!prefersReduced) {
+      requestAnimationFrame(loop);
+    } else {
+      // モーション抑制時は静止画として1回描画
+      source.changed();
+      updateHud();
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 8. UI イベント                                                       */
+    /* ------------------------------------------------------------------ */
+    const btnAuto = document.getElementById("btnAuto");
+    const btnTour = document.getElementById("btnTour");
+    const btnPalette = document.getElementById("btnPalette");
+    const btnReset = document.getElementById("btnReset");
+
+    function setAuto(on) {
+      state.auto = on && !prefersReduced;
+      btnAuto.textContent = "自動ズーム: " + (state.auto ? "ON" : "OFF");
+      btnAuto.classList.toggle("active", state.auto);
+    }
+    btnAuto.addEventListener("click", () => setAuto(!state.auto));
+
+    btnPalette.addEventListener("click", () => {
+      state.palette = (state.palette + 1) % 4;
+      const names = ["ネオン", "蒼炎", "溶岩", "真珠"];
+      btnPalette.textContent = "配色: " + names[state.palette];
+      source.changed();
+    });
+
+    btnTour.addEventListener("click", () => {
+      setAuto(false);
+      const [re, im, span] = LANDMARKS[tourIndex % LANDMARKS.length];
+      tourIndex++;
+      flyToComplex(re, im, span, 4200);
+    });
+
+    btnReset.addEventListener("click", () => {
+      setAuto(false);
+      view.animate({
+        center: [0, 0],
+        zoom: 2,
+        duration: prefersReduced ? 0 : 1200,
+        easing: ol.easing.inAndOut,
+      });
+    });
+
+    // Space で自動ズーム切替
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setAuto(!state.auto);
+      } else if (e.key.toLowerCase() === "t") {
+        btnTour.click();
+      } else if (e.key.toLowerCase() === "p") {
+        btnPalette.click();
+      } else if (e.key.toLowerCase() === "r") {
+        btnReset.click();
+      }
+    });
+
+    // ユーザー操作（ドラッグ/ホイール）で自動ズームを止める
+    map.on("pointerdrag", () => setAuto(false));
+    map.getViewport().addEventListener("wheel", () => setAuto(false), { passive: true });
+
+    // リサイズ追従（OpenLayers は自動更新するが明示的に促す）
+    window.addEventListener("resize", () => {
+      map.updateSize();
+      source.changed();
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* 9. 初期演出                                                          */
+    /* ------------------------------------------------------------------ */
+    // 起動直後に名所(渦)へ軽くアプローチして、すぐ自動ズームへ
+    if (!prefersReduced) {
+      flyToComplex(-0.745, 0.115, 1.6, 2600);
+      setTimeout(() => setAuto(true), 2700);
+    }
+
+    // ヒントを数秒後にフェードアウト
+    setTimeout(() => {
+      const hint = document.getElementById("hint");
+      if (hint) hint.style.opacity = "0";
+    }, 6000);
+
+    // 初回 HUD 反映
+    updateHud();
+  </script>
+</body>
+</html>

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<!-- AI 作者メタ情報（プロジェクト要件） -->
+	<meta name="ai.author" content="Claude Opus 4.8">
+	<meta name="ai.model" content="claude-opus-4-8">
+	<meta name="ai.note" content="Mandelbrot Explorer Part.1 — Claude Opus 4.8 original. Worker pool + smooth coloring + progressive supersampling.">
+	<title>Mandelbrot Explorer Part.1 - Claude Opus 4.8版</title>
+	<style>
+		/* 画面全体に表示。はみ出しは隠す */
+		html, body {
+			margin: 0;
+			padding: 0;
+			width: 100vw;
+			height: 100vh;
+			overflow: hidden;
+			background: #000;
+			color: #cfe3ff;
+			font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+		}
+		#fractal {
+			display: block;
+			position: fixed;
+			inset: 0;
+			width: 100vw;
+			height: 100vh;
+		}
+		/* 左上の情報パネル（HUD） */
+		.hud {
+			position: fixed;
+			top: 14px;
+			left: 14px;
+			padding: 10px 13px;
+			font-size: 12px;
+			line-height: 1.55;
+			letter-spacing: 0.02em;
+			border: 1px solid rgba(140, 196, 255, 0.28);
+			background: rgba(8, 14, 30, 0.55);
+			backdrop-filter: blur(8px);
+			-webkit-backdrop-filter: blur(8px);
+			border-radius: 11px;
+			box-shadow: 0 6px 28px rgba(0, 0, 0, 0.45);
+			pointer-events: none;
+			user-select: none;
+			transition: opacity 0.5s ease;
+			z-index: 10;
+		}
+		.hud .title {
+			font-weight: 700;
+			font-size: 13px;
+			color: #eaf3ff;
+			margin-bottom: 4px;
+		}
+		.hud .stat { color: #9fc0ee; }
+		.hud .stat b { color: #ffe6a8; font-variant-numeric: tabular-nums; font-weight: 600; }
+		/* 操作ヒント（右下） */
+		.hint {
+			position: fixed;
+			right: 14px;
+			bottom: 14px;
+			padding: 8px 12px;
+			font-size: 11.5px;
+			color: #9fc0ee;
+			border: 1px solid rgba(140, 196, 255, 0.22);
+			background: rgba(8, 14, 30, 0.5);
+			backdrop-filter: blur(6px);
+			-webkit-backdrop-filter: blur(6px);
+			border-radius: 10px;
+			pointer-events: none;
+			user-select: none;
+			transition: opacity 0.6s ease;
+			z-index: 10;
+		}
+		/* マウス未操作でフェードする */
+		body.idle .hud,
+		body.idle .hint { opacity: 0.18; }
+	</style>
+</head>
+<body>
+	<canvas id="fractal"></canvas>
+
+	<div class="hud" id="hud">
+		<div class="title">Mandelbrot Explorer Part.1</div>
+		<div class="stat">ズーム倍率: <b id="hZoom">--</b></div>
+		<div class="stat">最大反復: <b id="hIter">--</b></div>
+		<div class="stat">解像度: <b id="hRes">--</b></div>
+		<div class="stat">ワーカー: <b id="hWork">--</b></div>
+	</div>
+	<div class="hint" id="hint">クリック/ドラッグ: 目標を移動 ・ ホイール: ズーム ・ Space: 一時停止</div>
+
+	<script>
+	"use strict";
+
+	/* =========================================================================
+	   Mandelbrot Explorer Part.1 — Claude Opus 4.8 オリジナル版
+
+	   設計方針（既存3版を上回るための工夫）:
+	   - 計算は Web Worker プール（CPU コア数ぶん）で行毎に並列実行し、
+	     メインスレッドのブロッキングを排除して描画を滑らかに保つ。
+	   - ワーカーは Blob URL から生成し、単一HTMLで自己完結させる。
+	   - 連続（スムーズ）反復値 + コサインパレットで滑らかで美しい配色。
+	   - ズーム量に応じて最大反復回数を自動増加し、深部でも破綻しない。
+	   - プログレッシブ・スーパーサンプリング: まず低解像度で即描画し、
+	     アイドル時間に高解像度へ精緻化してエッジを滑らかにする。
+	   - prefers-reduced-motion を尊重し、自動アニメを止め静止画を表示。
+	   - 100vw/100vh のフルスクリーン。リサイズ・DPR に追従。
+	   ========================================================================= */
+
+	const canvas = document.getElementById("fractal");
+	const ctx = canvas.getContext("2d", { alpha: false });
+	const hud = {
+		zoom: document.getElementById("hZoom"),
+		iter: document.getElementById("hIter"),
+		res:  document.getElementById("hRes"),
+		work: document.getElementById("hWork"),
+	};
+
+	// アニメ抑制設定（アクセシビリティ）
+	const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+	let reduceMotion = reduceMotionQuery.matches;
+
+	/* ---------- ビュー状態（複素平面の中心・スケール） ---------- */
+	// スケール = 「複素平面1単位あたりのCSSピクセル数」。大きいほど拡大。
+	let scale = 220;
+	let centerX = -0.5;
+	let centerY = 0.0;
+
+	// アニメーション用の目標（イージングで滑らかに追従）
+	// 自己相似が美しく続く有名なシーホース谷の座標を目標にする。
+	let targetX = -0.743643887037151;
+	let targetY = 0.13182590420533;
+	let targetScale = scale;
+	let autoZoom = !reduceMotion;        // 自動ズームの有効/無効
+	let paused = false;
+
+	/* ---------- レンダリング解像度（プログレッシブ） ---------- */
+	let dpr = Math.min(window.devicePixelRatio || 1, 2);
+	let viewW = 0, viewH = 0;            // CSSピクセルでの表示サイズ
+	let renderW = 0, renderH = 0;        // 実レンダリング解像度
+	let qualityScale = 1;                // 1=フル, 0.5=半分(粗) など
+	const QUALITY_LOW = 0.5;             // 動作中の解像度倍率（軽量）
+	const QUALITY_HIGH = 1.0;            // 静止時の解像度倍率（高精細）
+
+	let imageData = null;                // 表示用バッファ
+	let pixelBuf = null;                 // Uint8ClampedArray（imageData.data）
+
+	/* =========================================================================
+	   Web Worker プール
+	   各ワーカーは「指定行レンジ」のスムーズ反復値を計算して返す。
+	   ========================================================================= */
+
+	const workerSource = `
+		"use strict";
+		// 1ピクセルのスムーズ反復値を計算（脱出しなければ -1）
+		// 周期検出 + 早期カーディオイド/バルブ判定で大幅高速化。
+		self.onmessage = function (e) {
+			const m = e.data;
+			const W = m.W, H = m.H;
+			const y0 = m.y0, y1 = m.y1;        // 担当行 [y0, y1)
+			const sx = m.sx, sy = m.sy;        // 1ピクセルあたりの複素平面ステップ
+			const ox = m.ox, oy = m.oy;        // 左上ピクセルに対応する複素座標
+			const maxIter = m.maxIter;
+			const bail = 256.0;                // 脱出半径^2（スムーズ用に大きめ）
+			const logBail = Math.log(bail);
+			const log2 = Math.log(2);
+
+			const rows = y1 - y0;
+			const out = new Float32Array(W * rows);
+			let k = 0;
+
+			for (let py = y0; py < y1; py++) {
+				const ci = oy + py * sy;
+				for (let px = 0; px < W; px++) {
+					const cr = ox + px * sx;
+
+					// --- メインカーディオイド/周期2バルブの内部判定（高速スキップ） ---
+					const xm = cr - 0.25;
+					const q = xm * xm + ci * ci;
+					if (q * (q + xm) <= 0.25 * ci * ci) { out[k++] = -1; continue; }
+					const xp = cr + 1.0;
+					if (xp * xp + ci * ci <= 0.0625) { out[k++] = -1; continue; }
+
+					// --- 反復本体（周期検出付き） ---
+					let zr = 0, zi = 0, zr2 = 0, zi2 = 0;
+					let i = 0;
+					let escaped = false;
+					// 周期検出用の保存値
+					let oldR = 0, oldI = 0, period = 0;
+					while (i < maxIter) {
+						zi = 2 * zr * zi + ci;
+						zr = zr2 - zi2 + cr;
+						zr2 = zr * zr;
+						zi2 = zi * zi;
+						i++;
+						const mag2 = zr2 + zi2;
+						if (mag2 > bail) { escaped = true; break; }
+						// 周期検出: 値が再来したら内部とみなし打ち切り
+						if (zr === oldR && zi === oldI) { i = maxIter; break; }
+						if (++period > 20) { period = 0; oldR = zr; oldI = zi; }
+					}
+
+					if (!escaped) { out[k++] = -1; continue; }
+
+					// スムーズ反復値（連続値）
+					const logZn = Math.log(zr2 + zi2) * 0.5;
+					const nu = Math.log(logZn / log2) / log2;
+					out[k++] = i + 1 - nu;
+				}
+			}
+
+			self.postMessage(
+				{ jobId: m.jobId, tileId: m.tileId, y0: y0, rows: rows, out: out.buffer },
+				[out.buffer]
+			);
+		};
+	`;
+
+	const workerBlobURL = URL.createObjectURL(
+		new Blob([workerSource], { type: "application/javascript" })
+	);
+
+	const WORKER_COUNT = Math.max(2, Math.min((navigator.hardwareConcurrency || 4), 8));
+	const workers = [];
+	let resultField = null;     // 全画面分のスムーズ反復値（Float32Array）
+	let jobId = 0;              // フレーム識別子（古い結果を破棄するため）
+	let tilesPending = 0;       // 未完了タイル数
+	let frameDirty = true;      // 再計算が必要か
+	let lastMaxIter = 0;
+
+	for (let w = 0; w < WORKER_COUNT; w++) {
+		const wk = new Worker(workerBlobURL);
+		wk.onmessage = onWorkerResult;
+		workers.push(wk);
+	}
+
+	/* =========================================================================
+	   配色（コサインパレット: 滑らかで鮮やかなグラデーション）
+	   事前にLUT（参照テーブル）を生成して per-pixel コストを削減。
+	   ========================================================================= */
+
+	const PALETTE_SIZE = 2048;
+	const paletteR = new Uint8Array(PALETTE_SIZE);
+	const paletteG = new Uint8Array(PALETTE_SIZE);
+	const paletteB = new Uint8Array(PALETTE_SIZE);
+
+	function buildPalette() {
+		// Inigo Quilez 風コサインパレット: color = a + b*cos(2π(c*t + d))
+		const a = [0.50, 0.50, 0.55];
+		const b = [0.50, 0.46, 0.50];
+		const c = [1.00, 1.00, 1.00];
+		const d = [0.00, 0.18, 0.42];
+		const TAU = Math.PI * 2;
+		for (let i = 0; i < PALETTE_SIZE; i++) {
+			const t = i / PALETTE_SIZE;
+			let r = a[0] + b[0] * Math.cos(TAU * (c[0] * t + d[0]));
+			let g = a[1] + b[1] * Math.cos(TAU * (c[1] * t + d[1]));
+			let bl = a[2] + b[2] * Math.cos(TAU * (c[2] * t + d[2]));
+			// わずかに彩度を持ち上げて深みを出す
+			paletteR[i] = Math.max(0, Math.min(255, Math.round(r * 255)));
+			paletteG[i] = Math.max(0, Math.min(255, Math.round(g * 255)));
+			paletteB[i] = Math.max(0, Math.min(255, Math.round(bl * 255)));
+		}
+	}
+	buildPalette();
+
+	/* =========================================================================
+	   リサイズ / バッファ確保
+	   ========================================================================= */
+
+	function resize() {
+		dpr = Math.min(window.devicePixelRatio || 1, 2);
+		viewW = Math.max(1, window.innerWidth);
+		viewH = Math.max(1, window.innerHeight);
+		applyQuality(qualityScale);
+		frameDirty = true;
+	}
+
+	function applyQuality(q) {
+		qualityScale = q;
+		renderW = Math.max(1, Math.round(viewW * dpr * q));
+		renderH = Math.max(1, Math.round(viewH * dpr * q));
+		canvas.width = renderW;
+		canvas.height = renderH;
+		canvas.style.width = viewW + "px";
+		canvas.style.height = viewH + "px";
+		ctx.imageSmoothingEnabled = (q < 1); // 低解像度時は拡大を滑らかに
+		imageData = ctx.createImageData(renderW, renderH);
+		pixelBuf = imageData.data;
+		resultField = new Float32Array(renderW * renderH);
+	}
+
+	/* =========================================================================
+	   反復回数の自動スケール
+	   ズームが深いほど詳細を描くために反復を増やす。
+	   ========================================================================= */
+
+	function computeMaxIter() {
+		// scale が大きいほど（拡大されるほど）反復を増やす
+		const zoomFactor = scale / 220;
+		const it = 120 + Math.floor(Math.log2(Math.max(1, zoomFactor)) * 26);
+		return Math.max(120, Math.min(it, 2400));
+	}
+
+	/* =========================================================================
+	   計算ジョブの発行（ワーカーへ行レンジを分配）
+	   ========================================================================= */
+
+	function dispatch() {
+		const maxIter = computeMaxIter();
+		lastMaxIter = maxIter;
+		jobId++;
+
+		// レンダリング解像度の物理ピクセル中心に複素平面を合わせる。
+		// scale はCSSピクセル基準なので、実解像度に合わせて補正する。
+		const pxScale = scale * dpr * qualityScale; // 実ピクセルあたりのスケール
+		const sx = 1 / pxScale;
+		const sy = 1 / pxScale;
+		const ox = centerX - (renderW / 2) * sx;
+		const oy = centerY - (renderH / 2) * sy;
+
+		// 行をワーカー数に応じて分割（やや細かめに割ってロードバランス）
+		const stripes = WORKER_COUNT * 3;
+		const baseRows = Math.ceil(renderH / stripes);
+		tilesPending = 0;
+		let tileId = 0;
+		for (let y = 0; y < renderH; y += baseRows) {
+			const y0 = y;
+			const y1 = Math.min(renderH, y + baseRows);
+			const wk = workers[tileId % WORKER_COUNT];
+			wk.postMessage({
+				jobId, tileId,
+				W: renderW, H: renderH,
+				y0, y1, sx, sy, ox, oy, maxIter
+			});
+			tilesPending++;
+			tileId++;
+		}
+		frameDirty = false;
+	}
+
+	function onWorkerResult(e) {
+		const m = e.data;
+		if (m.jobId !== jobId) return; // 古いフレームの結果は破棄
+		const out = new Float32Array(m.out);
+		// 該当行を結果フィールドにコピー
+		resultField.set(out, m.y0 * renderW);
+		tilesPending--;
+		if (tilesPending === 0) {
+			colorize();
+			ctx.putImageData(imageData, 0, 0);
+			updateHud();
+			// 静止 & 低解像度なら高解像度で精緻化する
+			maybeRefine();
+		}
+	}
+
+	/* =========================================================================
+	   着色（スムーズ反復値 → パレット）
+	   ========================================================================= */
+
+	let colorOffset = 0; // 配色を緩やかに流すための位相
+
+	function colorize() {
+		const N = renderW * renderH;
+		const data = pixelBuf;
+		const rf = resultField;
+		// 反復→パレット位置のスケール。大きすぎると縞、小さすぎると単調。
+		const colScale = PALETTE_SIZE / 90;
+		const off = colorOffset;
+		for (let i = 0; i < N; i++) {
+			const v = rf[i];
+			const j = i * 4;
+			if (v < 0) {
+				// 集合内部: 深い藍にわずかな揺らぎ
+				data[j] = 4;
+				data[j + 1] = 6;
+				data[j + 2] = 16;
+				data[j + 3] = 255;
+			} else {
+				// 平方根で低反復域を引き伸ばし、グラデを柔らかく
+				let idx = (Math.sqrt(v) * colScale + off) % PALETTE_SIZE;
+				if (idx < 0) idx += PALETTE_SIZE;
+				const p = idx | 0;
+				data[j] = paletteR[p];
+				data[j + 1] = paletteG[p];
+				data[j + 2] = paletteB[p];
+				data[j + 3] = 255;
+			}
+		}
+	}
+
+	/* =========================================================================
+	   プログレッシブ精緻化
+	   動作中は低解像度、静止したら高解像度で一度だけ再計算。
+	   ========================================================================= */
+
+	let refineScheduled = false;
+	function maybeRefine() {
+		const moving = autoZoom && !paused && !reduceMotion;
+		if (moving) return;                 // 動いている間は精緻化しない
+		if (qualityScale >= QUALITY_HIGH) return;
+		if (refineScheduled) return;
+		refineScheduled = true;
+		// 少し待ってから高解像度へ（連続操作中の無駄打ちを防ぐ）
+		setTimeout(() => {
+			refineScheduled = false;
+			if (autoZoom && !paused && !reduceMotion) return;
+			applyQuality(QUALITY_HIGH);
+			dispatch();
+		}, 90);
+	}
+
+	/* =========================================================================
+	   HUD 更新
+	   ========================================================================= */
+
+	function updateHud() {
+		const baseScale = 220;
+		const z = scale / baseScale;
+		hud.zoom.textContent = z >= 1000
+			? z.toExponential(2) + "×"
+			: z.toFixed(1) + "×";
+		hud.iter.textContent = lastMaxIter;
+		hud.res.textContent = renderW + "×" + renderH;
+		hud.work.textContent = WORKER_COUNT + " 並列";
+	}
+
+	/* =========================================================================
+	   メインループ（イージングによる滑らかな自動ズーム）
+	   ========================================================================= */
+
+	function tick() {
+		if (autoZoom && !paused && !reduceMotion) {
+			// 目標スケールへ向けて指数的にズーム（フレームレート非依存に近い緩急）
+			targetScale *= 1.012;
+			scale += (targetScale - scale) * 0.12;
+			// 目標座標へ滑らかに追従
+			centerX += (targetX - centerX) * 0.018;
+			centerY += (targetY - centerY) * 0.018;
+			// 配色を緩やかに流す
+			colorOffset = (colorOffset + 0.6) % PALETTE_SIZE;
+			frameDirty = true;
+			// ループが深部に達したらリセットして無限ループ感を出す
+			if (scale > 2.0e13) {
+				scale = 220;
+				targetScale = 220;
+				centerX = -0.5;
+				centerY = 0.0;
+			}
+		}
+
+		// 前フレームの計算が完了していて、再計算が必要なら発行
+		if (frameDirty && tilesPending === 0) {
+			// 動作中は低解像度、静止後の単発描画はそのままの解像度
+			const moving = autoZoom && !paused && !reduceMotion;
+			if (moving && qualityScale !== QUALITY_LOW) {
+				applyQuality(QUALITY_LOW);
+			}
+			dispatch();
+		}
+		requestAnimationFrame(tick);
+	}
+
+	/* =========================================================================
+	   インタラクション
+	   - クリック/ドラッグ: その点を目標中心に
+	   - ホイール: ズームイン/アウト（ポインタ中心）
+	   - Space: 一時停止/再開
+	   ========================================================================= */
+
+	function screenToComplex(clientX, clientY) {
+		const pxScale = scale * dpr * qualityScale;
+		const px = clientX * dpr * qualityScale;
+		const py = clientY * dpr * qualityScale;
+		const cx = centerX + (px - renderW / 2) / pxScale;
+		const cy = centerY + (py - renderH / 2) / pxScale;
+		return { cx, cy };
+	}
+
+	let dragging = false;
+	canvas.addEventListener("pointerdown", (e) => {
+		dragging = true;
+		canvas.setPointerCapture(e.pointerId);
+		const { cx, cy } = screenToComplex(e.clientX, e.clientY);
+		targetX = cx; targetY = cy;
+		// 手動操作したら自動ズームの目標座標も更新（迷子防止）
+	});
+	canvas.addEventListener("pointermove", (e) => {
+		if (!dragging) return;
+		const { cx, cy } = screenToComplex(e.clientX, e.clientY);
+		// ドラッグで視点を直接パン（中心を動かす）
+		targetX = cx; targetY = cy;
+		if (reduceMotion || !autoZoom) {
+			// 自動ズームしない場合は即座に中心を合わせて再描画
+			centerX = cx; centerY = cy;
+			frameDirty = true;
+		}
+	});
+	canvas.addEventListener("pointerup", (e) => {
+		dragging = false;
+		try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+	});
+
+	canvas.addEventListener("wheel", (e) => {
+		e.preventDefault();
+		const { cx, cy } = screenToComplex(e.clientX, e.clientY);
+		const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+		// ポインタ位置を固定点としてズーム
+		scale *= factor;
+		targetScale = scale;
+		centerX = cx + (centerX - cx) / factor;
+		centerY = cy + (centerY - cy) / factor;
+		targetX = centerX; targetY = centerY;
+		frameDirty = true;
+	}, { passive: false });
+
+	window.addEventListener("keydown", (e) => {
+		if (e.code === "Space") {
+			e.preventDefault();
+			paused = !paused;
+			if (!paused) frameDirty = true;
+		}
+	});
+
+	/* ---------- アイドル時にHUDをフェード ---------- */
+	let idleTimer = null;
+	function wake() {
+		document.body.classList.remove("idle");
+		clearTimeout(idleTimer);
+		idleTimer = setTimeout(() => document.body.classList.add("idle"), 2600);
+	}
+	window.addEventListener("pointermove", wake);
+	window.addEventListener("wheel", wake);
+	window.addEventListener("keydown", wake);
+	wake();
+
+	/* ---------- reduce-motion の変化に追従 ---------- */
+	reduceMotionQuery.addEventListener("change", (e) => {
+		reduceMotion = e.matches;
+		autoZoom = !reduceMotion;
+		if (reduceMotion) {
+			// 静止画として高精細で1枚描画
+			applyQuality(QUALITY_HIGH);
+		}
+		frameDirty = true;
+	});
+
+	/* ---------- 起動 ---------- */
+	window.addEventListener("resize", resize);
+	resize();
+	if (reduceMotion) {
+		// アニメ抑制時: 有名な美しい構図を高精細で静止表示
+		centerX = -0.743643887037151;
+		centerY = 0.13182590420533;
+		scale = 9000;
+		applyQuality(QUALITY_HIGH);
+		frameDirty = true;
+	}
+	requestAnimationFrame(tick);
+	</script>
+</body>
+</html>
