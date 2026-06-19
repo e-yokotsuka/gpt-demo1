@@ -89,9 +89,9 @@
   const DPR_CAP = 2;
   let dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
 
-  // 論理サイズ（CSSピクセル）
-  let W = window.innerWidth;
-  let H = window.innerHeight;
+  // 論理サイズ（CSSピクセル）。非表示 iframe 内では 0 になるためフォールバック
+  let W = window.innerWidth || 960;
+  let H = window.innerHeight || 600;
 
   // ---------------------------------------------------------------------------
   // WebGL 初期化
@@ -256,8 +256,8 @@
   // ---------------------------------------------------------------------------
   function resize(){
     dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
-    W = window.innerWidth;
-    H = window.innerHeight;
+    W = window.innerWidth || 960;
+    H = window.innerHeight || 600;
 
     glCanvas.width  = Math.floor(W * dpr);
     glCanvas.height = Math.floor(H * dpr);

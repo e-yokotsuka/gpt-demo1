@@ -597,9 +597,11 @@
     // ===================== リサイズ =====================
     function resize() {
       // 利用可能な高さからセルサイズを決定（盤面が常に画面内に収まる）
-      const isNarrow = window.innerWidth <= 560;
-      const availH = window.innerHeight - (isNarrow ? 240 : 60);
-      const availW = isNarrow ? window.innerWidth - 40 : window.innerWidth - 260;
+      // 非表示 iframe 内では innerWidth/Height が 0 になるためフォールバック
+      const winW = window.innerWidth || 960, winH = window.innerHeight || 600;
+      const isNarrow = winW <= 560;
+      const availH = winH - (isNarrow ? 240 : 60);
+      const availW = isNarrow ? winW - 40 : winW - 260;
       let c = Math.floor(Math.min(availH / ROWS, availW / COLS));
       c = Math.max(12, Math.min(c, 40));
       cell = c;
@@ -724,6 +726,10 @@
     }, { passive: false });
 
     // ===================== 起動 =====================
+    // タイトル画面でも盤面を描くため、先に空の盤面を用意しておく
+    // （startGame でゲーム開始時に作り直す）。これが無いと初回 resize→render→
+    // drawBoard で arena 未定義の例外になる。
+    arena = createMatrix(COLS, ROWS);
     resize();
     showOverlay("TETRIS", "Claude Opus 4.8 版", "スペース / クリックで開始", "▶ START");
     requestAnimationFrame(loop);

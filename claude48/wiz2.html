@@ -230,7 +230,10 @@
   let zbuf = new Float32Array(RW);     // 壁の深度バッファ（スプライト前後判定用）
 
   function resize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    // 非表示(display:none)の iframe 内などでは innerWidth/innerHeight が 0 になり、
+    // w/h が NaN → createImageData(NaN,...) で例外、以降の初期化（ボタン登録など）が
+    // 止まってしまう。0 の場合は安全なフォールバック値を使う。
+    const w = window.innerWidth || 960, h = window.innerHeight || 600;
     // アスペクトに合わせてバッファ解像度を調整（高すぎない範囲で）
     const targetH = 320;
     RW = Math.max(240, Math.round(targetH * (w / h)));

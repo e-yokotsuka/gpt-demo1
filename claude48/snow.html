@@ -356,8 +356,9 @@
 	let resizeRAF = 0;
 	function resize() {
 		dpr = Math.min(window.devicePixelRatio || 1, 2);   // 上限2で高DPI端末でも軽量に
-		viewW = window.innerWidth;
-		viewH = window.innerHeight;
+		// 非表示 iframe 内では innerWidth/Height が 0 になり真っ暗になるためフォールバック
+		viewW = window.innerWidth || 960;
+		viewH = window.innerHeight || 600;
 		canvas.width = Math.floor(viewW * dpr);
 		canvas.height = Math.floor(viewH * dpr);
 		canvas.style.width = viewW + 'px';

@@ -734,8 +734,10 @@
   function resize() {
     // 解像度はパフォーマンスのため実ピクセルの上限を設ける
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    W = Math.floor(window.innerWidth);
-    H = Math.floor(window.innerHeight);
+    // 非表示 iframe 内では innerWidth/Height が 0 になり画面が真っ暗になるため、
+    // 0 のときは安全なフォールバック値を使う。
+    W = Math.floor(window.innerWidth) || 960;
+    H = Math.floor(window.innerHeight) || 600;
     canvas.width = Math.floor(W * dpr);
     canvas.height = Math.floor(H * dpr);
     canvas.style.width = W + "px";

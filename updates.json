@@ -2,6 +2,12 @@
   {
     "date": "2026-06-19",
     "ai": "claude",
+    "text": "Add Claude Opus 4.8 versions of 5 large game demos — all 31 demos now covered",
+    "commit": "a425aa0"
+  },
+  {
+    "date": "2026-06-19",
+    "ai": "claude",
     "text": "Add Claude Opus 4.8 versions of 3 game demos (tet, shoot, tetris)",
     "commit": "4951402"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add Codex Stereogram demo and enable compare entry",
     "commit": "bfd4c8c"
-  },
-  {
-    "date": "2026-02-13",
-    "ai": "codex",
-    "text": "Add Codex Lorenz Attractor demo and enable compare entry",
-    "commit": "f939904"
   }
 ]

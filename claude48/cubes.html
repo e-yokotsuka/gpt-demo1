@@ -328,8 +328,9 @@
 		let W, H, DPR, proj;
 		function resize() {
 			DPR = Math.min(2, window.devicePixelRatio || 1);
-			W = window.innerWidth;
-			H = window.innerHeight;
+			// 非表示 iframe 内では innerWidth/Height が 0 になり真っ暗になるためフォールバック
+			W = window.innerWidth || 960;
+			H = window.innerHeight || 600;
 			canvas.width = Math.floor(W * DPR);
 			canvas.height = Math.floor(H * DPR);
 			canvas.style.width = W + "px";

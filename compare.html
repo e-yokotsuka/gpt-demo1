@@ -241,37 +241,29 @@
 		const demoId = params.get("demo");
 		const config = DEMO_CONFIG[demoId];
 
+		// 各タブで読み込むURLを保持する。iframe の src は「初回にそのタブを開いた時」に
+		// 初めて設定する（＝遅延ロード）。こうしないと、非表示(display:none)の iframe 内で
+		// デモが初期化され、canvas が 0×0 になる・requestAnimationFrame が止まる、といった
+		// 理由でゲームやアニメが真っ暗／無反応になる不具合が起きる。
+		const FRAME_URLS = {};
+
 		if (config) {
 			document.getElementById("demo-title").textContent = config.title;
 			document.title = config.title + " - ChatGPT vs Claude";
-			const chatgptFrame = document.getElementById("chatgpt-frame");
-			const claudeFrame = document.getElementById("claude-frame");
-			if (config.chatgpt) {
-				chatgptFrame.src = config.chatgpt;
-			} else {
-				chatgptFrame.removeAttribute("src");
-			}
-			if (config.claude) {
-				claudeFrame.src = config.claude;
-			} else {
-				claudeFrame.removeAttribute("src");
-			}
-			const claude48Frame = document.getElementById("claude48-frame");
-			if (config.claude48) {
-				claude48Frame.src = config.claude48;
-			} else {
-				claude48Frame.removeAttribute("src");
-			}
+			FRAME_URLS.chatgpt = config.chatgpt || null;
+			FRAME_URLS.claude = config.claude || null;
+			FRAME_URLS.claude48 = config.claude48 || null;
+			// Codex は実装版が無ければ「見送り理由」ページを表示するため常にURLを持つ
+			FRAME_URLS.codex = config.codex || buildDeferredCodexUrl(config, demoId);
+			FRAME_URLS.reason = null;
+
 			const labels = config.labels || { primary: "ChatGPT", secondary: "Claude Opus 4.6", tertiary: "ChatGPT-5.3-Codex", quaternary: "見送り理由", quinary: "Claude Opus 4.8" };
 			document.getElementById("tab-chatgpt").textContent = labels.primary;
 			document.getElementById("tab-claude").textContent = labels.secondary;
 			document.getElementById("tab-codex").textContent = labels.tertiary || "ChatGPT-5.3-Codex";
 			document.getElementById("tab-claude48").textContent = labels.quinary || "Claude Opus 4.8";
 			document.getElementById("tab-reason").textContent = labels.quaternary || "見送り理由";
-			const codexTab = document.getElementById("tab-codex");
-			const codexFrame = document.getElementById("codex-frame");
-			codexTab.style.display = "";
-			codexFrame.src = config.codex || buildDeferredCodexUrl(config, demoId);
+			document.getElementById("tab-codex").style.display = "";
 			// 見送り理由タブは常に非表示（Codexタブ自体が見送りページを兼ねるため不要）
 			document.getElementById("tab-reason").style.display = "none";
 		} else {
@@ -295,12 +287,8 @@
 
 		function hasSource(tab) {
 			if (!config) return false;
-			if (tab === "chatgpt") return Boolean(config.chatgpt);
-			if (tab === "claude") return Boolean(config.claude);
-			if (tab === "claude48") return Boolean(config.claude48);
-			if (tab === "codex") return Boolean(document.getElementById("codex-frame").getAttribute("src"));
 			if (tab === "reason") return true;
-			return false;
+			return Boolean(FRAME_URLS[tab]);
 		}
 
 		function getMissingMessage(tab) {
@@ -334,7 +322,13 @@
 			const frame = document.getElementById(def.frame);
 			// 見送り理由タブは常に表示。それ以外はソースの有無で判定
 			if (tab === "reason" || hasSource(tab)) {
+				// 遅延ロード：このタブを初めて開いた時にだけ src を設定する。
+				// 先に active（display:block）にして frame を可視化してから src を
+				// 設定することで、デモ側が正しい画面サイズで初期化でき、
+				// 真っ暗・無反応（canvas 0×0 / rAF 停止）を防げる。
 				frame.classList.add("active");
+				const url = FRAME_URLS[tab];
+				if (url && !frame.getAttribute("src")) frame.src = url;
 				hideComingSoon();
 				setTimeout(() => frame.contentWindow?.focus(), 50);
 			} else {

@@ -83,8 +83,9 @@
 
 		// ====== リサイズ / 初期化 ======
 		function resize() {
-			viewW = window.innerWidth;
-			viewH = window.innerHeight;
+			// 非表示 iframe 内では innerWidth/Height が 0 になり真っ暗になるためフォールバック
+			viewW = window.innerWidth || 960;
+			viewH = window.innerHeight || 600;
 			canvas.width = viewW;
 			canvas.height = viewH;
 

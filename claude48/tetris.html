@@ -456,7 +456,7 @@
 		// レイアウト計算：画面に収まる最大セルサイズを決定
 		function relayout() {
 			DPR = Math.min(window.devicePixelRatio || 1, 2);
-			const W = window.innerWidth, H = window.innerHeight;
+			const W = window.innerWidth || 960, H = window.innerHeight || 600;
 			canvas.width = W * DPR; canvas.height = H * DPR;
 			canvas.style.width = W + "px"; canvas.style.height = H + "px";
 			ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -541,7 +541,7 @@
 		}
 
 		function render() {
-			const W = window.innerWidth, H = window.innerHeight;
+			const W = window.innerWidth || 960, H = window.innerHeight || 600;
 			ctx.clearRect(0, 0, W, H);
 
 			ctx.save();

@@ -674,7 +674,8 @@
 	// =====================================================================
 	function resize() {
 		DPR = Math.min(window.devicePixelRatio || 1, 2);
-		cssW = window.innerWidth; cssH = window.innerHeight;
+		// 非表示 iframe 内では innerWidth/Height が 0 になり真っ暗になるためフォールバック
+		cssW = window.innerWidth || 960; cssH = window.innerHeight || 600;
 		cv.width = Math.floor(cssW * DPR); cv.height = Math.floor(cssH * DPR);
 		cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
 		viewW = cssW; viewH = cssH;

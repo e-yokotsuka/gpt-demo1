@@ -127,68 +127,48 @@
   // =========================================================================
 
   // ---- 楽曲データ ---------------------------------------------------------
-  // MIDIノート番号と長さ(拍)。1拍 = beat 秒。歌詞は表示用。
-  // メロディは "Daisy, Daisy, give me your answer do..." の定番フレーズ。
+  // MIDIノート番号と長さ(拍)。1拍 = BEAT 秒。歌詞は表示用。{ r: 拍 } は休符。
+  // 旋律は実在する「Daisy Bell (A Bicycle Built for Two)」のコーラスを、
+  // Digital Tradition の ABC 譜（ト長調 3/4拍子）から正確に書き起こしたもの。
+  // 冒頭「Dai-sy, Dai-sy,」は D5→B4→G4→D4 とト長調の主和音を下降する、
+  // この曲特有の旋律。
   const SONG = [
-    { p: 76, b: 1.0, t: "Dai-" },
-    { p: 72, b: 1.0, t: "sy," },
-    { p: 69, b: 1.0, t: "Dai-" },
-    { p: 64, b: 1.0, t: "sy," },
-    { p: 67, b: 0.5, t: "give" },
-    { p: 69, b: 0.5, t: "me" },
-    { p: 71, b: 0.5, t: "your" },
-    { p: 72, b: 0.5, t: "an-" },
-    { p: 69, b: 0.5, t: "swer" },
-    { p: 67, b: 1.5, t: "do." },
+    { p: 74, b: 3, t: "Dai-" }, { p: 71, b: 3, t: "sy," }, { p: 67, b: 3, t: "Dai-" }, { p: 62, b: 3, t: "sy," },
+    { p: 64, b: 1, t: "give" }, { p: 66, b: 1, t: "me" }, { p: 67, b: 1, t: "your" },
+    { p: 64, b: 2, t: "an-" }, { p: 67, b: 1, t: "swer" }, { p: 62, b: 5, t: "do." }, { r: 1 },
 
-    { p: 76, b: 1.0, t: "I'm" },
-    { p: 79, b: 1.0, t: "half" },
-    { p: 76, b: 1.0, t: "cra-" },
-    { p: 72, b: 1.0, t: "zy," },
-    { p: 74, b: 0.5, t: "all" },
-    { p: 76, b: 0.5, t: "for" },
-    { p: 77, b: 0.5, t: "the" },
-    { p: 76, b: 0.5, t: "love" },
-    { p: 74, b: 0.5, t: "of" },
-    { p: 72, b: 1.5, t: "you." },
+    { p: 69, b: 3, t: "I'm" }, { p: 74, b: 3, t: "half" }, { p: 71, b: 3, t: "cra-" }, { p: 67, b: 3, t: "zy," },
+    { p: 64, b: 1, t: "all" }, { p: 66, b: 1, t: "for" }, { p: 67, b: 1, t: "the" },
+    { p: 69, b: 2, t: "love" }, { p: 71, b: 1, t: "of" }, { p: 69, b: 4, t: "you." }, { r: 1 },
 
-    { p: 67, b: 1.0, t: "It" },
-    { p: 67, b: 0.5, t: "won't" },
-    { p: 69, b: 0.5, t: "be" },
-    { p: 71, b: 1.0, t: "a" },
-    { p: 72, b: 1.0, t: "sty-" },
-    { p: 74, b: 1.0, t: "lish" },
-    { p: 76, b: 1.0, t: "mar-" },
-    { p: 77, b: 1.0, t: "riage," },
+    { p: 71, b: 1, t: "It" }, { p: 72, b: 1, t: "won't" }, { p: 71, b: 1, t: "be" }, { p: 69, b: 1, t: "a" },
+    { p: 74, b: 2, t: "sty-" }, { p: 71, b: 1, t: "lish" }, { p: 69, b: 1, t: "mar-" }, { p: 67, b: 4, t: "riage," },
 
-    { p: 79, b: 1.0, t: "I" },
-    { p: 76, b: 0.5, t: "can't" },
-    { p: 74, b: 0.5, t: "af-" },
-    { p: 72, b: 1.0, t: "ford" },
-    { p: 71, b: 1.0, t: "a" },
-    { p: 69, b: 1.0, t: "car-" },
-    { p: 67, b: 2.0, t: "riage." },
+    { p: 69, b: 1, t: "I" }, { p: 71, b: 2, t: "can't" }, { p: 67, b: 1, t: "a-" }, { p: 64, b: 2, t: "fford" },
+    { p: 67, b: 1, t: "a" }, { p: 64, b: 1, t: "car-" }, { p: 62, b: 3, t: "riage," }, { r: 1 },
 
-    { p: 60, b: 0.5, t: "But" },
-    { p: 64, b: 0.5, t: "you'll" },
-    { p: 67, b: 1.0, t: "look" },
-    { p: 72, b: 1.0, t: "sweet" },
-    { p: 71, b: 0.5, t: "up-" },
-    { p: 69, b: 0.5, t: "on" },
-    { p: 67, b: 0.5, t: "the" },
-    { p: 64, b: 0.5, t: "seat" },
-
-    { p: 65, b: 0.5, t: "of" },
-    { p: 69, b: 0.5, t: "a" },
-    { p: 72, b: 1.0, t: "bi-" },
-    { p: 76, b: 1.0, t: "cy-" },
-    { p: 74, b: 0.5, t: "cle" },
-    { p: 72, b: 0.5, t: "built" },
-    { p: 71, b: 0.5, t: "for" },
-    { p: 67, b: 1.5, t: "two!" },
+    { p: 62, b: 1, t: "But" }, { p: 67, b: 2, t: "you'll" }, { p: 71, b: 1, t: "look" }, { p: 69, b: 2, t: "sweet" }, { r: 1 },
+    { p: 67, b: 2, t: "up-" }, { p: 71, b: 1, t: "on" }, { p: 69, b: 1, t: "the" }, { p: 71, b: 1, t: "seat" }, { p: 72, b: 1, t: "of" },
+    { p: 74, b: 1, t: "a" }, { p: 71, b: 1, t: "bi-" }, { p: 67, b: 1, t: "cy-" }, { p: 69, b: 2, t: "cle" }, { p: 62, b: 1, t: "built" }, { p: 67, b: 5, t: "for two!" },
   ];
 
-  const BEAT = 0.42;        // 1拍の秒数（テンポ）
+  // ト長調（G A B C D E F#）。3度下ハモリを調内に収めるための音階。
+  const SCALE_PC = [7, 9, 11, 0, 2, 4, 6];
+  // 与えた音の「ダイアトニックな3度下」を返す（調外なら半音3つ下で代用）
+  function diatonicThirdBelow(m) {
+    const pc = ((m % 12) + 12) % 12;
+    const idx = SCALE_PC.indexOf(pc);
+    if (idx < 0) return m - 4;
+    let ni = idx - 2;
+    while (ni < 0) ni += 7;
+    let cand = Math.floor(m / 12) * 12 + SCALE_PC[ni];
+    while (cand >= m) cand -= 12;
+    while (m - cand > 5) cand += 12;
+    while (m - cand < 2) cand -= 12;
+    return cand;
+  }
+
+  const BEAT = 0.36;        // 1拍の秒数（テンポ）
   const GAP  = 0.985;       // ノート同士のレガート率（少しだけ隙間）
 
   // ---- DOM / Canvas -------------------------------------------------------
@@ -200,8 +180,9 @@
   let W = 0, H = 0, DPR = 1;
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
-    W = window.innerWidth;
-    H = window.innerHeight;
+    // 非表示 iframe 内では innerWidth/Height が 0 になり描画が消えるためフォールバック
+    W = window.innerWidth || 960;
+    H = window.innerHeight || 600;
     cv.width  = Math.floor(W * DPR);
     cv.height = Math.floor(H * DPR);
     cv.style.width  = W + "px";
@@ -317,25 +298,36 @@
     const startAt = actx.currentTime + 0.12;
     let t = startAt;
     let total = 0;
+    let idx = 0;  // 歌詞イベントの通し番号（休符は番号を消費しない）
 
     for (let i = 0; i < SONG.length; i++) {
       const n = SONG[i];
-      const dur = n.b * BEAT * GAP;
+      const beats = n.b != null ? n.b : n.r;   // 音符=b拍 / 休符=r拍
+
+      // 休符：発音せず時間だけ進める
+      if (n.p == null) {
+        t += beats * BEAT;
+        total += beats * BEAT;
+        continue;
+      }
+
+      const dur = beats * BEAT * GAP;
 
       // リード（メロディ・ビブラート付き）
       playTone(n.p, t, dur, { type: "triangle", gain: 0.30, vibrato: true, pan: 0.08, atk: 0.014 });
-      // ハーモニー（3度下を控えめに）
-      playTone(n.p - 4, t, dur, { type: "sine", gain: 0.10, pan: -0.18, atk: 0.02 });
-      // ベース（2オクターブ下、拍頭のみ太く）
-      if (i % 2 === 0) {
-        playTone(n.p - 24, t, n.b * BEAT * 1.4, { type: "sine", gain: 0.16, pan: -0.04, atk: 0.02 });
+      // ハーモニー（調内に収めた3度下を控えめに）
+      playTone(diatonicThirdBelow(n.p), t, dur, { type: "sine", gain: 0.09, pan: -0.18, atk: 0.02 });
+      // ベース（2オクターブ下、強拍＝長めの音にだけ太く）
+      if (beats >= 2) {
+        playTone(n.p - 24, t, beats * BEAT * 1.2, { type: "sine", gain: 0.16, pan: -0.04, atk: 0.02 });
       }
 
       // 歌詞をスケジュール表へ
-      lyricEvents.push({ at: t - startAt, text: n.t, idx: i });
+      lyricEvents.push({ at: t - startAt, text: n.t, idx: idx });
+      idx++;
 
-      t += n.b * BEAT;
-      total += n.b * BEAT;
+      t += beats * BEAT;
+      total += beats * BEAT;
     }
 
     songStartCtxTime = startAt;

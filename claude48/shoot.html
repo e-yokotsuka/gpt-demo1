@@ -339,8 +339,9 @@ let viewOffX = 0, viewOffY = 0; // 中央寄せオフセット（実ピクセル
 // 仮想座標を画面全体にレターボックスでフィットさせる
 function resize() {
 	dpr = Math.min(2, window.devicePixelRatio || 1);
-	const cw = window.innerWidth;
-	const ch = window.innerHeight;
+	// 非表示 iframe 内では innerWidth/Height が 0 になり真っ暗になるためフォールバック
+	const cw = window.innerWidth || 960;
+	const ch = window.innerHeight || 600;
 	canvas.width = Math.floor(cw * dpr);
 	canvas.height = Math.floor(ch * dpr);
 	canvas.style.width = cw + "px";
