@@ -2,6 +2,12 @@
   {
     "date": "2026-06-19",
     "ai": "claude",
+    "text": "Add Claude Opus 4.8 original: Daisy Bell singing synthesis demo",
+    "commit": "afa067b"
+  },
+  {
+    "date": "2026-06-19",
+    "ai": "claude",
     "text": "Fix Claude Opus 4.8 demos broken when viewed via compare.html",
     "commit": "abcf98a"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Update changelog for recent Codex demo completions",
     "commit": "3aebb4e"
-  },
-  {
-    "date": "2026-02-16",
-    "ai": "codex",
-    "text": "Complete deferred Codex demos for visual, static, and audio categories",
-    "commit": "528a5b2"
   }
 ]

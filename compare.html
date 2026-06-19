@@ -151,14 +151,69 @@
 			gap: 12px;
 		}
 		.coming-soon.active { display: flex; }
+		/* 共有ボタン */
+		.share-btn {
+			border: 1px solid #0f3460; background: rgba(120,140,255,0.10); color: #cdd6f4;
+			font-size: 13px; font-weight: bold; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+			white-space: nowrap; transition: all 0.15s;
+		}
+		.share-btn:hover { background: rgba(120,140,255,0.22); color: #fff; }
+		.share-btn:disabled { opacity: 0.4; cursor: default; }
+		/* 共有ポップオーバー */
+		.share-pop {
+			position: fixed; top: 46px; right: 12px; z-index: 100;
+			width: min(92vw, 470px); background: #16213e; border: 1px solid #2a3f6a;
+			border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,0.55); padding: 14px;
+			display: none; flex-direction: column; gap: 12px;
+		}
+		.share-pop.open { display: flex; }
+		.share-row { display: flex; flex-direction: column; gap: 5px; }
+		.share-label { font-size: 12px; color: #a8b2d1; }
+		.share-inline { display: flex; gap: 6px; }
+		.share-input {
+			flex: 1; min-width: 0; font-size: 12px; padding: 7px 9px; border-radius: 7px;
+			border: 1px solid #2a3f6a; background: #0f1830; color: #e2e8f0;
+		}
+		.share-copy {
+			border: none; background: #4f6bed; color: #fff; font-size: 12px; font-weight: bold;
+			padding: 7px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap;
+		}
+		.share-copy:hover { background: #5f79f5; }
+		/* コピー完了トースト */
+		.share-toast {
+			position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(10px);
+			background: #2ecc71; color: #062b14; font-weight: bold; font-size: 13px;
+			padding: 9px 20px; border-radius: 999px; z-index: 110; opacity: 0; pointer-events: none;
+			transition: opacity 0.25s, transform 0.25s;
+		}
+		.share-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 	</style>
 </head>
 <body>
 	<header>
 		<a href="./index.html">&larr; メニューに戻る</a>
 		<span id="demo-title"></span>
-		<span style="width:100px"></span>
+		<button id="share-btn" class="share-btn" onclick="toggleShare(event)">🔗 共有</button>
 	</header>
+
+	<!-- 共有ポップオーバー：表示中のデモ単体のリンクと、比較ページのリンクをコピーできる -->
+	<div id="share-pop" class="share-pop">
+		<div class="share-row" id="share-row-solo">
+			<div class="share-label">このデモ単体のリンク（<span id="share-tab-name">—</span>版）</div>
+			<div class="share-inline">
+				<input id="share-url-solo" class="share-input" readonly>
+				<button class="share-copy" data-target="share-url-solo">コピー</button>
+			</div>
+		</div>
+		<div class="share-row">
+			<div class="share-label">比較ページのリンク（このタブで開く）</div>
+			<div class="share-inline">
+				<input id="share-url-compare" class="share-input" readonly>
+				<button class="share-copy" data-target="share-url-compare">コピー</button>
+			</div>
+		</div>
+	</div>
+	<div id="share-toast" class="share-toast">リンクをコピーしました</div>
 	<div class="tab-bar">
 		<button class="tab active-chatgpt" id="tab-chatgpt" onclick="switchTab('chatgpt')">ChatGPT</button>
 		<button class="tab" id="tab-claude" onclick="switchTab('claude')">Claude Opus 4.6</button>
@@ -271,6 +326,11 @@
 		}
 
 		let currentTab = "chatgpt";
+		// ?tab= が付いていれば、その版を初期表示にする（共有リンクからの遷移用）
+		const tabParam = params.get("tab");
+		if (config && tabParam && ["chatgpt", "claude", "claude48", "codex"].includes(tabParam) && hasSource(tabParam)) {
+			currentTab = tabParam;
+		}
 
 		function showComingSoon(message) {
 			const comingSoon = document.getElementById("coming-soon");
@@ -334,9 +394,95 @@
 			} else {
 				showComingSoon(getMissingMessage(tab));
 			}
+
+			// アドレスバーを現在のタブに同期（リロードや共有で同じ表示を再現できる）
+			if (config && demoId) {
+				try {
+					const base = location.href.split("?")[0].split("#")[0];
+					history.replaceState(null, "", `${base}?demo=${encodeURIComponent(demoId)}&tab=${encodeURIComponent(tab)}`);
+				} catch (e) { /* file:// 等で失敗しても無視 */ }
+			}
+			// 共有ポップオーバーが開いていればリンク内容を更新
+			const sharePop = document.getElementById("share-pop");
+			if (sharePop && sharePop.classList.contains("open") && typeof refreshShareUrls === "function") refreshShareUrls();
 		}
 
 		switchTab(currentTab);
+
+		// =====================================================================
+		// 共有：表示中のデモのリンクをコピーできるようにする
+		// =====================================================================
+		const TAB_DISPLAY = { chatgpt: "ChatGPT", claude: "Claude Opus 4.6", codex: "ChatGPT-5.3-Codex", claude48: "Claude Opus 4.8" };
+
+		// 表示中タブのデモ単体（HTML直リンク）の絶対URL。単体が無ければ null
+		function soloUrl() {
+			const u = FRAME_URLS[currentTab];
+			if (!u) return null;
+			try { return new URL(u, location.href).href; } catch (e) { return null; }
+		}
+		// このデモ＋タブを再現する比較ページのURL
+		function compareUrl() {
+			const base = location.href.split("?")[0].split("#")[0];
+			return `${base}?demo=${encodeURIComponent(demoId)}&tab=${encodeURIComponent(currentTab)}`;
+		}
+
+		function refreshShareUrls() {
+			const soloRow = document.getElementById("share-row-solo");
+			const soloInput = document.getElementById("share-url-solo");
+			const solo = soloUrl();
+			if (solo) {
+				soloInput.value = solo;
+				document.getElementById("share-tab-name").textContent = TAB_DISPLAY[currentTab] || currentTab;
+				soloRow.style.display = "";
+			} else {
+				// 単体ページが存在しない版（例: side-scroller の ChatGPT）は隠す
+				soloRow.style.display = "none";
+			}
+			document.getElementById("share-url-compare").value = compareUrl();
+		}
+
+		function toggleShare(ev) {
+			ev.stopPropagation();
+			const pop = document.getElementById("share-pop");
+			if (pop.classList.contains("open")) { pop.classList.remove("open"); return; }
+			if (!config) return;
+			refreshShareUrls();
+			pop.classList.add("open");
+		}
+
+		// ポップオーバー外クリックで閉じる
+		document.addEventListener("click", (e) => {
+			const pop = document.getElementById("share-pop");
+			if (!pop.classList.contains("open")) return;
+			if (!pop.contains(e.target) && e.target.id !== "share-btn") pop.classList.remove("open");
+		});
+
+		let toastTimer = 0;
+		function showToast() {
+			const t = document.getElementById("share-toast");
+			t.classList.add("show");
+			clearTimeout(toastTimer);
+			toastTimer = setTimeout(() => t.classList.remove("show"), 1500);
+		}
+
+		// コピー：Clipboard API → 失敗時は execCommand にフォールバック
+		document.querySelectorAll(".share-copy").forEach((btn) => {
+			btn.addEventListener("click", async () => {
+				const input = document.getElementById(btn.dataset.target);
+				input.focus();
+				input.select();
+				input.setSelectionRange(0, input.value.length);
+				let ok = false;
+				try {
+					if (navigator.clipboard && navigator.clipboard.writeText) {
+						await navigator.clipboard.writeText(input.value);
+						ok = true;
+					}
+				} catch (e) { /* secure context 以外では失敗するのでフォールバックへ */ }
+				if (!ok) { try { ok = document.execCommand("copy"); } catch (e) {} }
+				showToast();
+			});
+		});
 	</script>
 </body>
 </html>
