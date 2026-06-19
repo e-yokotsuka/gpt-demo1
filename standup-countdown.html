@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Standup — Countdown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#04060f;
+    --bg-1:#0a1230;
+    --bg-2:#13204d;
+    --ink:#eef1ff;
+    --muted:#8a93c4;
+    --gold:#ffd76b;
+    --coral:#ff7e5f;
+    --cyan:#6be8ff;
+    --line:rgba(160,180,255,.14);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Chakra Petch',system-ui,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 800px at 70% -10%, rgba(255,126,95,.10), transparent 60%),
+      radial-gradient(1000px 700px at 10% 110%, rgba(107,232,255,.10), transparent 55%),
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%);
+    min-height:100%;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  #fx{position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}
+  .scanlines{position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.05;
+    background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px)}
+
+  .stage{position:relative;z-index:3;text-align:center;padding:32px;width:min(960px,92vw)}
+
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:14px;
+    font-family:'Rajdhani',sans-serif;font-weight:700;
+    letter-spacing:.5em;font-size:clamp(11px,1.6vw,15px);
+    color:var(--cyan);text-transform:uppercase;margin-bottom:18px;
+  }
+  .eyebrow::before,.eyebrow::after{content:"";width:46px;height:1px;background:linear-gradient(90deg,transparent,var(--cyan))}
+  .eyebrow::after{background:linear-gradient(270deg,transparent,var(--cyan))}
+
+  .title{
+    font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    font-size:clamp(26px,6vw,64px);line-height:1;
+    background:linear-gradient(180deg,#fff,#cfd6ff 60%,#7d88c7);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    margin-bottom:6px;
+  }
+  .subtitle{font-family:'Rajdhani',sans-serif;font-weight:500;color:var(--muted);
+    letter-spacing:.28em;text-transform:uppercase;font-size:clamp(11px,1.8vw,15px);margin-bottom:clamp(28px,5vw,52px)}
+
+  .clock{display:flex;align-items:flex-start;justify-content:center;gap:clamp(8px,2vw,26px)}
+  .unit{display:flex;flex-direction:column;align-items:center;min-width:clamp(76px,18vw,200px)}
+  .digit{
+    display:inline-flex;justify-content:center;
+    font-weight:700;
+    font-size:clamp(58px,17vw,180px);line-height:.9;
+    color:#fff;
+    text-shadow:
+      0 0 14px rgba(255,215,107,.35),
+      0 0 44px rgba(255,126,95,.22);
+    transition:transform .12s ease, text-shadow .2s ease;
+  }
+  .digit .d{display:inline-block;width:.64em;text-align:center}
+  .digit.tick{transform:translateY(-4px) scaleY(1.06);
+    text-shadow:0 0 22px rgba(255,215,107,.7),0 0 70px rgba(255,126,95,.45)}
+  .label{font-family:'Rajdhani',sans-serif;font-weight:700;letter-spacing:.34em;
+    text-transform:uppercase;font-size:clamp(9px,1.5vw,14px);color:var(--muted);margin-top:14px}
+  .colon{
+    font-size:clamp(40px,11vw,120px);line-height:1.1;color:var(--gold);
+    align-self:center;margin-top:clamp(0px,1vw,18px);opacity:.5;
+    animation:blink 1s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:.12}}
+
+  .meta{margin-top:clamp(30px,5vw,54px);display:flex;flex-direction:column;align-items:center;gap:16px}
+  .target{font-family:'Rajdhani',sans-serif;font-weight:600;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--muted);font-size:clamp(12px,1.8vw,16px)}
+  .target b{color:var(--gold);font-weight:700}
+  .bar{width:min(440px,80vw);height:3px;background:var(--line);border-radius:999px;overflow:hidden}
+  .bar > i{display:block;height:100%;width:100%;border-radius:999px;
+    background:linear-gradient(90deg,var(--cyan),var(--gold),var(--coral));
+    box-shadow:0 0 14px rgba(255,215,107,.6);transition:transform .4s linear;transform-origin:left}
+
+  /* finale */
+  .flash{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;
+    background:radial-gradient(circle at 50% 45%,rgba(255,236,179,.9),rgba(255,126,95,.2) 40%,transparent 70%)}
+  .done{
+    position:fixed;inset:0;z-index:5;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;gap:18px;
+    opacity:0;pointer-events:none;padding:24px;
+  }
+  .done.show{opacity:1;animation:rise .9s cubic-bezier(.16,1,.3,1)}
+  @keyframes rise{from{transform:translateY(28px);opacity:0}to{transform:translateY(0);opacity:1}}
+  .done .big{
+    font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    font-size:clamp(46px,13vw,150px);line-height:.92;
+    background:linear-gradient(180deg,#fff,var(--gold) 55%,var(--coral));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 0 60px rgba(255,200,120,.4);
+  }
+  .done .sub{font-family:'Rajdhani',sans-serif;font-weight:600;letter-spacing:.3em;
+    text-transform:uppercase;color:var(--ink);font-size:clamp(13px,2.4vw,20px)}
+
+  @media (prefers-reduced-motion: reduce){
+    .colon{animation:none}.done.show{animation:none}
+    .digit{transition:none}
+  }
+</style>
+</head>
+<body>
+  <canvas id="fx"></canvas>
+  <div class="scanlines"></div>
+  <div class="flash" id="flash"></div>
+
+  <main class="stage" id="stage">
+    <span class="eyebrow">Team Sync</span>
+    <h1 class="title">Daily&nbsp;Standup</h1>
+    <p class="subtitle">Get ready — the room is warming up</p>
+
+    <div class="clock" aria-live="polite">
+      <div class="unit"><span class="digit" id="hh">00</span><span class="label">Hours</span></div>
+      <span class="colon">:</span>
+      <div class="unit"><span class="digit" id="mm">00</span><span class="label">Minutes</span></div>
+      <span class="colon">:</span>
+      <div class="unit"><span class="digit" id="ss">00</span><span class="label">Seconds</span></div>
+    </div>
+
+    <div class="meta">
+      <p class="target">Starts at <b>10:30 AM</b></p>
+      <div class="bar"><i id="bar"></i></div>
+    </div>
+  </main>
+
+  <div class="done" id="done">
+    <div class="big">It&rsquo;s Time</div>
+    <div class="sub">Daily standup starts now</div>
+  </div>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- target: today at 10:30 local time ---- */
+  const target = new Date();
+  target.setHours(10, 30, 0, 0);
+
+  const start = Date.now();
+  const startRemaining = Math.max(1, target.getTime() - start);
+
+  const hh = document.getElementById('hh');
+  const mm = document.getElementById('mm');
+  const ss = document.getElementById('ss');
+  const bar = document.getElementById('bar');
+  const stage = document.getElementById('stage');
+  const done = document.getElementById('done');
+  const flash = document.getElementById('flash');
+
+  const pad = n => String(n).padStart(2, '0');
+  let lastS = -1, finished = false;
+
+  function setD(el, str){
+    let html = '';
+    for (const c of str) html += '<span class="d">' + c + '</span>';
+    el.innerHTML = html;
+  }
+
+  function tickPulse(el){
+    if (reduce) return;
+    el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick');
+  }
+
+  function updateClock(){
+    const remaining = target.getTime() - Date.now();
+    if (remaining <= 0){ if(!finished) finale(); setD(hh,'00');setD(mm,'00');setD(ss,'00');bar.style.transform='scaleX(0)';return; }
+    const totalS = Math.floor(remaining/1000);
+    const h = Math.floor(totalS/3600);
+    const m = Math.floor((totalS%3600)/60);
+    const s = totalS%60;
+    setD(hh,pad(h)); setD(mm,pad(m)); setD(ss,pad(s));
+    if (s !== lastS){ tickPulse(ss); if(s===0)tickPulse(mm); lastS=s; }
+    bar.style.transform = 'scaleX(' + Math.max(0, remaining/startRemaining) + ')';
+  }
+
+  /* ---- particle canvas ---- */
+  const cv = document.getElementById('fx');
+  const ctx = cv.getContext('2d');
+  let W, H, DPR;
+  function resize(){
+    DPR = Math.min(2, devicePixelRatio||1);
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = W*DPR; cv.height = H*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  resize(); addEventListener('resize', resize);
+
+  const embers = [];
+  const burst = [];
+  const palette = ['#ffd76b','#ff7e5f','#6be8ff','#ffffff','#ff5fa2','#9b7bff'];
+
+  function spawnEmber(){
+    embers.push({
+      x: Math.random()*W, y: H+10,
+      vx:(Math.random()-.5)*.25, vy:-(.25+Math.random()*.55),
+      r:.6+Math.random()*2.2, life:0, max:8+Math.random()*8,
+      c: Math.random()<.5?'#ffd76b':(Math.random()<.5?'#6be8ff':'#ff7e5f'),
+      ph:Math.random()*Math.PI*2
+    });
+  }
+  const emberCap = reduce ? 24 : 90;
+
+  function explode(cx, cy, n){
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2;
+      const sp = 2 + Math.random()*11;
+      burst.push({
+        x:cx,y:cy,
+        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - 2,
+        g:.12+Math.random()*.12,
+        r: Math.random()<.4 ? 2+Math.random()*3 : 3+Math.random()*7,
+        rot:Math.random()*Math.PI, vr:(Math.random()-.5)*.4,
+        life:0, max:60+Math.random()*70,
+        c: palette[(Math.random()*palette.length)|0],
+        shape: Math.random()<.5?'rect':'circle'
+      });
+    }
+  }
+
+  let finaleTime = 0;
+  function finale(){
+    finished = true;
+    stage.style.transition='opacity .5s ease, transform .5s ease';
+    stage.style.opacity='0'; stage.style.transform='scale(.96)';
+    setTimeout(()=>{ stage.style.display='none'; done.classList.add('show'); }, 360);
+    finaleTime = performance.now();
+    if (!reduce){
+      flash.animate(
+        [{opacity:0},{opacity:1,offset:.15},{opacity:0}],
+        {duration:900,easing:'ease-out'}
+      );
+      explode(W/2, H*0.45, 220);
+    } else {
+      explode(W/2, H*0.45, 60);
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.globalCompositeOperation='lighter';
+
+    // ambient embers (pause once finished for clarity)
+    if(!finished){
+      if(embers.length<emberCap && Math.random()<.6) spawnEmber();
+      for(let i=embers.length-1;i>=0;i--){
+        const p=embers[i]; p.life+=1/60*4;
+        p.x += p.vx + Math.sin(p.life+p.ph)*.2;
+        p.y += p.vy;
+        const t = p.life/p.max;
+        if(t>=1 || p.y<-10){ embers.splice(i,1); continue; }
+        const alpha = Math.sin(Math.min(1,t)*Math.PI)*.8;
+        ctx.beginPath(); ctx.fillStyle=p.c; ctx.globalAlpha=alpha;
+        ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+      }
+    }
+
+    // finale continuous confetti rain
+    if(finished && !reduce){
+      const elapsed = performance.now()-finaleTime;
+      if(elapsed<3500 && burst.length<900 && Math.random()<.9){
+        for(let k=0;k<5;k++){
+          burst.push({
+            x:Math.random()*W, y:-20,
+            vx:(Math.random()-.5)*1.5, vy:1+Math.random()*2.5,
+            g:.04+Math.random()*.05,
+            r:3+Math.random()*6, rot:Math.random()*Math.PI, vr:(Math.random()-.5)*.3,
+            life:0, max:200, c:palette[(Math.random()*palette.length)|0],
+            shape: Math.random()<.6?'rect':'circle'
+          });
+        }
+      }
+      if(elapsed>1300 && elapsed<2600 && Math.random()<.04){
+        explode(W*(.2+Math.random()*.6), H*(.25+Math.random()*.3), 70);
+      }
+    }
+
+    // burst / confetti
+    ctx.globalCompositeOperation='source-over';
+    for(let i=burst.length-1;i>=0;i--){
+      const p=burst[i]; p.life++;
+      p.vy+=p.g; p.x+=p.vx; p.y+=p.vy; p.rot+=p.vr;
+      if(p.life>p.max || p.y>H+40){ burst.splice(i,1); continue; }
+      const alpha = 1-(p.life/p.max);
+      ctx.save(); ctx.globalAlpha=Math.max(0,alpha);
+      ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.fillStyle=p.c;
+      ctx.shadowColor=p.c; ctx.shadowBlur=12;
+      if(p.shape==='rect') ctx.fillRect(-p.r/2,-p.r/2,p.r,p.r*1.6);
+      else { ctx.beginPath(); ctx.arc(0,0,p.r/1.6,0,Math.PI*2); ctx.fill(); }
+      ctx.restore();
+    }
+    ctx.globalAlpha=1;
+    requestAnimationFrame(draw);
+  }
+
+  updateClock();
+  setInterval(updateClock, 250);
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

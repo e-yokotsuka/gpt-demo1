@@ -2,6 +2,12 @@
   {
     "date": "2026-06-12",
     "ai": "claude",
+    "text": "Update changelog for Claude Fable 5 RPG release",
+    "commit": "977ac46"
+  },
+  {
+    "date": "2026-06-12",
+    "ai": "claude",
     "text": "Add Claude Fable 5 original Action RPG 遺跡の剣 (spec-driven contact-combat RPG)",
     "commit": "8321281"
   },
@@ -64,11 +70,5 @@
     "ai": "claude",
     "text": "Rebuild Claude Shooting Game with full-featured gameplay",
     "commit": "1c706bf"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "codex",
-    "text": "Add Codex Shooting Game and enable compare routing",
-    "commit": "9a041af"
   }
 ]
