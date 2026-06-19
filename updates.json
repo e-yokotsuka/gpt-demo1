@@ -2,6 +2,12 @@
   {
     "date": "2026-06-19",
     "ai": "claude",
+    "text": "Fix Claude Opus 4.8 demos broken when viewed via compare.html",
+    "commit": "abcf98a"
+  },
+  {
+    "date": "2026-06-19",
+    "ai": "claude",
     "text": "Add Claude Opus 4.8 versions of 5 large game demos — all 31 demos now covered",
     "commit": "a425aa0"
   },
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Complete deferred Codex demos for visual, static, and audio categories",
     "commit": "528a5b2"
-  },
-  {
-    "date": "2026-02-13",
-    "ai": "codex",
-    "text": "Add Codex Stereogram demo and enable compare entry",
-    "commit": "bfd4c8c"
   }
 ]
