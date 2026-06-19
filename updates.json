@@ -1,5 +1,11 @@
 [
   {
+    "date": "2026-06-19",
+    "ai": "claude",
+    "text": "Add Claude Opus 4.8 original Daily Standup Countdown demo",
+    "commit": "633bfba"
+  },
+  {
     "date": "2026-06-12",
     "ai": "claude",
     "text": "Update changelog for Claude Fable 5 RPG release",
@@ -64,11 +70,5 @@
     "ai": "codex",
     "text": "Add Codex PixiJS Tetris and enable compare entry",
     "commit": "397f6f9"
-  },
-  {
-    "date": "2026-02-12",
-    "ai": "claude",
-    "text": "Rebuild Claude Shooting Game with full-featured gameplay",
-    "commit": "1c706bf"
   }
 ]

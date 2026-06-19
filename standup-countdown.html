@@ -137,7 +137,7 @@
     </div>
 
     <div class="meta">
-      <p class="target">Starts at <b>10:30 AM</b></p>
+      <p class="target">Starts at <b>11:00 AM?</b></p>
       <div class="bar"><i id="bar"></i></div>
     </div>
   </main>
@@ -151,9 +151,9 @@
 (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* ---- target: today at 10:30 local time ---- */
+  /* ---- target: today at 11:00 local time (日本時間 午前11時) ---- */
   const target = new Date();
-  target.setHours(10, 30, 0, 0);
+  target.setHours(11, 0, 0, 0);
 
   const start = Date.now();
   const startRemaining = Math.max(1, target.getTime() - start);
