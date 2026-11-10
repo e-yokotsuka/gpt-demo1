@@ -2,6 +2,12 @@
   {
     "date": "2026-11-10",
     "ai": "claude",
+    "text": "Update changelog with Claude Fable 5.2 demos",
+    "commit": "68148b1"
+  },
+  {
+    "date": "2026-11-10",
+    "ai": "claude",
     "text": "Add Claude Fable 5.2 versions of 27 demos with in-page prompt viewer",
     "commit": "9799d1c"
   },
@@ -64,11 +70,5 @@
     "ai": "claude",
     "text": "Add Claude Opus 4.8 original Daily Standup Countdown demo",
     "commit": "633bfba"
-  },
-  {
-    "date": "2026-06-12",
-    "ai": "claude",
-    "text": "Update changelog for Claude Fable 5 RPG release",
-    "commit": "977ac46"
   }
 ]
