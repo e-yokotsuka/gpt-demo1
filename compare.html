@@ -121,6 +121,56 @@
 			height: 3px;
 			background: #f0a868;
 		}
+		.tab.active-fable52 {
+			color: #c4a5ff;
+			background: rgba(167, 139, 250, 0.14);
+		}
+		.tab.active-fable52::after {
+			content: "";
+			position: absolute;
+			bottom: -2px;
+			left: 0;
+			right: 0;
+			height: 3px;
+			background: #a78bfa;
+		}
+		/* タブが増えたので狭い画面では横スクロールできるようにする */
+		.tab-bar { overflow-x: auto; }
+		.tab { white-space: nowrap; flex-shrink: 0; }
+		/* プロンプト表示ボタン（Fable 5.2 版があるデモだけ表示） */
+		.prompt-btn {
+			border: 1px solid rgba(167, 139, 250, 0.5); background: rgba(167, 139, 250, 0.12); color: #d9c8ff;
+			font-size: 13px; font-weight: bold; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+			white-space: nowrap; transition: all 0.15s; display: none;
+		}
+		.prompt-btn:hover { background: rgba(167, 139, 250, 0.26); color: #fff; }
+		/* プロンプト表示モーダル */
+		.prompt-overlay {
+			position: fixed; inset: 0; z-index: 120; background: rgba(5, 8, 20, 0.72);
+			display: none; align-items: center; justify-content: center; padding: 16px;
+		}
+		.prompt-overlay.open { display: flex; }
+		.prompt-modal {
+			width: min(100%, 720px); max-height: 100%; overflow: auto; background: #16213e;
+			border: 1px solid #3b3470; border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,0.6);
+			padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px;
+		}
+		.prompt-head { display: flex; align-items: center; gap: 10px; }
+		.prompt-head h2 { font-size: 16px; color: #d9c8ff; flex: 1; }
+		.prompt-close {
+			border: none; background: transparent; color: #a8b2d1; font-size: 22px; cursor: pointer;
+			line-height: 1; padding: 2px 6px;
+		}
+		.prompt-close:hover { color: #fff; }
+		.prompt-note { font-size: 12px; color: #a8b2d1; line-height: 1.6; }
+		.prompt-section { font-size: 12px; font-weight: bold; color: #a78bfa; letter-spacing: 0.06em; }
+		.prompt-text {
+			white-space: pre-wrap; word-break: break-word; font-size: 13.5px; line-height: 1.75;
+			color: #e2e8f0; background: #0f1830; border: 1px solid #2a3f6a; border-radius: 9px;
+			padding: 12px 14px; font-family: inherit;
+		}
+		.prompt-text.is-main { border-color: #6d5bd0; font-size: 15px; }
+		.prompt-actions { display: flex; justify-content: flex-end; }
 		.iframe-container {
 			flex: 1;
 			position: relative;
@@ -193,8 +243,27 @@
 	<header>
 		<a href="./index.html">&larr; メニューに戻る</a>
 		<span id="demo-title"></span>
+		<button id="prompt-btn" class="prompt-btn" onclick="openPrompt()">📝 プロンプト</button>
 		<button id="share-btn" class="share-btn" onclick="toggleShare(event)">🔗 共有</button>
 	</header>
+
+	<!-- プロンプト表示モーダル：Claude Fable 5.2 版の生成に使ったプロンプトを確認できる -->
+	<div id="prompt-overlay" class="prompt-overlay" onclick="if (event.target === this) closePrompt()">
+		<div class="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+			<div class="prompt-head">
+				<h2 id="prompt-title">Claude Fable 5.2 版の生成プロンプト</h2>
+				<button class="prompt-close" onclick="closePrompt()" aria-label="閉じる">&times;</button>
+			</div>
+			<div class="prompt-note">Claude Fable 5.2 版は、下の「個別プロンプト」と全デモ共通の「共通指示」だけを渡して生成しています（他モデルの版は参照していません）。</div>
+			<div class="prompt-section">個別プロンプト</div>
+			<pre id="prompt-main" class="prompt-text is-main"></pre>
+			<div class="prompt-section">共通指示（全デモ共通）</div>
+			<pre id="prompt-common" class="prompt-text"></pre>
+			<div class="prompt-actions">
+				<button class="share-copy" onclick="copyPrompt()">プロンプトをコピー</button>
+			</div>
+		</div>
+	</div>
 
 	<!-- 共有ポップオーバー：表示中のデモ単体のリンクと、比較ページのリンクをコピーできる -->
 	<div id="share-pop" class="share-pop">
@@ -219,6 +288,7 @@
 		<button class="tab" id="tab-claude" onclick="switchTab('claude')">Claude Opus 4.6</button>
 		<button class="tab" id="tab-codex" onclick="switchTab('codex')">ChatGPT-5.3-Codex</button>
 		<button class="tab" id="tab-claude48" onclick="switchTab('claude48')">Claude Opus 4.8</button>
+		<button class="tab" id="tab-fable52" onclick="switchTab('fable52')">Claude Fable 5.2</button>
 		<button class="tab" id="tab-reason" onclick="switchTab('reason')">見送り理由</button>
 	</div>
 		<div class="iframe-container">
@@ -226,12 +296,15 @@
 		<iframe id="claude-frame" class="demo-frame"></iframe>
 		<iframe id="codex-frame" class="demo-frame"></iframe>
 		<iframe id="claude48-frame" class="demo-frame"></iframe>
+		<iframe id="fable52-frame" class="demo-frame"></iframe>
 		<iframe id="reason-frame" class="demo-frame"></iframe>
 		<div id="coming-soon" class="coming-soon">
 			<div id="coming-soon-title">準備中...</div>
 			<div id="coming-soon-detail" style="font-size:14px;color:#666">このデモのClaude版はまだ作成されていません</div>
 		</div>
 	</div>
+	<!-- Claude Fable 5.2 版の生成プロンプト定義（window.FABLE52_PROMPTS / FABLE52_PROMPT_COMMON） -->
+	<script src="./fable52/prompts.js"></script>
 	<script>
 		const DEFAULT_CODEX_REASON = "このデモのChatGPT-5.3-Codex版は未対応です。実装規模が大きいため、今回は見送りました。";
 		const DEFERRED_CODEX_DEMOS = {
@@ -296,6 +369,12 @@
 		const demoId = params.get("demo");
 		const config = DEMO_CONFIG[demoId];
 
+		// Claude Fable 5.2 版は「プロンプトが定義されているデモ = 実装済み」として自動で紐づける
+		const FABLE52_PROMPTS = window.FABLE52_PROMPTS || {};
+		const fable52Prompt = config ? FABLE52_PROMPTS[demoId] : null;
+		if (config && fable52Prompt) config.fable52 = `./fable52/${demoId}.html`;
+		const FABLE52_SKIP_MESSAGE = "このデモのClaude Fable 5.2版は、実装規模が大きくコストがかかるため見送りました";
+
 		// 各タブで読み込むURLを保持する。iframe の src は「初回にそのタブを開いた時」に
 		// 初めて設定する（＝遅延ロード）。こうしないと、非表示(display:none)の iframe 内で
 		// デモが初期化され、canvas が 0×0 になる・requestAnimationFrame が止まる、といった
@@ -308,6 +387,9 @@
 			FRAME_URLS.chatgpt = config.chatgpt || null;
 			FRAME_URLS.claude = config.claude || null;
 			FRAME_URLS.claude48 = config.claude48 || null;
+			FRAME_URLS.fable52 = config.fable52 || null;
+			// プロンプトボタンは Fable 5.2 版があるデモだけ表示
+			if (fable52Prompt) document.getElementById("prompt-btn").style.display = "inline-block";
 			// Codex は実装版が無ければ「見送り理由」ページを表示するため常にURLを持つ
 			FRAME_URLS.codex = config.codex || buildDeferredCodexUrl(config, demoId);
 			FRAME_URLS.reason = null;
@@ -328,7 +410,7 @@
 		let currentTab = "chatgpt";
 		// ?tab= が付いていれば、その版を初期表示にする（共有リンクからの遷移用）
 		const tabParam = params.get("tab");
-		if (config && tabParam && ["chatgpt", "claude", "claude48", "codex"].includes(tabParam) && hasSource(tabParam)) {
+		if (config && tabParam && ["chatgpt", "claude", "claude48", "codex", "fable52"].includes(tabParam) && hasSource(tabParam)) {
 			currentTab = tabParam;
 		}
 
@@ -352,7 +434,8 @@
 		}
 
 		function getMissingMessage(tab) {
-			const names = { chatgpt: "ChatGPT", claude: "Claude Opus 4.6", claude48: "Claude Opus 4.8", codex: "ChatGPT-5.3-Codex" };
+			const names = { chatgpt: "ChatGPT", claude: "Claude Opus 4.6", claude48: "Claude Opus 4.8", codex: "ChatGPT-5.3-Codex", fable52: "Claude Fable 5.2" };
+			if (tab === "fable52") return FABLE52_SKIP_MESSAGE;
 			return MISSING_VERSION_MESSAGES[demoId]?.[tab]
 				|| `このデモの${names[tab] || tab}版はまだ作成されていません`;
 		}
@@ -363,6 +446,7 @@
 			claude: { frame: "claude-frame", tab: "tab-claude", activeClass: "active-claude" },
 			claude48: { frame: "claude48-frame", tab: "tab-claude48", activeClass: "active-claude48" },
 			codex: { frame: "codex-frame", tab: "tab-codex", activeClass: "active-codex" },
+			fable52: { frame: "fable52-frame", tab: "tab-fable52", activeClass: "active-fable52" },
 			reason: { frame: "reason-frame", tab: "tab-reason", activeClass: "active-reason" },
 		};
 
@@ -412,7 +496,44 @@
 		// =====================================================================
 		// 共有：表示中のデモのリンクをコピーできるようにする
 		// =====================================================================
-		const TAB_DISPLAY = { chatgpt: "ChatGPT", claude: "Claude Opus 4.6", codex: "ChatGPT-5.3-Codex", claude48: "Claude Opus 4.8" };
+		const TAB_DISPLAY = { chatgpt: "ChatGPT", claude: "Claude Opus 4.6", codex: "ChatGPT-5.3-Codex", claude48: "Claude Opus 4.8", fable52: "Claude Fable 5.2" };
+
+		// =====================================================================
+		// プロンプト表示：Claude Fable 5.2 版の生成プロンプトをモーダルで見せる
+		// =====================================================================
+		function openPrompt() {
+			if (!fable52Prompt) return;
+			document.getElementById("prompt-title").textContent = `${config.title} — Claude Fable 5.2 版の生成プロンプト`;
+			document.getElementById("prompt-main").textContent = fable52Prompt;
+			document.getElementById("prompt-common").textContent = window.FABLE52_PROMPT_COMMON || "";
+			document.getElementById("prompt-overlay").classList.add("open");
+		}
+		function closePrompt() {
+			document.getElementById("prompt-overlay").classList.remove("open");
+		}
+		// 実際にモデルへ渡した形（共通指示 + 個別プロンプト）でコピーする
+		async function copyPrompt() {
+			const text = `${window.FABLE52_PROMPT_COMMON || ""}\n\n【デモID】${demoId}\n【個別プロンプト】\n${fable52Prompt}`;
+			let ok = false;
+			try {
+				if (navigator.clipboard?.writeText) {
+					await navigator.clipboard.writeText(text);
+					ok = true;
+				}
+			} catch (e) { /* secure context 以外では失敗するのでフォールバックへ */ }
+			if (!ok) {
+				const ta = document.createElement("textarea");
+				ta.value = text;
+				document.body.appendChild(ta);
+				ta.select();
+				try { document.execCommand("copy"); } catch (e) {}
+				ta.remove();
+			}
+			showToast("プロンプトをコピーしました");
+		}
+		document.addEventListener("keydown", (e) => {
+			if (e.key === "Escape") closePrompt();
+		});
 
 		// 表示中タブのデモ単体（HTML直リンク）の絶対URL。単体が無ければ null
 		function soloUrl() {
@@ -458,8 +579,9 @@
 		});
 
 		let toastTimer = 0;
-		function showToast() {
+		function showToast(message) {
 			const t = document.getElementById("share-toast");
+			t.textContent = message || "リンクをコピーしました";
 			t.classList.add("show");
 			clearTimeout(toastTimer);
 			toastTimer = setTimeout(() => t.classList.remove("show"), 1500);

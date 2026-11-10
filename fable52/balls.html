@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>Bouncing Colorful Balls - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; overflow: hidden; background: #10131c; }
+	canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+	canvas.grabbing { cursor: grabbing; }
+	.hint, .credit, .stat {
+		position: fixed; pointer-events: none; user-select: none;
+		font: 11px/1.6 "Segoe UI", "Hiragino Sans", Meiryo, sans-serif; letter-spacing: .08em;
+		color: rgba(220, 228, 250, .5);
+	}
+	.hint { left: 14px; bottom: 12px; }
+	.credit { right: 14px; bottom: 12px; }
+	.stat { left: 14px; top: 12px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="stat" id="stat"></div>
+<div class="hint">クリック: ボール追加 ／ ドラッグ: つかんで投げる ／ Space: はじく ／ G: 重力 ／ C: リセット</div>
+<div class="credit">Claude Fable 5.2</div>
+<script>
+(() => {
+	"use strict";
+	const cv = document.getElementById("c");
+	const ctx = cv.getContext("2d");
+	const statEl = document.getElementById("stat");
+	const TAU = Math.PI * 2;
+	const rand = (a, b) => a + Math.random() * (b - a);
+
+	const GRAVITY = 1500; // px/秒²
+	const WALL_E = 0.8; // 壁の反発係数
+	const BALL_E = 0.88; // ボール同士の反発係数
+	const MAX_BALLS = 180;
+	const SUB = 4; // 1フレームあたりの物理サブステップ数
+	const FLOOR_PAD = 34; // 床より下の余白（影と操作説明の置き場）
+
+	let W = 0, H = 0, DPR = 1, floorY = 0;
+	let balls = [];
+	let gravityOn = true;
+	let grabbed = null;
+	const pointer = { x: 0, y: 0 };
+	let hueSeed = rand(0, 360);
+
+	// ボールの見た目は生成時に一度だけ描いておく（毎フレームのグラデーション生成を避ける）
+	function makeSprite(r, hue) {
+		const s = document.createElement("canvas");
+		const size = Math.ceil((r + 2) * 2 * DPR);
+		s.width = s.height = size;
+		const g = s.getContext("2d");
+		g.scale(DPR, DPR);
+		const c = r + 2;
+		// 本体: 左上から光が当たった球
+		const body = g.createRadialGradient(c - r * 0.35, c - r * 0.4, r * 0.05, c, c, r);
+		body.addColorStop(0, `hsl(${hue}, 100%, 78%)`);
+		body.addColorStop(0.45, `hsl(${hue}, 88%, 56%)`);
+		body.addColorStop(1, `hsl(${hue + 18}, 80%, 26%)`);
+		g.fillStyle = body;
+		g.beginPath(); g.arc(c, c, r, 0, TAU); g.fill();
+		// 下側の照り返し
+		const rim = g.createRadialGradient(c + r * 0.25, c + r * 0.45, r * 0.3, c, c, r);
+		rim.addColorStop(0, "rgba(255,255,255,0)");
+		rim.addColorStop(0.85, "rgba(255,255,255,0)");
+		rim.addColorStop(1, `hsla(${hue - 20}, 100%, 85%, .35)`);
+		g.fillStyle = rim;
+		g.beginPath(); g.arc(c, c, r, 0, TAU); g.fill();
+		// ハイライト
+		g.save();
+		g.translate(c - r * 0.38, c - r * 0.45); g.rotate(-0.7); g.scale(1, 0.6);
+		const hl = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.42);
+		hl.addColorStop(0, "rgba(255,255,255,.95)");
+		hl.addColorStop(1, "rgba(255,255,255,0)");
+		g.fillStyle = hl;
+		g.beginPath(); g.arc(0, 0, r * 0.42, 0, TAU); g.fill();
+		g.restore();
+		return s;
+	}
+
+	function addBall(x, y, vx = 0, vy = 0, r = rand(14, 44)) {
+		// 黄金角ずつ色相をずらすと、隣り合う色がほどよく散らばる
+		hueSeed = (hueSeed + 137.5) % 360;
+		const b = { x, y, vx, vy, r, m: r * r, hue: hueSeed, sprite: makeSprite(r, hueSeed), squash: 0 };
+		balls.push(b);
+		if (balls.length > MAX_BALLS) {
+			const i = balls.findIndex((o) => o !== grabbed);
+			balls.splice(i, 1);
+		}
+		return b;
+	}
+
+	function reset() {
+		balls = []; grabbed = null;
+		const n = Math.max(10, Math.min(26, Math.round(W / 60)));
+		for (let i = 0; i < n; i++) addBall(rand(60, W - 60), rand(40, floorY * 0.6), rand(-400, 400), rand(-300, 100));
+	}
+
+	function resize() {
+		const w = window.innerWidth || 960, h = window.innerHeight || 600;
+		const d = Math.min(window.devicePixelRatio || 1, 2);
+		if (w === W && h === H && d === DPR) return;
+		const first = W === 0, dprChanged = d !== DPR;
+		W = w; H = h; DPR = d;
+		floorY = H - FLOOR_PAD;
+		cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+		if (first) reset();
+		else if (dprChanged) for (const b of balls) b.sprite = makeSprite(b.r, b.hue);
+	}
+
+	// ---------- 効果音（最初の操作のあとにだけ鳴る、控えめな衝突音） ----------
+	let ac = null, lastTick = 0;
+	function initAudio() {
+		if (ac) return;
+		const AC = window.AudioContext || window.webkitAudioContext;
+		if (AC) ac = new AC();
+	}
+	function tick(strength, r) {
+		if (!ac || ac.state !== "running") return;
+		const now = ac.currentTime;
+		if (now - lastTick < 0.035) return;
+		lastTick = now;
+		const o = ac.createOscillator(), g = ac.createGain();
+		o.type = "sine";
+		const f = 180 + 5200 / r; // 小さいボールほど高い音
+		o.frequency.setValueAtTime(f * 1.5, now);
+		o.frequency.exponentialRampToValueAtTime(f, now + 0.05);
+		g.gain.setValueAtTime(Math.min(0.14, strength * 0.00016), now);
+		g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+		o.connect(g); g.connect(ac.destination);
+		o.start(now); o.stop(now + 0.13);
+	}
+
+	// ---------- 物理 ----------
+	function step(dt) {
+		for (const b of balls) {
+			if (b === grabbed) {
+				// つかんだボールはポインタへ強いバネで追従させる（離した瞬間の速度がそのまま投げる速度になる）
+				b.vx = (pointer.x - b.x) * 22; b.vy = (pointer.y - b.y) * 22;
+				const sp = Math.hypot(b.vx, b.vy);
+				if (sp > 4200) { b.vx *= 4200 / sp; b.vy *= 4200 / sp; }
+			} else if (gravityOn) b.vy += GRAVITY * dt;
+			b.x += b.vx * dt; b.y += b.vy * dt;
+			// 壁・床・天井
+			if (b.x < b.r) { b.x = b.r; if (b.vx < 0) { hit(b, -b.vx); b.vx *= -WALL_E; } }
+			else if (b.x > W - b.r) { b.x = W - b.r; if (b.vx > 0) { hit(b, b.vx); b.vx *= -WALL_E; } }
+			if (b.y < b.r) { b.y = b.r; if (b.vy < 0) { hit(b, -b.vy); b.vy *= -WALL_E; } }
+			else if (b.y > floorY - b.r) {
+				b.y = floorY - b.r;
+				if (b.vy > 0) {
+					hit(b, b.vy);
+					// ごく小さな跳ね返りは止めて、床の上で震え続けないようにする
+					b.vy = b.vy < 60 ? 0 : -b.vy * WALL_E;
+				}
+				b.vx *= 1 - 0.9 * dt; // 転がり摩擦
+			}
+		}
+		// ボール同士の衝突
+		const n = balls.length;
+		for (let i = 0; i < n; i++) {
+			const a = balls[i];
+			for (let j = i + 1; j < n; j++) {
+				const b = balls[j];
+				const dx = b.x - a.x, dy = b.y - a.y, rs = a.r + b.r;
+				const d2 = dx * dx + dy * dy;
+				if (d2 >= rs * rs) continue;
+				const d = Math.sqrt(d2) || 0.001;
+				const nx = dx / d, ny = dy / d;
+				// つかまれているボールは「無限に重い」扱いにして、相手だけを押しのける
+				const ia = a === grabbed ? 0 : 1 / a.m, ib = b === grabbed ? 0 : 1 / b.m;
+				const isum = ia + ib;
+				if (isum === 0) continue;
+				// めり込みの解消
+				const pen = (rs - d) / isum;
+				a.x -= nx * pen * ia; a.y -= ny * pen * ia;
+				b.x += nx * pen * ib; b.y += ny * pen * ib;
+				// 法線方向の相対速度から撃力を求める
+				const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+				if (vn >= 0) continue;
+				const e = vn > -50 ? 0 : BALL_E;
+				const jimp = (-(1 + e) * vn) / isum;
+				a.vx -= nx * jimp * ia; a.vy -= ny * jimp * ia;
+				b.vx += nx * jimp * ib; b.vy += ny * jimp * ib;
+				if (vn < -160) {
+					const s = Math.min(1, -vn / 1400);
+					a.squash = Math.max(a.squash, s); b.squash = Math.max(b.squash, s);
+					tick(-vn, Math.min(a.r, b.r));
+				}
+			}
+		}
+	}
+
+	function hit(b, v) {
+		if (v < 160) return;
+		b.squash = Math.max(b.squash, Math.min(1, v / 1400));
+		tick(v * 0.7, b.r);
+	}
+
+	// ---------- 描画 ----------
+	function draw(dt) {
+		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+		const bgG = ctx.createLinearGradient(0, 0, 0, H);
+		bgG.addColorStop(0, "#161a27"); bgG.addColorStop(1, "#232a3d");
+		ctx.fillStyle = bgG; ctx.fillRect(0, 0, W, H);
+		// 床
+		const fl = ctx.createLinearGradient(0, floorY, 0, H);
+		fl.addColorStop(0, "#2f3850"); fl.addColorStop(1, "#1b2030");
+		ctx.fillStyle = fl; ctx.fillRect(0, floorY, W, H - floorY);
+		ctx.fillStyle = "rgba(255,255,255,.1)"; ctx.fillRect(0, floorY, W, 1);
+
+		// 床に落ちる影（高いところにあるほど薄く広がる）
+		for (const b of balls) {
+			const h = Math.max(0, floorY - b.y - b.r);
+			const k = 1 / (1 + h / 220);
+			ctx.fillStyle = `rgba(0,0,0,${0.42 * k})`;
+			ctx.beginPath();
+			ctx.ellipse(b.x, floorY + 5, b.r * (0.75 + 0.5 * (1 - k)), b.r * 0.16 * (0.6 + 0.4 * k), 0, 0, TAU);
+			ctx.fill();
+		}
+		for (const b of balls) {
+			b.squash *= Math.exp(-dt * 14);
+			const size = b.sprite.width / DPR;
+			// 速度方向にわずかに伸ばし、衝突直後は膨らませて弾力を出す
+			const sp = Math.hypot(b.vx, b.vy);
+			const st = Math.min(0.16, sp / 14000);
+			ctx.save();
+			ctx.translate(b.x, b.y);
+			if (st > 0.01) {
+				const a = Math.atan2(b.vy, b.vx);
+				ctx.rotate(a); ctx.scale(1 + st, 1 - st * 0.7); ctx.rotate(-a);
+			}
+			const sc = 1 + b.squash * 0.1;
+			ctx.scale(sc, sc);
+			ctx.drawImage(b.sprite, -size / 2, -size / 2, size, size);
+			ctx.restore();
+		}
+		// つかんでいるボールに輪を出す
+		if (grabbed) {
+			ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 1.5;
+			ctx.beginPath(); ctx.arc(grabbed.x, grabbed.y, grabbed.r + 5, 0, TAU); ctx.stroke();
+		}
+		statEl.textContent = `BALLS ${balls.length}　GRAVITY ${gravityOn ? "ON" : "OFF"}`;
+	}
+
+	let prev = performance.now();
+	function frame(now) {
+		const dt = Math.min(0.033, (now - prev) / 1000);
+		prev = now;
+		for (let i = 0; i < SUB; i++) step(dt / SUB);
+		draw(dt);
+		requestAnimationFrame(frame);
+	}
+
+	// ---------- 入力 ----------
+	cv.addEventListener("pointerdown", (e) => {
+		window.focus();
+		initAudio();
+		if (ac && ac.state === "suspended") ac.resume();
+		pointer.x = e.clientX; pointer.y = e.clientY;
+		// 手前（後から追加した）のボールを優先してつかむ
+		grabbed = null;
+		for (let i = balls.length - 1; i >= 0; i--) {
+			const b = balls[i];
+			if (Math.hypot(b.x - pointer.x, b.y - pointer.y) <= b.r + 4) { grabbed = b; break; }
+		}
+		// 何もない場所なら新しいボールを作り、そのままつかむ（すぐ投げられる）
+		if (!grabbed) grabbed = addBall(pointer.x, Math.min(pointer.y, floorY - 20));
+		cv.classList.add("grabbing");
+		try { cv.setPointerCapture(e.pointerId); } catch (_) { /* 取得できなくても動作に支障なし */ }
+	});
+	cv.addEventListener("pointermove", (e) => { pointer.x = e.clientX; pointer.y = e.clientY; });
+	const release = () => { grabbed = null; cv.classList.remove("grabbing"); };
+	cv.addEventListener("pointerup", release);
+	cv.addEventListener("pointercancel", release);
+
+	window.addEventListener("keydown", (e) => {
+		if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+		if (e.repeat) return;
+		if (e.key === " ") {
+			// 全部のボールを上へはじき飛ばす
+			for (const b of balls) { b.vy -= rand(700, 1300); b.vx += rand(-500, 500); }
+		} else if (e.key === "g" || e.key === "G") gravityOn = !gravityOn;
+		else if (e.key === "c" || e.key === "C") reset();
+	});
+	window.addEventListener("resize", resize);
+	if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+	resize();
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="ai.author" content="Claude Fable 5.2">
+	<meta name="ai.model" content="claude-fable-5-2">
+	<title>絵本「ひなたぼっこと太陽をさがすねこ」 - Claude Fable 5.2版</title>
+	<style>
+		:root {
+			/* --s は1ページ（正方形）の一辺。見開きで横 2s になる */
+			--s: min(47vw, calc(100vh - 92px));
+			--paper: #fbf5e6;
+			--ink: #4a3626;
+			--sun: #f6a623;
+		}
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		html, body { height: 100%; }
+		body {
+			background:
+				radial-gradient(ellipse at 50% 0%, #fff3c9 0%, transparent 60%),
+				linear-gradient(#f7d58b, #e9a55c);
+			color: var(--ink);
+			font-family: "UD デジタル 教科書体 NK-R", "UD Digi Kyokasho NK-R", "Hiragino Maru Gothic ProN", "Klee One", "Yu Mincho", "Hiragino Mincho ProN", serif;
+			overflow: hidden;
+			user-select: none;
+			-webkit-user-select: none;
+		}
+		.stage {
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			gap: 12px;
+			padding: 8px;
+		}
+
+		/* ===== 本 ===== */
+		.book {
+			position: relative;
+			width: calc(var(--s) * 2);
+			height: var(--s);
+			font-size: calc(var(--s) * .044);
+			perspective: calc(var(--s) * 5);
+			border-radius: 6px;
+			/* 表紙の厚みと机に落ちる影 */
+			box-shadow:
+				0 0 0 calc(var(--s) * .012) #a8552f,
+				0 calc(var(--s) * .03) calc(var(--s) * .07) rgba(90, 40, 0, .45);
+			cursor: pointer;
+		}
+		.half { position: absolute; top: 0; width: 50%; height: 100%; overflow: hidden; }
+		#L { left: 0; border-radius: 6px 0 0 6px; }
+		#R { left: 50%; border-radius: 0 6px 6px 0; }
+		/* めくれる1枚。表＝右ページ、裏＝次の左ページ */
+		.leaf {
+			position: absolute;
+			left: 50%;
+			top: 0;
+			width: 50%;
+			height: 100%;
+			transform-origin: 0 50%;
+			transform-style: preserve-3d;
+			display: none;
+			z-index: 5;
+		}
+		.leaf .face { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+		.leaf .back { transform: rotateY(180deg); }
+
+		/* ===== ページの中身 ===== */
+		.pg { position: absolute; inset: 0; background: var(--paper); }
+		/* のど（綴じ目）の影 */
+		.pg::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+		.pg.l::after { background: linear-gradient(90deg, transparent 86%, rgba(80, 40, 0, .28)); }
+		.pg.r::after { background: linear-gradient(270deg, transparent 86%, rgba(80, 40, 0, .22)); }
+		.pg img { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none; }
+		.pg.text {
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			padding: 8% 9% 10% 11%;
+			background:
+				radial-gradient(circle at 85% 12%, rgba(246, 166, 35, .16), transparent 42%),
+				var(--paper);
+		}
+		.pg.text p {
+			line-height: 1.95;
+			letter-spacing: .06em;
+			word-break: keep-all; /* 分かち書きの空白でだけ改行する */
+			overflow-wrap: anywhere;
+		}
+		.pg.text p + p { margin-top: .5em; }
+		.pg.text p.say { color: #b8551b; }
+		.no { position: absolute; bottom: 4%; right: 7%; font-size: .72em; opacity: .55; }
+		.no::before { content: "☀ "; color: var(--sun); }
+
+		/* 表紙・おしまいページ用の太陽 */
+		.deco { display: grid; place-items: center; background: linear-gradient(#ffe9a8, #ffd070); }
+		.sunny { position: relative; width: 46%; aspect-ratio: 1; }
+		.sunny::before {
+			content: "";
+			position: absolute;
+			inset: -38%;
+			border-radius: 50%;
+			background: repeating-conic-gradient(rgba(246, 140, 20, .55) 0 8deg, transparent 8deg 22.5deg);
+			-webkit-mask: radial-gradient(closest-side, transparent 58%, #000 60%, transparent 100%);
+			mask: radial-gradient(closest-side, transparent 58%, #000 60%, transparent 100%);
+			animation: turn 40s linear infinite;
+		}
+		.sunny::after {
+			content: "";
+			position: absolute;
+			inset: 0;
+			border-radius: 50%;
+			background: radial-gradient(circle at 38% 34%, #fff6c8, #ffc23d 55%, #f59a1b);
+			box-shadow: 0 0 calc(var(--s) * .08) rgba(255, 190, 60, .9);
+		}
+		/* にっこり顔 */
+		.sunny i {
+			position: absolute;
+			z-index: 1;
+			left: 27%;
+			top: 44%;
+			width: 46%;
+			height: 30%;
+			border-bottom: calc(var(--s) * .012) solid #a3541a;
+			border-radius: 0 0 50% 50%;
+		}
+		@keyframes turn { to { transform: rotate(360deg); } }
+		.title { align-items: center; text-align: center; padding: 8% !important; }
+		.title h1 { font-size: 2em; line-height: 1.5; letter-spacing: .08em; font-weight: 700; }
+		.title h1 span { display: block; font-size: .55em; color: #b8551b; letter-spacing: .3em; }
+		.title .by { margin-top: 1.6em; font-size: .78em; opacity: .7; line-height: 1.8 !important; }
+		.title .fin { font-size: 2.6em; letter-spacing: .3em; color: #b8551b; }
+
+		/* ===== 操作バー ===== */
+		.bar { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+		.bar button {
+			width: 38px;
+			height: 38px;
+			border-radius: 50%;
+			border: 2px solid #a8552f;
+			background: var(--paper);
+			color: #a8552f;
+			font-size: 15px;
+			cursor: pointer;
+			transition: transform .15s, opacity .2s;
+		}
+		.bar button:hover { transform: scale(1.1); }
+		.bar button:disabled { opacity: .3; cursor: default; transform: none; }
+		.dots { display: flex; gap: 6px; }
+		.dots i { width: 9px; height: 9px; border-radius: 50%; background: rgba(120, 60, 20, .28); cursor: pointer; transition: transform .2s, background .2s; }
+		.dots i.on { background: #d9621c; transform: scale(1.35); }
+		.hint { font-size: 11px; color: rgba(90, 50, 20, .75); letter-spacing: .05em; }
+		.credit { position: fixed; right: 8px; bottom: 5px; font-size: 10px; color: rgba(90, 50, 20, .6); font-family: sans-serif; }
+
+		/* ===== 縦長画面：絵の下に文章を置く1ページ表示 ===== */
+		@media (max-aspect-ratio: 1/1) {
+			:root { --s: min(92vw, calc((100vh - 116px) / 1.82)); }
+			.stage { gap: 8px; }
+			.credit { position: static; }
+			.book { width: var(--s); height: calc(var(--s) * 1.82); font-size: calc(var(--s) * .043); }
+			.half { position: relative; width: 100%; left: 0 !important; }
+			#L { height: var(--s); border-radius: 6px 6px 0 0; }
+			#R { height: calc(var(--s) * .82); border-radius: 0 0 6px 6px; }
+			.pg::after { display: none; }
+			.pg.text { padding: 4% 7%; }
+			.pg.text p { line-height: 1.7; }
+			.title h1 { font-size: 1.6em; }
+		}
+	</style>
+</head>
+<body>
+	<div class="stage">
+		<div class="book" id="book">
+			<div class="half" id="L"></div>
+			<div class="half" id="R"></div>
+			<div class="leaf" id="leaf"><div class="face front" id="F"></div><div class="face back" id="B"></div></div>
+		</div>
+		<div class="bar">
+			<button id="prev" aria-label="まえのページ">◀</button>
+			<div class="dots" id="dots"></div>
+			<button id="next" aria-label="つぎのページ">▶</button>
+		</div>
+		<p class="hint">ページを クリック / ← → キー / スワイプで めくれます</p>
+		<div class="credit">Claude Fable 5.2</div>
+	</div>
+
+	<script>
+		// 本文。挿絵 page1〜10 の絵に合わせて書き下ろし（「」で始まる行はせりふ色になる）
+		const STORY = [
+			["まどべの ふかふか クッション。", "ねこの トラは、きょうも ひなたぼっこ。", "「おひさま、ぽかぽか。 いい きもち」"],
+			["ところが、ゆうがた。", "おひさまは うみの むこうへ ゆっくり しずんで いきます。", "「まって。 どこへ いくの？」", "トラは かげみたいに まっくろに なって、じっと みつめました。"],
+			["「よし、おいかけよう」", "トラは きりの かかった たにの ほそい みちを、てくてく あるきだしました。", "おひさまは きっと、あの やまの むこう。"],
+			["みちの とちゅうで、ふしぎな たびの なかまに であいました。", "ねこみみの おんなのこ、ぼうしの まほうつかい、しろくて まるい いきもの。", "「おひさま？ あっちだよ！」「いや、こっち！」", "みんな いうことが ばらばらです。"],
+			["あるいて、あるいて、もう くたくた。", "おおきな きの ねもとで、なかまの ひとりが ころんと ねて しまいました。", "それを みていたら、トラの まぶたも とろーん……。"],
+			["ぱちり。", "めを さますと、そこは いつもの ベッドの うえでした。", "まどの そとが、なんだか あかるい。", "「……おや？」"],
+			["「おひさまだ！」", "トラは そとへ とびだして、おもいきり ジャンプ！", "「いた！ いた！ あさに なったら、ちゃんと かえって きた！」"],
+			["トラは めを とじて、うんうんと うなずきました。", "「おいかけなくても よかったんだ」", "「なにかが ほしい ときは、ねて いれば よいのだ」", "ねこは、さとりました。"],
+			["うみべでは、おねえさんも しずかに めを とじて います。", "なみの おと。 やしの はの かげ。", "あわてない ひとの ところに、おひさまは ちゃんと やって くるのです。"],
+			["だから きょうも、トラは ひなたぼっこ。", "ひかりを あびて まっしろに かがやきながら、なかよしの おねえちゃんの おひざで にっこり。", "「おひさま、ぽかぽか。 いい きもち」"],
+		];
+		const LAST = STORY.length + 1; // 0=表紙, 1〜10=本文, 11=おしまい
+
+		const sun = '<div class="pg l deco"><div class="sunny"><i></i></div></div>';
+		// 左ページ（絵）の HTML
+		function leftHTML(i) {
+			if (i === 0 || i === LAST) return sun;
+			return `<div class="pg l"><img src="../page${i}_image.png" alt="さしえ ${i}" draggable="false"></div>`;
+		}
+		// 右ページ（文章）の HTML
+		function rightHTML(i) {
+			if (i === 0) {
+				return '<div class="pg r text title"><h1><span>えほん</span>ひなたぼっこと<br>たいようを さがす<br>ねこ</h1><p class="by">ぶん　Claude Fable 5.2<br>▶ を おして はじめよう</p></div>';
+			}
+			if (i === LAST) {
+				return '<div class="pg r text title"><p class="fin">おしまい</p><p class="by">さがしものは、ねて まとう。<br>◀ で もどれます</p></div>';
+			}
+			const ps = STORY[i - 1].map((t) => `<p${t[0] === "「" ? ' class="say"' : ""}>${t}</p>`).join("");
+			return `<div class="pg r text">${ps}<span class="no">${i}</span></div>`;
+		}
+
+		const $ = (id) => document.getElementById(id);
+		const L = $("L"), R = $("R"), F = $("F"), B = $("B"), leaf = $("leaf"), book = $("book");
+		const stacked = matchMedia("(max-aspect-ratio: 1/1)");
+		let cur = 0;
+		let busy = false;
+
+		// ページ位置のドット
+		const dots = $("dots");
+		for (let i = 0; i <= LAST; i++) {
+			const d = document.createElement("i");
+			d.addEventListener("click", (e) => { e.stopPropagation(); go(i); });
+			dots.appendChild(d);
+		}
+		function syncUI() {
+			[...dots.children].forEach((d, i) => d.classList.toggle("on", i === cur));
+			$("prev").disabled = cur === 0;
+			$("next").disabled = cur === LAST;
+		}
+		function render() {
+			L.innerHTML = leftHTML(cur);
+			R.innerHTML = rightHTML(cur);
+			syncUI();
+		}
+
+		// ページをめくる。隣のページへは紙がめくれるアニメーション、それ以外はフェード
+		function go(to) {
+			to = Math.max(0, Math.min(LAST, to));
+			if (busy || to === cur) return;
+			const from = cur;
+			cur = to;
+			syncUI();
+			if (stacked.matches || Math.abs(to - from) !== 1 || !leaf.animate) {
+				busy = true;
+				book.style.transition = "opacity .22s";
+				book.style.opacity = 0;
+				setTimeout(() => {
+					render();
+					book.style.opacity = 1;
+					busy = false;
+				}, 230);
+				return;
+			}
+			busy = true;
+			const fwd = to > from;
+			// 紙の表に「小さい方の番号の右ページ」、裏に「大きい方の番号の左ページ」を貼る
+			F.innerHTML = rightHTML(fwd ? from : to);
+			B.innerHTML = leftHTML(fwd ? to : from);
+			leaf.style.display = "block";
+			// 紙の下に隠れる側を先に差し替えておく
+			if (fwd) R.innerHTML = rightHTML(to);
+			else L.innerHTML = leftHTML(to);
+			const a = leaf.animate(
+				[{ transform: `rotateY(${fwd ? 0 : -180}deg)` }, { transform: `rotateY(${fwd ? -180 : 0}deg)` }],
+				{ duration: 850, easing: "cubic-bezier(.45,.05,.3,1)" },
+			);
+			a.onfinish = a.oncancel = () => {
+				render();
+				leaf.style.display = "none";
+				busy = false;
+			};
+		}
+
+		// 入力：ボタン・ページクリック・キーボード・スワイプ
+		$("prev").addEventListener("click", () => go(cur - 1));
+		$("next").addEventListener("click", () => go(cur + 1));
+		let sx = null, swiped = false;
+		book.addEventListener("pointerdown", (e) => { sx = e.clientX; swiped = false; });
+		book.addEventListener("pointerup", (e) => {
+			if (sx === null) return;
+			const dx = e.clientX - sx;
+			sx = null;
+			if (Math.abs(dx) > 40) {
+				swiped = true;
+				go(cur + (dx < 0 ? 1 : -1));
+			}
+		});
+		book.addEventListener("click", (e) => {
+			if (swiped) return;
+			const r = book.getBoundingClientRect();
+			// 縦長表示ではどこを押しても次へ。見開きでは左半分で戻る
+			const back = !stacked.matches && e.clientX < r.left + r.width / 2;
+			go(cur + (back ? -1 : 1));
+		});
+		addEventListener("keydown", (e) => {
+			if (e.key === "ArrowRight" || e.key === " " || e.key === "Enter") { e.preventDefault(); go(cur + 1); }
+			else if (e.key === "ArrowLeft") { e.preventDefault(); go(cur - 1); }
+			else if (e.key === "Home") go(0);
+		});
+		// iframe 内でもキー操作できるようフォーカスを取る
+		addEventListener("pointerdown", () => window.focus());
+
+		// 挿絵を先読みして、めくった瞬間の白抜けを防ぐ
+		for (let i = 1; i <= STORY.length; i++) new Image().src = `../page${i}_image.png`;
+
+		render();
+	</script>
+</body>
+</html>

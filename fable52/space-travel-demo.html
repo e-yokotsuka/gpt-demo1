@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="ai.author" content="Claude Fable 5.2">
+	<meta name="ai.model" content="claude-fable-5-2">
+	<title>Space Travel Demo - Claude Fable 5.2版</title>
+	<style>
+		html, body { margin: 0; height: 100%; background: #02030a; overflow: hidden; }
+		canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+		.hud { position: fixed; color: #9fd4ff; font: 12px/1.6 "Consolas", "Menlo", monospace; letter-spacing: .08em; pointer-events: none; text-shadow: 0 0 8px #0af8; }
+		#stat { left: 18px; top: 14px; }
+		#stat b { color: #fff; font-weight: normal; font-size: 20px; }
+		#bar { width: 150px; height: 3px; background: #9fd4ff33; margin-top: 6px; }
+		#bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #4af, #fff); box-shadow: 0 0 8px #6cf; }
+		#help { left: 18px; bottom: 14px; opacity: .6; }
+		#credit { right: 18px; bottom: 14px; opacity: .45; }
+	</style>
+</head>
+<body>
+	<canvas id="c"></canvas>
+	<div class="hud" id="stat">VELOCITY <b id="vel">0.0</b> c<div id="bar"><i id="gauge"></i></div><span id="dist"></span></div>
+	<div class="hud" id="help">マウス: 進路変更 ／ 長押し・Space: ワープ</div>
+	<div class="hud" id="credit">Claude Fable 5.2</div>
+	<script>
+		// ===== スターフィールド宇宙旅行（ライブラリなし Canvas 2D） =====
+		const cv = document.getElementById("c");
+		const ctx = cv.getContext("2d");
+		const velEl = document.getElementById("vel");
+		const gaugeEl = document.getElementById("gauge");
+		const distEl = document.getElementById("dist");
+
+		let W = 960, H = 600, DPR = 1, focal = 480;
+		let nebula = null; // 背景の星雲（オフスクリーンに一度だけ描く）
+
+		const rand = (a, b) => a + Math.random() * (b - a);
+
+		// 画面サイズ変更（iframe 内でサイズ 0 でも復帰できるようフォールバックあり）
+		function resize() {
+			DPR = Math.min(window.devicePixelRatio || 1, 2);
+			W = window.innerWidth || 960;
+			H = window.innerHeight || 600;
+			cv.width = Math.round(W * DPR);
+			cv.height = Math.round(H * DPR);
+			focal = Math.max(W, H) * 0.55;
+			makeNebula();
+		}
+
+		// 星雲: ぼかした円を重ねて雲のように見せる
+		function makeNebula() {
+			nebula = document.createElement("canvas");
+			const w = nebula.width = Math.max(2, Math.round(W / 2));
+			const h = nebula.height = Math.max(2, Math.round(H / 2));
+			const g = nebula.getContext("2d");
+			g.fillStyle = "#02030a";
+			g.fillRect(0, 0, w, h);
+			g.globalCompositeOperation = "lighter";
+			const hues = [215, 265, 320, 190];
+			for (let i = 0; i < 46; i++) {
+				// 対角線に沿った帯状に配置して天の川風に
+				const t = Math.random();
+				const x = w * t + rand(-0.22, 0.22) * w;
+				const y = h * (0.85 - t * 0.7) + rand(-0.2, 0.2) * h;
+				const r = rand(0.08, 0.3) * Math.max(w, h);
+				const hue = hues[i % hues.length] + rand(-15, 15);
+				const gr = g.createRadialGradient(x, y, 0, x, y, r);
+				gr.addColorStop(0, `hsla(${hue},80%,55%,${rand(0.03, 0.09)})`);
+				gr.addColorStop(1, "hsla(0,0%,0%,0)");
+				g.fillStyle = gr;
+				g.fillRect(x - r, y - r, r * 2, r * 2);
+			}
+			// 動かない極遠の星
+			for (let i = 0; i < 260; i++) {
+				g.fillStyle = `rgba(255,255,255,${rand(0.1, 0.55)})`;
+				g.fillRect(Math.random() * w, Math.random() * h, 1, 1);
+			}
+		}
+
+		// ---- 星 ----
+		const STAR_N = 1500;
+		const SPREAD = 2.4; // 横方向の広がり
+		const stars = [];
+		const TINTS = ["#ffffff", "#cfe4ff", "#9fc4ff", "#fff1d6", "#ffd2a8", "#ffb0a0"];
+		function resetStar(s, far) {
+			s.x = rand(-SPREAD, SPREAD);
+			s.y = rand(-SPREAD, SPREAD);
+			s.z = far ? rand(0.9, 1) : rand(0.02, 1);
+			s.c = TINTS[(Math.random() * Math.random() * TINTS.length) | 0];
+			s.s = rand(0.6, 1.9);
+		}
+		for (let i = 0; i < STAR_N; i++) {
+			const s = {};
+			resetStar(s, false);
+			stars.push(s);
+		}
+
+		// ---- 惑星（たまに横をすり抜ける） ----
+		const PALETTES = [
+			["#7fd0ff", "#1c4f9c", "#06102a"],
+			["#ffc98a", "#b4532a", "#2a0a08"],
+			["#d6b4ff", "#6a3fb8", "#12062a"],
+			["#b8ffd9", "#2a9c7a", "#041c1c"],
+			["#ffe9b0", "#c79a4a", "#2a1a06"],
+		];
+		const planets = [];
+		function resetPlanet(p, first) {
+			const a = rand(0, Math.PI * 2);
+			const d = rand(0.45, 1.3);
+			p.x = Math.cos(a) * d;
+			p.y = Math.sin(a) * d * 0.7;
+			p.z = first ? rand(1.5, 9) : rand(7, 12);
+			p.r = rand(0.07, 0.2);
+			p.pal = PALETTES[(Math.random() * PALETTES.length) | 0];
+			p.ring = Math.random() < 0.4;
+			p.tilt = rand(-0.5, 0.5);
+			p.bands = Math.random() < 0.5 ? (3 + Math.random() * 4) | 0 : 0;
+		}
+		for (let i = 0; i < 3; i++) {
+			const p = {};
+			resetPlanet(p, true);
+			planets.push(p);
+		}
+
+		// ---- 入力 ----
+		let mx = 0, my = 0;          // マウス位置（-1〜1）
+		let vx = 0, vy = 0;          // 消失点のずれ（なめらかに追従）
+		let holding = false;         // ワープ入力中
+		let lastInput = -1e9;        // 最後に操作した時刻（自動デモ用）
+		let warp = 0;                // ワープ度合い 0〜1
+		let flash = 0;               // 突入・離脱時の閃光
+		let travelled = 0;
+
+		function setPointer(e) {
+			mx = (e.clientX / W) * 2 - 1;
+			my = (e.clientY / H) * 2 - 1;
+			lastInput = performance.now();
+		}
+		cv.addEventListener("pointermove", setPointer);
+		cv.addEventListener("pointerdown", (e) => {
+			window.focus();
+			setPointer(e);
+			holding = true;
+		});
+		window.addEventListener("pointerup", () => { holding = false; });
+		window.addEventListener("pointercancel", () => { holding = false; });
+		window.addEventListener("blur", () => { holding = false; });
+		window.addEventListener("keydown", (e) => {
+			if (e.code === "Space") {
+				e.preventDefault();
+				holding = true;
+				lastInput = performance.now();
+			}
+		});
+		window.addEventListener("keyup", (e) => {
+			if (e.code === "Space") {
+				e.preventDefault();
+				holding = false;
+			}
+		});
+
+		// 惑星 1 個を描く
+		function drawPlanet(p, cx, cy, f) {
+			const sx = cx + (p.x / p.z) * f;
+			const sy = cy + (p.y / p.z) * f;
+			const r = (p.r / p.z) * f;
+			if (r < 0.6 || sx < -r * 3 || sx > W + r * 3 || sy < -r * 3 || sy > H + r * 3) return;
+			const fade = Math.min(1, (12 - p.z) / 3); // 遠方からふわっと現れる
+			ctx.save();
+			ctx.globalAlpha = fade;
+			ctx.translate(sx, sy);
+			ctx.rotate(p.tilt);
+			// 輪の奥側
+			if (p.ring) drawRing(p, r, true);
+			// 本体（左上から光が当たっている陰影）
+			const g = ctx.createRadialGradient(-r * 0.45, -r * 0.45, r * 0.05, -r * 0.1, -r * 0.1, r * 1.25);
+			g.addColorStop(0, p.pal[0]);
+			g.addColorStop(0.5, p.pal[1]);
+			g.addColorStop(1, p.pal[2]);
+			ctx.beginPath();
+			ctx.arc(0, 0, r, 0, Math.PI * 2);
+			ctx.fillStyle = g;
+			ctx.fill();
+			// 縞模様（ガス惑星風）
+			if (p.bands && r > 6) {
+				ctx.save();
+				ctx.clip();
+				ctx.globalAlpha = fade * 0.16;
+				ctx.fillStyle = "#000";
+				for (let i = 0; i < p.bands; i++) {
+					const by = -r + ((i + 0.5) / p.bands) * 2 * r;
+					ctx.beginPath();
+					ctx.ellipse(0, by, r * 1.1, r * 0.09, 0, 0, Math.PI * 2);
+					ctx.fill();
+				}
+				ctx.restore();
+			}
+			// 大気のふち
+			ctx.lineWidth = Math.max(1, r * 0.05);
+			ctx.strokeStyle = p.pal[0];
+			ctx.globalAlpha = fade * 0.35;
+			ctx.stroke();
+			ctx.globalAlpha = fade;
+			if (p.ring) drawRing(p, r, false);
+			ctx.restore();
+		}
+		function drawRing(p, r, back) {
+			ctx.save();
+			ctx.scale(1, 0.28);
+			ctx.lineWidth = r * 0.28;
+			ctx.strokeStyle = p.pal[0];
+			ctx.globalAlpha *= 0.45;
+			ctx.beginPath();
+			ctx.arc(0, 0, r * 1.75, back ? Math.PI : 0, back ? Math.PI * 2 : Math.PI);
+			ctx.stroke();
+			ctx.restore();
+		}
+
+		// ---- メインループ ----
+		let last = performance.now();
+		function frame(now) {
+			requestAnimationFrame(frame);
+			if (!cv.width || !cv.height) { resize(); return; }
+			const dt = Math.min(0.05, (now - last) / 1000);
+			last = now;
+
+			// 一定時間操作がなければ自動でワープを繰り返す
+			const idle = now - lastInput > 6000;
+			const auto = idle && (now / 1000) % 14 > 9.5;
+			const want = holding || auto ? 1 : 0;
+			const prev = warp;
+			warp += (want - warp) * Math.min(1, dt * (want ? 1.6 : 2.4));
+			if ((prev < 0.5) !== (warp < 0.5)) flash = 1;
+			flash = Math.max(0, flash - dt * 2.2);
+
+			const speed = 0.12 + warp * warp * 2.6; // z 方向の速度
+			travelled += speed * dt * 4.2;
+
+			// 進路（消失点）をマウスへゆっくり寄せる
+			const tx = idle ? Math.sin(now / 5300) * 0.35 : mx;
+			const ty = idle ? Math.cos(now / 7100) * 0.3 : my;
+			vx += (tx - vx) * Math.min(1, dt * 2);
+			vy += (ty - vy) * Math.min(1, dt * 2);
+
+			// ワープ中は細かく揺らす
+			const shake = warp * warp * 2.5;
+			const cx = W / 2 - vx * W * 0.22 + rand(-shake, shake);
+			const cy = H / 2 - vy * H * 0.22 + rand(-shake, shake);
+			const f = focal * (1 - warp * 0.25); // 視野を広げて加速感を出す
+
+			ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+			ctx.globalCompositeOperation = "source-over";
+			ctx.globalAlpha = 1;
+			// 背景の星雲（視差つき）
+			ctx.fillStyle = "#02030a";
+			ctx.fillRect(0, 0, W, H);
+			ctx.globalAlpha = 1 - warp * 0.55;
+			ctx.drawImage(nebula, -W * 0.06 - vx * W * 0.04, -H * 0.06 - vy * H * 0.04, W * 1.12, H * 1.12);
+			ctx.globalAlpha = 1;
+
+			// ワープ中心の輝き
+			if (warp > 0.02) {
+				const r = Math.max(W, H) * (0.25 + warp * 0.5);
+				const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+				g.addColorStop(0, `rgba(170,215,255,${0.5 * warp})`);
+				g.addColorStop(0.3, `rgba(70,120,255,${0.2 * warp})`);
+				g.addColorStop(1, "rgba(0,0,40,0)");
+				ctx.fillStyle = g;
+				ctx.fillRect(0, 0, W, H);
+			}
+
+			// 惑星（遠い順）
+			planets.sort((a, b) => b.z - a.z);
+			for (const p of planets) {
+				p.z -= speed * dt * 1.6;
+				if (p.z < 0.06) resetPlanet(p, false);
+				else drawPlanet(p, cx, cy, f);
+			}
+
+			// 星（光の筋）
+			ctx.globalCompositeOperation = "lighter";
+			ctx.lineCap = "round";
+			const streak = 0.012 + speed * 0.05; // 筋の長さ（奥行き方向）
+			for (const s of stars) {
+				s.z -= speed * dt;
+				if (s.z <= 0.012) { resetStar(s, true); continue; }
+				const x1 = cx + (s.x / s.z) * f;
+				const y1 = cy + (s.y / s.z) * f;
+				if (x1 < -50 || x1 > W + 50 || y1 < -50 || y1 > H + 50) { resetStar(s, true); continue; }
+				const z0 = s.z + streak * (0.4 + s.z);
+				const x0 = cx + (s.x / z0) * f;
+				const y0 = cy + (s.y / z0) * f;
+				const near = 1 - s.z;
+				ctx.globalAlpha = Math.min(1, near * 1.5 + 0.08);
+				ctx.strokeStyle = warp > 0.5 && s.z > 0.5 ? "#9fc4ff" : s.c; // 遠方は青方偏移
+				ctx.lineWidth = s.s * (0.35 + near * near * 2.2);
+				ctx.beginPath();
+				ctx.moveTo(x0, y0);
+				ctx.lineTo(x1 + 0.01, y1 + 0.01);
+				ctx.stroke();
+			}
+			ctx.globalAlpha = 1;
+			ctx.globalCompositeOperation = "source-over";
+
+			// 画面端の減光と閃光
+			const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+			vg.addColorStop(0, "rgba(0,0,0,0)");
+			vg.addColorStop(1, "rgba(0,0,10,0.55)");
+			ctx.fillStyle = vg;
+			ctx.fillRect(0, 0, W, H);
+			if (flash > 0) {
+				ctx.fillStyle = `rgba(200,225,255,${flash * 0.5})`;
+				ctx.fillRect(0, 0, W, H);
+			}
+
+			// HUD 更新
+			velEl.textContent = (speed * 8.2).toFixed(1);
+			gaugeEl.style.width = (warp * 100).toFixed(0) + "%";
+			distEl.textContent = (warp > 0.5 ? "WARP DRIVE ENGAGED" : "CRUISE") + " ／ " + travelled.toFixed(1) + " ly";
+		}
+
+		window.addEventListener("resize", resize);
+		if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+		resize();
+		requestAnimationFrame(frame);
+	</script>
+</body>
+</html>

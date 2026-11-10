@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>マンデルブロ・エクスプローラ - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; background: #05060a; overflow: hidden; }
+	body { font: 12px/1.5 "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; color: #dbe4f5; }
+	canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+	canvas.drag { cursor: grabbing; }
+	.panel { position: fixed; left: 12px; top: 12px; width: 236px; padding: 10px 12px 9px; border-radius: 10px;
+		background: rgba(10, 14, 24, .72); border: 1px solid rgba(255, 255, 255, .12); backdrop-filter: blur(8px); user-select: none; }
+	.panel h1 { margin: 0 0 6px; font-size: 11px; letter-spacing: .28em; font-weight: 600; opacity: .75; }
+	.row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+	.row > span:first-child { flex: 0 0 34px; opacity: .65; font-size: 11px; }
+	.pals { display: flex; gap: 4px; flex: 1; }
+	.pals button { flex: 1; height: 18px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, .2); padding: 0; cursor: pointer; }
+	.pals button.on { outline: 2px solid #fff; outline-offset: 1px; }
+	input[type=range] { flex: 1; min-width: 0; accent-color: #7cc4ff; }
+	select, .btn { background: rgba(255, 255, 255, .08); color: inherit; border: 1px solid rgba(255, 255, 255, .18); border-radius: 5px; font: inherit; padding: 2px 6px; cursor: pointer; }
+	select { flex: 1; min-width: 0; }
+	select option { background: #151a28; }
+	.btn.on { background: #2c6fb0; }
+	label { display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; }
+	#info { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, .1); font: 11px/1.55 Consolas, Menlo, monospace; white-space: pre; opacity: .85; }
+	#prog { height: 2px; margin-top: 6px; background: rgba(255, 255, 255, .1); border-radius: 2px; overflow: hidden; }
+	#prog i { display: block; height: 100%; width: 0; background: #7cc4ff; }
+	.help, .credit { position: fixed; bottom: 10px; font-size: 11px; opacity: .65; text-shadow: 0 1px 3px #000, 0 0 8px #000; pointer-events: none; }
+	.help { left: 10px; max-width: calc(100% - 170px); padding: 2px 8px; border-radius: 6px; background: rgba(8, 11, 20, .5); }
+	.credit { right: 14px; letter-spacing: .06em; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="panel" id="panel">
+	<h1>MANDELBROT EXPLORER</h1>
+	<div class="row"><span>配色</span><div class="pals" id="pals"></div><button class="btn" id="cyc" title="色を流す (C)">流す</button></div>
+	<div class="row"><span>反復</span><input type="range" id="it" min="0" max="100" value="30"><label><input type="checkbox" id="auto" checked>自動</label></div>
+	<div class="row"><span>名所</span><select id="spot"></select><button class="btn" id="reset">全体</button></div>
+	<div id="info"></div>
+	<div id="prog"><i></i></div>
+</div>
+<div class="help">ドラッグ: 移動　ホイール / ピンチ: ズーム　ダブルクリック: 拡大（Shiftで縮小）　矢印・＋−: 移動とズーム　P: 配色　C: 色を流す　R: リセット</div>
+<div class="credit">Claude Fable 5.2</div>
+<script>
+(() => {
+	"use strict";
+	// ---- ワーカー側の計算本体 ----
+	function core() {
+		// 滑らかな脱出時間。内部は -1
+		function iter(cx, cy, maxIter) {
+			const xm = cx - 0.25, q = xm * xm + cy * cy;
+			if (q * (q + xm) <= 0.25 * cy * cy) return -1; // 主カージオイド
+			if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) return -1; // 周期2の円盤
+			let x = 0, y = 0, x2 = 0, y2 = 0, i = 0, px = 0, py = 0, lap = 8, cnt = 0;
+			while (i < maxIter) {
+				y = 2 * x * y + cy; x = x2 - y2 + cx;
+				x2 = x * x; y2 = y * y; i++;
+				if (x2 + y2 > 65536) return Math.max(0, i + 1 - Math.log2(0.5 * Math.log(x2 + y2)));
+				if (x === px && y === py) return -1; // 周期検出
+				if (++cnt === lap) { cnt = 0; lap *= 2; px = x; py = y; }
+			}
+			return -1;
+		}
+		// 帯状の領域を間隔 st で計算する。前の段で計算済みの画素は飛ばす
+		function run(m) {
+			const { st, y0, y1, w, h, cx, cy, ps, maxIter, first } = m, st2 = st * 2 - 1;
+			const out = new Float32Array(Math.ceil((y1 - y0) / st) * Math.ceil(w / st));
+			let n = 0;
+			for (let y = y0; y < y1; y += st) {
+				const ci = cy - (y + 0.5 - h / 2) * ps, skipRow = !first && !(y & st2);
+				for (let x = 0; x < w; x += st) {
+					if (skipRow && !(x & st2)) continue;
+					out[n++] = iter(cx + (x + 0.5 - w / 2) * ps, ci, maxIter);
+				}
+			}
+			return { gen: m.gen, st, y0, y1, first, buf: out.buffer };
+		}
+		return { run };
+	}
+	function makeWorker() {
+		try {
+			const src = `const api=(${core})();onmessage=e=>{const r=api.run(e.data);postMessage(r,[r.buf])}`;
+			return new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+		} catch (e) {
+			// ワーカーが使えない環境ではメインスレッドで代用
+			const api = core(), w = { postMessage(m) { setTimeout(() => w.onmessage({ data: api.run(m) }), 0); } };
+			return w;
+		}
+	}
+
+	// ---- 配色 ----
+	const N = 4096, DENS = 0.085 * N;
+	// コサイン式パレット: 色 = a + b·cos(2π(c·t + d))
+	const PALS = [
+		{ name: "深海", d: [0.00, 0.10, 0.20], c: [1, 1, 1] },
+		{ name: "炎", d: [0.52, 0.60, 0.72], c: [1, 1, 1] },
+		{ name: "オーロラ", d: [0.80, 0.90, 0.30], c: [1, 1, 1] },
+		{ name: "虹", d: [0.00, 0.33, 0.67], c: [1, 1, 1] },
+		{ name: "墨", d: [0.5, 0.5, 0.5], c: [1, 1, 1] },
+	];
+	function makeLut(p) {
+		const lut = new Uint32Array(N);
+		for (let i = 0; i < N; i++) {
+			const t = i / N, sh = 0.75 + 0.25 * Math.cos(6.2832 * (2 * t + 0.1)), c = [0, 0, 0];
+			for (let j = 0; j < 3; j++) c[j] = Math.round(255 * Math.min(1, (0.5 + 0.5 * Math.cos(6.2832 * (p.c[j] * t + p.d[j]))) * sh));
+			lut[i] = 0xff000000 | c[2] << 16 | c[1] << 8 | c[0];
+		}
+		return lut;
+	}
+	const luts = PALS.map(makeLut);
+	let pal = 0, lut = luts[0], shift = 0.55 * N, cycling = false;
+
+	// ---- 状態 ----
+	const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+	const layer = document.createElement("canvas"), lctx = layer.getContext("2d"); // 計算結果を置く層
+	const snap = document.createElement("canvas"), sctx = snap.getContext("2d");   // 直前の画面（仮表示用）
+	const $ = id => document.getElementById(id);
+	const HOME = { cx: -0.6, cy: 0, span: 3.1 };
+	const view = { cx: HOME.cx, cy: HOME.cy, ps: 1 }; // ps = 1画素あたりの長さ
+	let W = 0, H = 0, q = 1, img = null, px = null, val = null;
+	let snapView = null, drawn = null, dirty0 = 0, dirty1 = 0, redraw = true, limit = false;
+	let maxIter = 300;
+	const PASSES = [8, 4, 2, 1], BAND = 64;
+	let gen = 0, pass = 0, nextY = 0, outstanding = 0, doneRows = 0;
+
+	function resize() {
+		const w = window.innerWidth || 960, h = window.innerHeight || 600;
+		// 高DPIは約220万画素までに抑える
+		const nq = Math.max(1, Math.min(window.devicePixelRatio || 1, Math.sqrt(2.2e6 / (w * h))));
+		const nw = Math.round(w * nq), nh = Math.round(h * nq);
+		if (nw === W && nh === H) return;
+		const span = W ? view.ps * H : HOME.span;
+		W = nw; H = nh; q = nq;
+		cv.width = layer.width = snap.width = W;
+		cv.height = layer.height = snap.height = H;
+		img = lctx.createImageData(W, H);
+		px = new Uint32Array(img.data.buffer);
+		val = new Float32Array(W * H);
+		view.ps = span / H;
+		snapView = drawn = null;
+		start();
+	}
+
+	// ---- 段階的レンダリング ----
+	function start() {
+		gen++; pass = 0; nextY = 0; outstanding = 0; doneRows = 0;
+		val.fill(NaN); px.fill(0);
+		dirty0 = 0; dirty1 = H; redraw = true;
+		updateInfo();
+		pump();
+	}
+	const idle = [];
+	function pump() {
+		while (idle.length && pass < PASSES.length) {
+			if (nextY >= H) {
+				if (outstanding) return; // この段の結果が出そろってから次の段へ
+				pass++; nextY = 0;
+				continue;
+			}
+			const y0 = nextY;
+			nextY = Math.min(H, y0 + BAND);
+			outstanding++;
+			idle.pop().postMessage({ gen, st: PASSES[pass], first: pass === 0, y0, y1: nextY, w: W, h: H, cx: view.cx, cy: view.cy, ps: view.ps, maxIter });
+		}
+	}
+	const colorOf = b => b !== b ? 0 : b < 0 ? 0xff000000 : lut[(b + shift) & (N - 1)];
+	// ワーカーの結果を画素バッファへ書き込む（粗い段はブロックで塗る）
+	function apply(m) {
+		const v = new Float32Array(m.buf), st = m.st, st2 = st * 2 - 1;
+		let n = 0;
+		for (let y = m.y0; y < m.y1; y += st) {
+			const skipRow = !m.first && !(y & st2), ye = Math.min(H, y + st);
+			for (let x = 0; x < W; x += st) {
+				if (skipRow && !(x & st2)) continue;
+				const r = v[n++], b = r < 0 ? -1 : Math.sqrt(r) * DENS, c = colorOf(b), xe = Math.min(W, x + st);
+				for (let yy = y; yy < ye; yy++) {
+					for (let i = yy * W + x, e = yy * W + xe; i < e; i++) { val[i] = b; px[i] = c; }
+				}
+			}
+		}
+		dirty0 = Math.min(dirty0, m.y0); dirty1 = Math.max(dirty1, m.y1);
+		doneRows += (m.y1 - m.y0) / (st * st);
+		redraw = true;
+	}
+	function recolor() {
+		for (let i = 0, n = W * H; i < n; i++) px[i] = colorOf(val[i]);
+		dirty0 = 0; dirty1 = H; redraw = true;
+	}
+	const NW = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1));
+	for (let i = 0; i < NW; i++) {
+		const w = makeWorker();
+		w.onmessage = e => {
+			idle.push(w);
+			if (e.data.gen === gen) { outstanding--; apply(e.data); }
+			pump();
+		};
+		idle.push(w);
+	}
+
+	// ---- 表示 ----
+	function draw() {
+		if (dirty1 > dirty0) { lctx.putImageData(img, 0, 0, 0, dirty0, W, dirty1 - dirty0); dirty0 = H; dirty1 = 0; }
+		ctx.fillStyle = "#05060a";
+		ctx.fillRect(0, 0, W, H);
+		if (snapView) {
+			// 直前の画面を新しい視点に合わせて変形し、計算が終わるまでの仮表示にする
+			const k = snapView.ps / view.ps;
+			ctx.drawImage(snap, W / 2 + (snapView.cx - view.cx) / view.ps - k * W / 2, H / 2 - (snapView.cy - view.cy) / view.ps - k * H / 2, W * k, H * k);
+		}
+		ctx.drawImage(layer, 0, 0);
+		drawn = { cx: view.cx, cy: view.cy, ps: view.ps };
+		// 進捗バー
+		const total = H * (1 + 1 / 4 + 1 / 16 + 1 / 64);
+		$("prog").firstChild.style.width = Math.min(100, doneRows / total * 100) + "%";
+	}
+	let last = performance.now();
+	function tick(now) {
+		const dt = Math.min(0.1, (now - last) / 1000);
+		last = now;
+		if (cycling) { shift = (shift + dt * 0.12 * N) % N; recolor(); }
+		if (redraw && W) { redraw = false; draw(); }
+		requestAnimationFrame(tick);
+	}
+
+	// 視点を変更して再計算を始める
+	function setView(cx, cy, ps) {
+		const minPs = 4e-16; // 倍精度の限界
+		limit = ps <= minPs;
+		ps = Math.min(Math.max(ps, minPs), 8 / H);
+		if (drawn) { sctx.drawImage(cv, 0, 0); snapView = drawn; }
+		view.cx = Math.max(-3, Math.min(3, cx)); view.cy = Math.max(-3, Math.min(3, cy)); view.ps = ps;
+		if ($("auto").checked) setAutoIter();
+		start();
+	}
+	function zoomAt(x, y, f) {
+		const cr = view.cx + (x - W / 2) * view.ps, ci = view.cy - (y - H / 2) * view.ps;
+		const ps = Math.min(Math.max(view.ps / f, 4e-16), 8 / H);
+		setView(cr - (x - W / 2) * ps, ci + (y - H / 2) * ps, ps);
+	}
+	// ズーム倍率に応じた反復回数
+	function setAutoIter() {
+		const L = Math.max(0, Math.log2(HOME.span / (view.ps * H)));
+		maxIter = Math.round(180 + 55 * Math.pow(L, 1.2));
+		$("it").value = Math.round(100 * Math.log(maxIter / 50) / Math.log(400));
+	}
+	function updateInfo() {
+		const mag = HOME.span / (view.ps * H), dg = Math.min(16, Math.max(4, Math.ceil(Math.log10(mag)) + 4));
+		$("info").textContent = "Re  " + view.cx.toFixed(dg) + "\nIm  " + view.cy.toFixed(dg) +
+			"\n倍率 ×" + (mag < 1e5 ? mag.toFixed(mag < 100 ? 2 : 0) : mag.toExponential(2)) + "   反復 " + maxIter +
+			(limit ? "\n※ 倍精度の限界です" : "");
+	}
+
+	// ---- UI ----
+	PALS.forEach((p, i) => {
+		const b = document.createElement("button");
+		b.title = p.name;
+		// ボタン自体をパレットの見本にする
+		const stops = [];
+		for (let k = 0; k <= 8; k++) { const c = luts[i][(k / 8 * (N - 1)) | 0]; stops.push(`rgb(${c & 255},${c >> 8 & 255},${c >> 16 & 255})`); }
+		b.style.background = `linear-gradient(90deg,${stops.join(",")})`;
+		b.onclick = () => setPal(i);
+		$("pals").appendChild(b);
+	});
+	function setPal(i) {
+		pal = (i + PALS.length) % PALS.length; lut = luts[pal];
+		[...$("pals").children].forEach((b, k) => b.classList.toggle("on", k === pal));
+		if (val) recolor();
+	}
+	function toggleCycle() { cycling = !cycling; $("cyc").classList.toggle("on", cycling); }
+	$("cyc").onclick = toggleCycle;
+	$("it").oninput = () => {
+		$("auto").checked = false;
+		maxIter = Math.round(50 * Math.pow(400, $("it").value / 100));
+		setView(view.cx, view.cy, view.ps);
+	};
+	$("auto").onchange = () => { if ($("auto").checked) setView(view.cx, view.cy, view.ps); };
+	const SPOTS = [
+		["— 選んで移動 —", 0, 0, 0],
+		["シーホースの谷", -0.7453, 0.1127, 0.012],
+		["象の谷", 0.2826, 0.0105, 0.03],
+		["三つ又の渦", -0.1011, 0.9563, 0.02],
+		["小さな分身（ミニブロ）", -1.7549, 0, 0.07],
+		["深い二重らせん", -0.743643887, 0.131825904, 2e-5],
+		["稲妻の枝", -0.1592, 1.0338, 0.06],
+	];
+	SPOTS.forEach((s, i) => { const o = document.createElement("option"); o.value = i; o.textContent = s[0]; $("spot").appendChild(o); });
+	$("spot").onchange = () => {
+		const s = SPOTS[+$("spot").value];
+		if (s[3]) setView(s[1], s[2], s[3] / H);
+		$("spot").value = 0;
+		$("spot").blur();
+	};
+	const goHome = () => setView(HOME.cx, HOME.cy, HOME.span / H);
+	$("reset").onclick = goHome;
+
+	// ---- ポインタ操作（ドラッグ移動・ピンチズーム）----
+	const pts = new Map();
+	let pinch = 0;
+	cv.addEventListener("pointerdown", e => {
+		window.focus();
+		cv.setPointerCapture(e.pointerId);
+		pts.set(e.pointerId, { x: e.clientX * q, y: e.clientY * q });
+		cv.classList.add("drag");
+		pinch = 0;
+	});
+	cv.addEventListener("pointermove", e => {
+		const p = pts.get(e.pointerId);
+		if (!p) return;
+		const x = e.clientX * q, y = e.clientY * q;
+		if (pts.size === 1) {
+			setView(view.cx - (x - p.x) * view.ps, view.cy + (y - p.y) * view.ps, view.ps);
+			p.x = x; p.y = y;
+		} else {
+			p.x = x; p.y = y;
+			const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+			if (pinch && d > 0) zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d / pinch);
+			pinch = d;
+		}
+	});
+	const up = e => { pts.delete(e.pointerId); pinch = 0; if (!pts.size) cv.classList.remove("drag"); };
+	cv.addEventListener("pointerup", up);
+	cv.addEventListener("pointercancel", up);
+	cv.addEventListener("wheel", e => {
+		e.preventDefault();
+		const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+		zoomAt(e.clientX * q, e.clientY * q, Math.exp(-Math.max(-300, Math.min(300, d)) * 0.0016));
+	}, { passive: false });
+	cv.addEventListener("dblclick", e => zoomAt(e.clientX * q, e.clientY * q, e.shiftKey ? 0.5 : 2));
+	window.addEventListener("keydown", e => {
+		if (e.target.tagName === "SELECT") return;
+		const step = 0.12 * Math.min(W, H) * view.ps, k = e.key;
+		if (k === "ArrowLeft") setView(view.cx - step, view.cy, view.ps);
+		else if (k === "ArrowRight") setView(view.cx + step, view.cy, view.ps);
+		else if (k === "ArrowUp") setView(view.cx, view.cy + step, view.ps);
+		else if (k === "ArrowDown") setView(view.cx, view.cy - step, view.ps);
+		else if (k === "+" || k === ";" || k === "=") zoomAt(W / 2, H / 2, 1.5);
+		else if (k === "-" || k === "_") zoomAt(W / 2, H / 2, 1 / 1.5);
+		else if (k === "p" || k === "P") setPal(pal + 1);
+		else if (k === "c" || k === "C") toggleCycle();
+		else if (k === "r" || k === "R") goHome();
+		else if (k !== " ") return;
+		e.preventDefault();
+	});
+
+	setPal(0);
+	resize();
+	window.addEventListener("resize", resize);
+	if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+	requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

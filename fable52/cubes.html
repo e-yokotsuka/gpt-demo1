@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>回転する立方体 - Claude Fable 5.2版</title>
+<style>
+	html, body {
+		margin: 0; height: 100%; overflow: hidden;
+		background: radial-gradient(ellipse at 50% 38%, #1c2238 0%, #0b0d18 62%, #040509 100%);
+	}
+	canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+	canvas.drag { cursor: grabbing; }
+	.hud {
+		position: fixed; bottom: 12px; font: 12px/1.6 "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+		color: rgba(214, 222, 245, .5); pointer-events: none; user-select: none; letter-spacing: .04em;
+	}
+	#hint { left: 14px; }
+	#credit { right: 14px; color: rgba(214, 222, 245, .36); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud" id="hint">ドラッグ：視点を回す　ホイール：ズーム　クリック：はじく　Space：一時停止</div>
+<div class="hud" id="credit">Claude Fable 5.2</div>
+<script>
+(() => {
+	"use strict";
+	const cv = document.getElementById("c");
+	const ctx = cv.getContext("2d");
+
+	// 立方体の頂点（±1）と、6つの面（頂点番号と法線）
+	const VERT = [];
+	for (let i = 0; i < 8; i++) VERT.push([i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1]);
+	const FACES = [
+		{ v: [1, 3, 7, 5], n: [1, 0, 0] }, { v: [0, 4, 6, 2], n: [-1, 0, 0] },
+		{ v: [2, 6, 7, 3], n: [0, 1, 0] }, { v: [0, 1, 5, 4], n: [0, -1, 0] },
+		{ v: [4, 5, 7, 6], n: [0, 0, 1] }, { v: [0, 2, 3, 1], n: [0, 0, -1] },
+	];
+	const FLOOR = -6.2;							// 床の高さ
+	const LIGHT = norm([0.42, 0.82, -0.38]);	// 光源への向き
+	const BG = [9, 11, 20];						// 霧の色
+
+	function norm(v) { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; }
+	function hsl(h, s, l) {
+		const f = (n) => { const k = (n + h / 30) % 12; return (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255; };
+		return [f(0), f(8), f(4)];
+	}
+
+	// ---- 立方体たち：中心の1個と、3重の輪 ----
+	const cubes = [];
+	function addRing(count, radius, size, speed, wave, hue0) {
+		for (let i = 0; i < count; i++) {
+			cubes.push({
+				ring: radius, ang: i / count * Math.PI * 2, speed, wave, size,
+				rot: [Math.random() * 6, Math.random() * 6, Math.random() * 6],
+				spin: [0.4 + Math.random() * 0.9, 0.4 + Math.random() * 0.9, 0.2 + Math.random() * 0.6].map((v) => v * (Math.random() < 0.5 ? -1 : 1)),
+				color: hsl((hue0 + i / count * 360) % 360, 0.72, 0.56),
+				w: [], n: [],
+			});
+		}
+	}
+	addRing(1, 0, 1.55, 0, 0, 42);
+	addRing(6, 5.2, 0.85, 0.32, 0.9, 0);
+	addRing(10, 9.2, 0.6, -0.2, 1.5, 200);
+	addRing(16, 13, 0.36, 0.13, 2.4, 90);
+	cubes[0].color = [236, 232, 222];
+	cubes[0].spin = [0.35, 0.5, 0.22];
+
+	let W = 0, H = 0, dpr = 1;
+	let yaw = 0.5, pitch = 0.42, zoom = 1, paused = false, dragging = false;
+	let boost = 1, time = 0;
+	let cy = 1, sy = 0, cp = 1, sp = 0, D = 30, F = 600;
+
+	// ---- ワールド座標 → カメラ座標 → 画面座標 ----
+	const cam = [0, 0, 0];
+	function toCam(x, y, z) {
+		const x1 = x * cy - z * sy, z1 = x * sy + z * cy;
+		cam[0] = x1;
+		cam[1] = y * cp + z1 * sp;
+		cam[2] = -y * sp + z1 * cp + D;
+	}
+
+	// 凸包（影の輪郭用）：単調連鎖法
+	function hull(pts) {
+		pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+		const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+		const lo = [], up = [];
+		for (const p of pts) {
+			while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop();
+			lo.push(p);
+		}
+		for (let i = pts.length - 1; i >= 0; i--) {
+			const p = pts[i];
+			while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop();
+			up.push(p);
+		}
+		lo.pop(); up.pop();
+		return lo.concat(up);
+	}
+
+	// ---- 各立方体の位置・姿勢を更新して、頂点と法線をワールド座標で求める ----
+	function updateCube(c, dt) {
+		c.ang += c.speed * dt;
+		for (let i = 0; i < 3; i++) c.rot[i] += c.spin[i] * dt * boost;
+		const px = Math.cos(c.ang) * c.ring, pz = Math.sin(c.ang) * c.ring;
+		const py = c.ring ? Math.sin(c.ang * 2 + time * 0.7 + c.ring) * c.wave : Math.sin(time * 0.8) * 0.4;
+		// 回転行列（X → Y → Z の順）
+		const ca = Math.cos(c.rot[0]), sa = Math.sin(c.rot[0]);
+		const cb = Math.cos(c.rot[1]), sb = Math.sin(c.rot[1]);
+		const cc = Math.cos(c.rot[2]), sc = Math.sin(c.rot[2]);
+		const m = [
+			cb * cc, sa * sb * cc - ca * sc, ca * sb * cc + sa * sc,
+			cb * sc, sa * sb * sc + ca * cc, ca * sb * sc - sa * cc,
+			-sb, sa * cb, ca * cb,
+		];
+		const s = c.size;
+		for (let i = 0; i < 8; i++) {
+			const v = VERT[i];
+			c.w[i] = [
+				px + (m[0] * v[0] + m[1] * v[1] + m[2] * v[2]) * s,
+				py + (m[3] * v[0] + m[4] * v[1] + m[5] * v[2]) * s,
+				pz + (m[6] * v[0] + m[7] * v[1] + m[8] * v[2]) * s,
+			];
+		}
+		for (let i = 0; i < 6; i++) {
+			const n = FACES[i].n;
+			c.n[i] = [m[0] * n[0] + m[1] * n[1] + m[2] * n[2], m[3] * n[0] + m[4] * n[1] + m[5] * n[2], m[6] * n[0] + m[7] * n[1] + m[8] * n[2]];
+		}
+	}
+
+	// ---- 床（グリッド）と影 ----
+	function drawFloor() {
+		const R = 18, STEP = 2, SEG = 12;
+		ctx.lineWidth = 1;
+		for (let pass = 0; pass < 2; pass++) {
+			for (let g = -R; g <= R; g += STEP) {
+				for (let k = 0; k < SEG; k++) {
+					const t0 = -R + 2 * R * k / SEG, t1 = -R + 2 * R * (k + 1) / SEG;
+					const ax = pass ? g : t0, az = pass ? t0 : g, bx = pass ? g : t1, bz = pass ? t1 : g;
+					// 中心から離れるほど薄く
+					const fade = 1 - Math.hypot((ax + bx) / 2, (az + bz) / 2) / R;
+					if (fade <= 0) continue;
+					toCam(ax, FLOOR, az); if (cam[2] < 1) continue;
+					const x0 = W / 2 + cam[0] * F / cam[2], y0 = H / 2 - cam[1] * F / cam[2];
+					toCam(bx, FLOOR, bz); if (cam[2] < 1) continue;
+					ctx.strokeStyle = `rgba(130,150,210,${0.2 * fade})`;
+					ctx.beginPath(); ctx.moveTo(x0, y0);
+					ctx.lineTo(W / 2 + cam[0] * F / cam[2], H / 2 - cam[1] * F / cam[2]);
+					ctx.stroke();
+				}
+			}
+		}
+		// 影：頂点を光の向きに沿って床へ落とし、その凸包を塗る
+		for (const c of cubes) {
+			const pts = [];
+			let ok = true, hgt = 0;
+			for (const w of c.w) {
+				const k = (w[1] - FLOOR) / LIGHT[1];
+				hgt += k;
+				toCam(w[0] - LIGHT[0] * k, FLOOR, w[2] - LIGHT[2] * k);
+				if (cam[2] < 1) { ok = false; break; }
+				pts.push([W / 2 + cam[0] * F / cam[2], H / 2 - cam[1] * F / cam[2]]);
+			}
+			if (!ok) continue;
+			const h = hull(pts);
+			ctx.fillStyle = `rgba(0,0,4,${Math.max(0.1, 0.42 - hgt / 8 * 0.012)})`;	// 高いほど影は淡い
+			ctx.beginPath();
+			h.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+			ctx.closePath(); ctx.fill();
+		}
+	}
+
+	// ---- 面を集めて、奥から順に陰影つきで塗る ----
+	const polys = [];
+	function drawCubes() {
+		polys.length = 0;
+		// カメラのワールド座標（鏡面反射の計算に使う）
+		const ex = -D * cp * sy, ey = D * sp, ez = -D * cp * cy;
+		for (const c of cubes) {
+			const scr = [];
+			let near = false;
+			for (const w of c.w) {
+				toCam(w[0], w[1], w[2]);
+				if (cam[2] < 0.8) { near = true; break; }
+				scr.push(W / 2 + cam[0] * F / cam[2], H / 2 - cam[1] * F / cam[2]);
+			}
+			if (near) continue;
+			for (let i = 0; i < 6; i++) {
+				const f = FACES[i], n = c.n[i], v = f.v;
+				// 面の中心
+				const mx = (c.w[v[0]][0] + c.w[v[2]][0]) / 2, my = (c.w[v[0]][1] + c.w[v[2]][1]) / 2, mz = (c.w[v[0]][2] + c.w[v[2]][2]) / 2;
+				let vx = ex - mx, vy = ey - my, vz = ez - mz;
+				const dist = Math.hypot(vx, vy, vz);
+				vx /= dist; vy /= dist; vz /= dist;
+				if (n[0] * vx + n[1] * vy + n[2] * vz <= 0) continue;	// 裏面は描かない
+				// 拡散光 ＋ 床からの照り返し ＋ 鏡面ハイライト
+				const diff = Math.max(0, n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]);
+				const bounce = Math.max(0, -n[1]) * 0.16;
+				const hv = norm([LIGHT[0] + vx, LIGHT[1] + vy, LIGHT[2] + vz]);
+				const spec = Math.pow(Math.max(0, n[0] * hv[0] + n[1] * hv[1] + n[2] * hv[2]), 28) * 150;
+				const l = 0.36 + diff * 0.8 + bounce;
+				const fog = Math.min(0.5, Math.max(0, (dist - D + 4) / 60));
+				const col = c.color;
+				const r = (col[0] * l + spec) * (1 - fog) + BG[0] * fog;
+				const g = (col[1] * l + spec) * (1 - fog) + BG[1] * fog;
+				const b = (col[2] * l + spec * 1.05 + bounce * 60) * (1 - fog) + BG[2] * fog;
+				polys.push({ d: dist, s: scr, v, c: `rgb(${Math.min(255, r) | 0},${Math.min(255, g) | 0},${Math.min(255, b) | 0})` });
+			}
+		}
+		polys.sort((a, b) => b.d - a.d);
+		ctx.lineJoin = "round";
+		ctx.lineWidth = 0.8;
+		for (const p of polys) {
+			const s = p.s, v = p.v;
+			ctx.beginPath();
+			ctx.moveTo(s[v[0] * 2], s[v[0] * 2 + 1]);
+			for (let k = 1; k < 4; k++) ctx.lineTo(s[v[k] * 2], s[v[k] * 2 + 1]);
+			ctx.closePath();
+			ctx.fillStyle = ctx.strokeStyle = p.c;
+			ctx.fill(); ctx.stroke();	// 同色の細線で面の継ぎ目を埋める
+		}
+	}
+
+	let last = performance.now();
+	function frame(now) {
+		requestAnimationFrame(frame);
+		const dt = paused ? 0 : Math.min(0.05, (now - last) / 1000);
+		last = now;
+		if (!W) { resize(); return; }
+		time += dt;
+		boost += (1 - boost) * Math.min(1, dt * 1.6);
+		if (!dragging && !paused) yaw += dt * 0.12;
+		cy = Math.cos(yaw); sy = Math.sin(yaw); cp = Math.cos(pitch); sp = Math.sin(pitch);
+		D = 30 / zoom;
+		F = Math.min(W, H * 1.5) * 0.95;
+		for (const c of cubes) updateCube(c, dt);
+
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		ctx.clearRect(0, 0, W, H);
+		drawFloor();
+		drawCubes();
+	}
+
+	// ---- 画面サイズへの追従 ----
+	function resize() {
+		const w = window.innerWidth || 960, h = window.innerHeight || 600;
+		const d = Math.min(window.devicePixelRatio || 1, 2);
+		if (w === W && h === H && d === dpr) return;
+		W = w; H = h; dpr = d;
+		cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+	}
+	window.addEventListener("resize", resize);
+	if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+
+	// ---- 操作 ----
+	let lx = 0, ly = 0, moved = 0;
+	cv.addEventListener("pointerdown", (e) => {
+		window.focus();
+		dragging = true; moved = 0; lx = e.clientX; ly = e.clientY;
+		cv.classList.add("drag");
+		try { cv.setPointerCapture(e.pointerId); } catch (_) { /* 無視 */ }
+	});
+	cv.addEventListener("pointermove", (e) => {
+		if (!dragging) return;
+		const dx = e.clientX - lx, dy = e.clientY - ly;
+		moved += Math.abs(dx) + Math.abs(dy);
+		yaw -= dx * 0.007;
+		pitch = Math.max(0.06, Math.min(1.35, pitch + dy * 0.006));
+		lx = e.clientX; ly = e.clientY;
+	});
+	cv.addEventListener("pointerup", () => {
+		if (dragging && moved < 5) boost = 9;	// クリック：全部の立方体を勢いよく回す
+		dragging = false; cv.classList.remove("drag");
+	});
+	cv.addEventListener("pointercancel", () => { dragging = false; cv.classList.remove("drag"); });
+	cv.addEventListener("wheel", (e) => {
+		e.preventDefault();
+		zoom = Math.max(0.5, Math.min(2.6, zoom * Math.exp(-e.deltaY * 0.001)));
+	}, { passive: false });
+	window.addEventListener("keydown", (e) => {
+		if (e.code === "Space") { e.preventDefault(); paused = !paused; }
+		else if (e.code === "ArrowLeft") { e.preventDefault(); yaw += 0.08; }
+		else if (e.code === "ArrowRight") { e.preventDefault(); yaw -= 0.08; }
+		else if (e.code === "ArrowUp") { e.preventDefault(); pitch = Math.min(1.35, pitch + 0.05); }
+		else if (e.code === "ArrowDown") { e.preventDefault(); pitch = Math.max(0.06, pitch - 0.05); }
+	});
+
+	resize();
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

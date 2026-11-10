@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="ai.author" content="Claude Fable 5.2">
+	<meta name="ai.model" content="claude-fable-5-2">
+	<title>Daisy Bell Music Demo - Claude Fable 5.2版</title>
+	<style>
+		html, body { margin: 0; height: 100%; background: #14101c; overflow: hidden; color: #f3e9d2; font-family: "Georgia", "Hiragino Mincho ProN", "Yu Mincho", serif; }
+		canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+		header { position: fixed; left: 0; right: 0; top: 14px; text-align: center; pointer-events: none; }
+		h1 { margin: 0; font-size: clamp(20px, 3.4vw, 34px); font-weight: normal; letter-spacing: .14em; color: #ffe9a8; }
+		header p { margin: 4px 0 0; font-size: 12px; letter-spacing: .2em; opacity: .65; }
+		#panel { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; padding: 10px 14px; background: #1d1728cc; border: 1px solid #ffe9a833; border-radius: 14px; backdrop-filter: blur(6px); max-width: 94vw; box-sizing: border-box; }
+		button { font: 13px/1 "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; color: #f3e9d2; background: #2c2440; border: 1px solid #ffe9a844; border-radius: 999px; padding: 8px 13px; cursor: pointer; transition: background .15s, color .15s; }
+		button:hover { background: #3d3258; }
+		button.on { background: #ffe9a8; color: #2a1f10; border-color: #ffe9a8; }
+		#play { min-width: 92px; font-weight: bold; }
+		label { font: 12px "Segoe UI", "Yu Gothic UI", sans-serif; opacity: .8; display: flex; align-items: center; gap: 6px; }
+		input[type=range] { width: 90px; accent-color: #ffe9a8; }
+		.sep { width: 1px; height: 20px; background: #ffe9a833; }
+		#help, #credit { position: fixed; top: 10px; font: 11px "Segoe UI", "Yu Gothic UI", sans-serif; opacity: .45; pointer-events: none; }
+		#help { left: 12px; }
+		#credit { right: 12px; }
+	</style>
+</head>
+<body>
+	<canvas id="c"></canvas>
+	<header>
+		<h1>Daisy Bell</h1>
+		<p>1892 ・ INSTRUMENTAL WALTZ</p>
+	</header>
+	<div id="help">Space: 再生 / 停止</div>
+	<div id="credit">Claude Fable 5.2</div>
+	<div id="panel">
+		<button id="play">▶ 再生</button>
+		<span class="sep"></span>
+		<span id="timbres"></span>
+		<span class="sep"></span>
+		<label>テンポ <input id="tempo" type="range" min="110" max="230" value="168"><span id="bpm">168</span></label>
+	</div>
+	<script>
+		// ===== Daisy Bell（1892年）のメロディを Web Audio で演奏する。歌詞なし・インストゥルメンタル =====
+
+		// ---- 楽譜（ト長調・3/4拍子・32小節）。[MIDIノート, 拍数]、0 は休符 ----
+		const MELODY = [
+			[74, 3], [71, 3], [67, 3], [62, 3],
+			[64, 1], [66, 1], [67, 1], [64, 2], [67, 1], [62, 5], [0, 1],
+			[69, 3], [74, 3], [71, 3], [67, 3],
+			[64, 1], [66, 1], [67, 1], [69, 2], [71, 1], [69, 5], [71, 1],
+			[72, 1], [71, 1], [69, 1], [74, 2], [71, 1], [69, 1], [67, 4], [69, 1],
+			[71, 2], [67, 1], [64, 2], [67, 1], [64, 1], [62, 4], [62, 1],
+			[67, 2], [71, 1], [69, 2], [62, 1], [67, 2], [71, 1], [69, 1], [71, 1], [72, 1],
+			[74, 1], [71, 1], [67, 1], [69, 2], [62, 1], [67, 5], [0, 1],
+		];
+		// 小節ごとのコード
+		const CHORD_SEQ = "G G G G C C G G D D G G A A D D D G G G G C G D G D G D G D G G".split(" ");
+		// コード定義: [ベース, 交互ベース, 和音...]
+		const CHORDS = {
+			G: [43, 50, 55, 59, 62],
+			C: [48, 43, 55, 60, 64],
+			D: [50, 45, 54, 57, 60], // D7
+			A: [45, 52, 55, 61, 64], // A7
+		};
+		const LOOP_BEATS = 96;
+
+		// 演奏イベント表を作る（拍の位置で並べる）
+		const events = [];
+		const melodyNotes = []; // ピアノロール表示用
+		{
+			let b = 0;
+			for (const [m, d] of MELODY) {
+				if (m) {
+					events.push({ b, m, d, kind: "lead" });
+					melodyNotes.push({ b, m, d });
+				}
+				b += d;
+			}
+			CHORD_SEQ.forEach((name, bar) => {
+				const ch = CHORDS[name];
+				const alt = bar > 0 && CHORD_SEQ[bar - 1] === name && bar % 2 === 1;
+				events.push({ b: bar * 3, m: ch[alt ? 1 : 0], d: 1, kind: "bass" });
+				// ズン・チャッ・チャッ のワルツ伴奏。最後の小節は和音を伸ばして締める
+				if (bar === 31) events.push({ b: bar * 3 + 1, m: ch.slice(2), d: 2, kind: "chord" });
+				else for (const k of [1, 2]) events.push({ b: bar * 3 + k, m: ch.slice(2), d: 1, kind: "chord" });
+			});
+			events.sort((a, b2) => a.b - b2.b);
+		}
+
+		// ---- 音色 ----
+		// parts: [波形, 周波数倍率, 音量] / sus: 0 なら打鍵後に減衰する音、>0 なら持続音
+		const TIMBRES = [
+			{ name: "オルゴール", oct: 12, parts: [["sine", 1, 1], ["sine", 4, 0.22], ["triangle", 2, 0.12]], a: 0.004, sus: 0, rel: 1.5, vol: 0.3 },
+			{ name: "オルガン", oct: 0, parts: [["square", 1, 0.4], ["square", 2, 0.16], ["sine", 0.5, 0.5]], a: 0.03, sus: 0.85, rel: 0.09, lp: 2200, vol: 0.2 },
+			{ name: "8bit", oct: 0, parts: [["square", 1, 0.5]], a: 0.003, sus: 0.55, rel: 0.04, vib: [6, 9], vol: 0.2 },
+			{ name: "ハミング", oct: -12, parts: [["sawtooth", 1, 1]], a: 0.07, sus: 0.9, rel: 0.14, formant: [[620, 1], [1150, 0.5], [2600, 0.18]], vib: [5.2, 22], vol: 0.6 },
+		];
+		let timbre = 0;
+
+		let ac = null, analyser = null, bus = null, freqData = null, waveData = null;
+		let playing = false, timer = 0;
+		let bpm = 168, anchorTime = 0, anchorBeat = 0; // 拍 → 時刻の換算基準
+		let evIdx = 0, loopNo = 0;
+		const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+		const spb = () => 60 / bpm;
+		const beatToTime = (b) => anchorTime + (b - anchorBeat) * spb();
+		const currentBeat = () => (playing ? anchorBeat + (ac.currentTime - anchorTime) / spb() : 0);
+
+		// 1 音鳴らす
+		function voice(tb, midi, t, dur, vol) {
+			const f = hz(midi + tb.oct);
+			const g = ac.createGain();
+			const peak = vol * tb.vol;
+			g.gain.setValueAtTime(0, t);
+			g.gain.linearRampToValueAtTime(peak, t + tb.a);
+			let end;
+			if (tb.sus === 0) {
+				end = t + tb.rel;
+				g.gain.exponentialRampToValueAtTime(0.0008, end);
+			} else {
+				const off = Math.max(t + tb.a + 0.01, t + dur * 0.93);
+				g.gain.linearRampToValueAtTime(peak * tb.sus, off);
+				end = off + tb.rel;
+				g.gain.linearRampToValueAtTime(0, end);
+			}
+			// フィルタ段（フォルマント or ローパス or 素通し）
+			let input = g;
+			if (tb.formant) {
+				input = ac.createGain();
+				for (const [ff, fg] of tb.formant) {
+					const bp = ac.createBiquadFilter(), bg = ac.createGain();
+					bp.type = "bandpass"; bp.frequency.value = ff; bp.Q.value = 7;
+					bg.gain.value = fg;
+					input.connect(bp).connect(bg).connect(g);
+				}
+			} else if (tb.lp) {
+				input = ac.createBiquadFilter();
+				input.type = "lowpass"; input.frequency.value = tb.lp;
+				input.connect(g);
+			}
+			let lfoGain = null;
+			if (tb.vib) {
+				const lfo = ac.createOscillator();
+				lfoGain = ac.createGain();
+				lfo.frequency.value = tb.vib[0];
+				// 音の出だしはまっすぐ、伸ばすとビブラートがかかる
+				lfoGain.gain.setValueAtTime(0, t);
+				lfoGain.gain.linearRampToValueAtTime(tb.vib[1], t + 0.35);
+				lfo.connect(lfoGain);
+				lfo.start(t); lfo.stop(end + 0.05);
+			}
+			for (const [type, mult, pv] of tb.parts) {
+				const o = ac.createOscillator(), og = ac.createGain();
+				o.type = type;
+				o.frequency.value = f * mult;
+				og.gain.value = pv;
+				if (lfoGain) lfoGain.connect(o.detune);
+				o.connect(og).connect(input);
+				o.start(t); o.stop(end + 0.05);
+			}
+			g.connect(bus);
+		}
+		// 伴奏用の固定音色
+		const BASS = { oct: 0, parts: [["triangle", 1, 1], ["sine", 2, 0.2]], a: 0.008, sus: 0, rel: 0.7, vol: 0.34 };
+		const COMP = { oct: 0, parts: [["triangle", 1, 1]], a: 0.006, sus: 0, rel: 0.45, vol: 0.085 };
+
+		// 先読みスケジューラ
+		function schedule() {
+			if (!playing) return;
+			const horizon = ac.currentTime + 0.2;
+			for (;;) {
+				const e = events[evIdx];
+				const t = beatToTime(loopNo * LOOP_BEATS + e.b);
+				if (t > horizon) break;
+				const at = Math.max(t, ac.currentTime + 0.005);
+				const dur = e.d * spb();
+				if (e.kind === "lead") voice(TIMBRES[timbre], e.m, at, dur, 1);
+				else if (e.kind === "bass") voice(BASS, e.m, at, dur, 1);
+				else for (const m of e.m) voice(e.d > 1 ? { ...COMP, rel: 1.6 } : COMP, m, at, dur, 1);
+				if (++evIdx >= events.length) { evIdx = 0; loopNo++; }
+			}
+		}
+
+		function start() {
+			if (!ac) {
+				ac = new (window.AudioContext || window.webkitAudioContext)();
+				analyser = ac.createAnalyser();
+				analyser.fftSize = 1024;
+				analyser.smoothingTimeConstant = 0.82;
+				freqData = new Uint8Array(analyser.frequencyBinCount);
+				waveData = new Uint8Array(analyser.fftSize);
+				const comp = ac.createDynamicsCompressor();
+				analyser.connect(comp).connect(ac.destination);
+			}
+			ac.resume();
+			bus = ac.createGain();
+			bus.connect(analyser);
+			anchorTime = ac.currentTime + 0.12;
+			anchorBeat = 0;
+			evIdx = 0; loopNo = 0;
+			playing = true;
+			timer = setInterval(schedule, 50);
+			schedule();
+			playBtn.textContent = "■ 停止";
+			playBtn.classList.add("on");
+		}
+		function stop() {
+			playing = false;
+			clearInterval(timer);
+			// 予約済みの音ごとバスを絞って消す
+			const old = bus;
+			old.gain.setTargetAtTime(0, ac.currentTime, 0.03);
+			setTimeout(() => old.disconnect(), 400);
+			playBtn.textContent = "▶ 再生";
+			playBtn.classList.remove("on");
+		}
+		const toggle = () => (playing ? stop() : start());
+
+		// ---- UI ----
+		const playBtn = document.getElementById("play");
+		playBtn.addEventListener("click", toggle);
+		const timbreBox = document.getElementById("timbres");
+		TIMBRES.forEach((tb, i) => {
+			const b = document.createElement("button");
+			b.textContent = tb.name;
+			b.style.marginRight = "4px";
+			if (i === timbre) b.classList.add("on");
+			b.addEventListener("click", () => {
+				timbre = i;
+				[...timbreBox.children].forEach((c, k) => c.classList.toggle("on", k === i));
+			});
+			timbreBox.appendChild(b);
+		});
+		const tempoEl = document.getElementById("tempo"), bpmEl = document.getElementById("bpm");
+		tempoEl.addEventListener("input", () => {
+			// 現在位置を基準にし直してからテンポを変える（曲の位置が飛ばないように）
+			if (playing) {
+				const nowBeat = currentBeat();
+				anchorTime = ac.currentTime;
+				anchorBeat = nowBeat;
+			}
+			bpm = +tempoEl.value;
+			bpmEl.textContent = bpm;
+		});
+		window.addEventListener("pointerdown", () => window.focus());
+		window.addEventListener("keydown", (e) => {
+			if (e.code === "Space") {
+				e.preventDefault();
+				if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+				toggle();
+			}
+		});
+
+		// ---- ビジュアライザ ----
+		const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+		let W = 960, H = 600;
+		function resize() {
+			const dpr = Math.min(window.devicePixelRatio || 1, 2);
+			W = window.innerWidth || 960;
+			H = window.innerHeight || 600;
+			cv.width = Math.round(W * dpr);
+			cv.height = Math.round(H * dpr);
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		}
+		window.addEventListener("resize", resize);
+		if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+		resize();
+
+		const sparks = [];
+		let lastNote = -1, wheelAngle = 0, lastT = performance.now(), level = 0;
+		const noteHue = (m) => ((m - 62) * 24 + 20) % 360;
+
+		// スペクトルを外周にまとった車輪を描く
+		function wheel(x, y, r, angle, from, to, hue) {
+			ctx.save();
+			ctx.translate(x, y);
+			// スペクトルの花びら
+			const N = 40;
+			for (let i = 0; i < N; i++) {
+				const v = freqData ? freqData[from + Math.floor(((to - from) * i) / N)] / 255 : 0;
+				const a = angle + (i / N) * Math.PI * 2;
+				const len = 3 + v * v * r * 0.6;
+				ctx.strokeStyle = `hsla(${hue + i * 3},85%,${55 + v * 25}%,${0.35 + v * 0.65})`;
+				ctx.lineWidth = Math.max(2, r * 0.07);
+				ctx.lineCap = "round";
+				ctx.beginPath();
+				ctx.moveTo(Math.cos(a) * (r + 6), Math.sin(a) * (r + 6));
+				ctx.lineTo(Math.cos(a) * (r + 6 + len), Math.sin(a) * (r + 6 + len));
+				ctx.stroke();
+			}
+			// タイヤとスポーク
+			ctx.strokeStyle = "#f3e9d2";
+			ctx.lineWidth = Math.max(2, r * 0.05);
+			ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+			ctx.lineWidth = 1;
+			ctx.globalAlpha = 0.6;
+			for (let i = 0; i < 12; i++) {
+				const a = angle + (i / 12) * Math.PI * 2;
+				ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); ctx.stroke();
+			}
+			ctx.globalAlpha = 1;
+			ctx.fillStyle = "#ffe9a8";
+			ctx.beginPath(); ctx.arc(0, 0, r * 0.09, 0, Math.PI * 2); ctx.fill();
+			ctx.restore();
+		}
+
+		function draw(now) {
+			requestAnimationFrame(draw);
+			if (!cv.width || !cv.height) { resize(); return; }
+			const dt = Math.min(0.05, (now - lastT) / 1000);
+			lastT = now;
+			if (playing && analyser) {
+				analyser.getByteFrequencyData(freqData);
+				analyser.getByteTimeDomainData(waveData);
+			} else if (freqData) {
+				for (let i = 0; i < freqData.length; i++) freqData[i] *= 0.9;
+			}
+			let sum = 0;
+			if (freqData) for (let i = 0; i < 64; i++) sum += freqData[i];
+			level += (sum / 64 / 255 - level) * 0.2;
+
+			const beat = currentBeat();
+			const lb = ((beat % LOOP_BEATS) + LOOP_BEATS) % LOOP_BEATS;
+			const pulse = playing && beat >= 0 ? Math.pow(1 - (beat % 1), 3) * (Math.floor(beat) % 3 === 0 ? 1 : 0.45) : 0;
+
+			// 背景
+			const bg = ctx.createLinearGradient(0, 0, 0, H);
+			bg.addColorStop(0, "#14101c");
+			bg.addColorStop(0.6, `hsl(265,30%,${13 + level * 10}%)`);
+			bg.addColorStop(1, "#2b1b2e");
+			ctx.fillStyle = bg;
+			ctx.fillRect(0, 0, W, H);
+
+			// ---- ピアノロール（上半分）: メロディが右から流れてくる ----
+			const rollTop = Math.max(78, H * 0.16), rollH = H * 0.26;
+			const playX = W * 0.28, ppb = Math.max(26, W / 22);
+			const yOf = (m) => rollTop + rollH - ((m - 61) / 14) * rollH;
+			ctx.strokeStyle = "#ffffff10";
+			ctx.lineWidth = 1;
+			for (let m = 62; m <= 74; m += 2) {
+				ctx.beginPath(); ctx.moveTo(0, yOf(m)); ctx.lineTo(W, yOf(m)); ctx.stroke();
+			}
+			// 小節線
+			for (let k = Math.floor((lb - playX / ppb) / 3) * 3; k * 1 < lb + (W - playX) / ppb; k += 3) {
+				const x = playX + (k - lb) * ppb;
+				ctx.strokeStyle = "#ffffff14";
+				ctx.beginPath(); ctx.moveTo(x, rollTop - 8); ctx.lineTo(x, rollTop + rollH + 8); ctx.stroke();
+			}
+			let active = null;
+			for (let rep = -1; rep <= 1; rep++) {
+				for (const n of melodyNotes) {
+					const nb = n.b + rep * LOOP_BEATS;
+					const x = playX + (nb - lb) * ppb, w = n.d * ppb - 4;
+					if (x + w < 0 || x > W) continue;
+					const on = playing && lb >= nb && lb < nb + n.d;
+					if (on) active = n;
+					const hue = noteHue(n.m);
+					ctx.fillStyle = on ? `hsl(${hue},95%,72%)` : x < playX ? `hsla(${hue},40%,45%,.35)` : `hsla(${hue},75%,60%,.85)`;
+					if (on) { ctx.shadowColor = `hsl(${hue},95%,65%)`; ctx.shadowBlur = 18; }
+					const hgt = on ? 12 : 8;
+					ctx.beginPath();
+					ctx.roundRect ? ctx.roundRect(x, yOf(n.m) - hgt / 2, Math.max(4, w), hgt, hgt / 2) : ctx.rect(x, yOf(n.m) - hgt / 2, Math.max(4, w), hgt);
+					ctx.fill();
+					ctx.shadowBlur = 0;
+				}
+			}
+			// 再生位置の線
+			ctx.strokeStyle = `rgba(255,233,168,${0.5 + pulse * 0.5})`;
+			ctx.lineWidth = 2;
+			ctx.beginPath(); ctx.moveTo(playX, rollTop - 12); ctx.lineTo(playX, rollTop + rollH + 12); ctx.stroke();
+
+			// 新しい音が鳴ったら火花を散らす
+			if (active && active.b !== lastNote) {
+				lastNote = active.b;
+				for (let i = 0; i < 14; i++) {
+					const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 140;
+					sparks.push({ x: playX, y: yOf(active.m), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, life: 1, hue: noteHue(active.m) });
+				}
+			}
+			if (!active && !playing) lastNote = -1;
+			for (let i = sparks.length - 1; i >= 0; i--) {
+				const s = sparks[i];
+				s.life -= dt * 1.4;
+				if (s.life <= 0) { sparks.splice(i, 1); continue; }
+				s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 160 * dt;
+				ctx.fillStyle = `hsla(${s.hue},95%,75%,${s.life})`;
+				ctx.beginPath(); ctx.arc(s.x, s.y, 1.5 + s.life * 2, 0, Math.PI * 2); ctx.fill();
+			}
+
+			// ---- 二人乗り自転車（下半分）: 車輪がスペクトルアナライザ ----
+			const r = Math.min(W * 0.085, H * 0.11);
+			const by = H * 0.68, gap = r * 4.4;
+			const bx = W / 2 - gap / 2, fx = W / 2 + gap / 2;
+			if (playing) wheelAngle += dt * (bpm / 60) * 1.6;
+			// 波形を地面のラインとして描く
+			ctx.strokeStyle = "#ffe9a866";
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			for (let i = 0; i <= 128; i++) {
+				const v = waveData && playing ? (waveData[i * 4] - 128) / 128 : 0;
+				const x = (i / 128) * W, y = by + r + 14 + v * 26;
+				i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+			}
+			ctx.stroke();
+			wheel(bx, by, r, wheelAngle, 2, 40, 20);
+			wheel(fx, by, r, wheelAngle, 40, 160, 190);
+			// フレーム
+			const bob = pulse * 2.5;
+			const c1 = [bx + gap * 0.3, by + r * 0.1], c2 = [bx + gap * 0.66, by + r * 0.1]; // クランク 2 つ
+			const s1 = [bx + gap * 0.2, by - r * 1.25 - bob], s2 = [bx + gap * 0.56, by - r * 1.25 - bob]; // サドル 2 つ
+			const hd = [fx - r * 0.55, by - r * 1.3 - bob];
+			ctx.strokeStyle = "#ffe9a8";
+			ctx.lineWidth = Math.max(2, r * 0.07);
+			ctx.lineJoin = ctx.lineCap = "round";
+			ctx.beginPath();
+			ctx.moveTo(bx, by); ctx.lineTo(c1[0], c1[1]); ctx.lineTo(c2[0], c2[1]); ctx.lineTo(hd[0], hd[1]);
+			ctx.lineTo(s2[0], s2[1] + r * 0.2); ctx.lineTo(s1[0], s1[1] + r * 0.2); ctx.lineTo(bx, by);
+			ctx.moveTo(c1[0], c1[1]); ctx.lineTo(s1[0], s1[1]);
+			ctx.moveTo(c2[0], c2[1]); ctx.lineTo(s2[0], s2[1]);
+			ctx.moveTo(c1[0], c1[1]); ctx.lineTo(s2[0], s2[1] + r * 0.2);
+			ctx.moveTo(fx, by); ctx.lineTo(hd[0] - r * 0.12, hd[1] - r * 0.3);
+			ctx.stroke();
+			// サドルとハンドル
+			ctx.lineWidth = Math.max(3, r * 0.12);
+			ctx.beginPath();
+			for (const s of [s1, s2]) { ctx.moveTo(s[0] - r * 0.28, s[1]); ctx.lineTo(s[0] + r * 0.2, s[1]); }
+			ctx.moveTo(hd[0] - r * 0.12, hd[1] - r * 0.3); ctx.lineTo(hd[0] - r * 0.5, hd[1] - r * 0.36);
+			ctx.moveTo(s2[0] + r * 0.45, s2[1] - r * 0.1); ctx.lineTo(s2[0] + r * 0.8, s2[1] - r * 0.1);
+			ctx.stroke();
+			// ペダル（回る）
+			ctx.lineWidth = Math.max(2, r * 0.06);
+			for (const c of [c1, c2]) {
+				const a = wheelAngle * 0.8;
+				ctx.beginPath();
+				ctx.moveTo(c[0] - Math.cos(a) * r * 0.32, c[1] - Math.sin(a) * r * 0.32);
+				ctx.lineTo(c[0] + Math.cos(a) * r * 0.32, c[1] + Math.sin(a) * r * 0.32);
+				ctx.stroke();
+				ctx.beginPath(); ctx.arc(c[0], c[1], r * 0.16, 0, Math.PI * 2); ctx.stroke();
+			}
+
+			// 3拍子のインジケータ
+			for (let i = 0; i < 3; i++) {
+				const on = playing && beat >= 0 && Math.floor(beat) % 3 === i;
+				ctx.fillStyle = on ? "#ffe9a8" : "#ffe9a833";
+				ctx.beginPath();
+				ctx.arc(W / 2 + (i - 1) * 22, rollTop + rollH + 34, on ? 6 + pulse * 3 : 4, 0, Math.PI * 2);
+				ctx.fill();
+			}
+		}
+		requestAnimationFrame(draw);
+	</script>
+</body>
+</html>

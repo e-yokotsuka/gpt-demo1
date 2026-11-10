@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>マンデルブロ無限ズーム - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+	body { font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; color: #dfe8ff; user-select: none; }
+	canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+	/* 周辺を少し落として奥行き感を出す */
+	.vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .55) 100%); }
+	.hud { position: fixed; left: 16px; top: 14px; pointer-events: none; text-shadow: 0 1px 4px #000, 0 0 12px #000; }
+	.hud h1 { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .32em; opacity: .7; }
+	#name { font-size: 20px; font-weight: 300; letter-spacing: .08em; }
+	#mag { font: 13px/1.6 Consolas, Menlo, monospace; opacity: .9; }
+	#pos { font: 11px/1.5 Consolas, Menlo, monospace; opacity: .6; }
+	.help, .credit { position: fixed; bottom: 12px; font-size: 11px; opacity: .6; text-shadow: 0 1px 3px #000; pointer-events: none; }
+	.help { left: 16px; }
+	.credit { right: 14px; letter-spacing: .06em; }
+	/* 深度バー（1回の潜行の進み具合） */
+	.bar { position: fixed; left: 0; bottom: 0; height: 2px; width: 100%; background: rgba(255, 255, 255, .08); }
+	.bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #5cf, #fff); }
+	#msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; letter-spacing: .3em; opacity: .7; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="vignette"></div>
+<div class="hud">
+	<h1>MANDELBROT ∞ ZOOM</h1>
+	<div id="name">—</div>
+	<div id="mag"></div>
+	<div id="pos"></div>
+</div>
+<div id="msg">見どころを探索中…</div>
+<div class="help">クリック / Space: 一時停止・再開　　N: 次の場所へ</div>
+<div class="credit">Claude Fable 5.2</div>
+<div class="bar"><i id="bar"></i></div>
+<script>
+(() => {
+	"use strict";
+	// ---- 定数 ----
+	const S0 = 1.4;       // レベル0での縦方向の半径（複素平面上の長さ）
+	const K_MAX = 41;     // 最深レベル。1.4/2^41 ≈ 6e-13 で、倍精度が破綻する手前で止める
+	const SPEED = 0.5;    // 1秒あたりに進むレベル数（1レベル = 2倍ズーム）
+	const FADE_T = 2.6;   // 次の場所へのクロスフェード秒数
+	const LOOK = 6;       // 先読みするキーフレーム数
+	// 出発点の候補。ここから先の細かい行き先はワーカーが毎回探索して決める
+	const SEEDS = [
+		["シーホースの谷", -0.7453, 0.1127],
+		["渦巻きの岸辺", 0.3602, -0.6413],
+		["三つ又の渦", -0.1011, 0.9563],
+		["触角の小島", -1.769, 0.004],
+		["二重らせんの入江", -0.7747, -0.1374],
+		["象の谷", 0.285, 0.0105],
+		["針の森", -1.2507, 0.0201],
+		["稲妻の枝", -0.1592, 1.0338],
+	];
+
+	// ---- ワーカー側の計算本体（文字列化してワーカーに渡す） ----
+	function core() {
+		// 1点の滑らかな脱出時間を返す。集合の内部なら -1
+		function iter(cx, cy, maxIter) {
+			// 主カージオイドと周期2の円盤は即座に内部と判定
+			const xm = cx - 0.25, q = xm * xm + cy * cy;
+			if (q * (q + xm) <= 0.25 * cy * cy) return -1;
+			if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) return -1;
+			let x = 0, y = 0, x2 = 0, y2 = 0, i = 0, px = 0, py = 0, lap = 8, cnt = 0;
+			while (i < maxIter) {
+				y = 2 * x * y + cy; x = x2 - y2 + cx;
+				x2 = x * x; y2 = y * y; i++;
+				if (x2 + y2 > 65536) return Math.max(0, i + 1 - Math.log2(0.5 * Math.log(x2 + y2)));
+				// 周期検出: 同じ点に戻ってきたら内部
+				if (x === px && y === py) return -1;
+				if (++cnt === lap) { cnt = 0; lap *= 2; px = x; py = y; }
+			}
+			return -1;
+		}
+		// 見どころ探索: レベルごとに粗い格子を評価し、「境界に近いが深すぎない点」を追いかける。
+		// 最終的な到達点と、各レベルで必要な反復回数を返す
+		function find(m) {
+			let cx = m.sx, cy = m.sy, cap = 600, target = 120, seed = m.seed;
+			const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+			const G = 36, n = G * G, vals = new Float64Array(n), iters = [];
+			for (let k = 0; k <= m.kMax; k++) {
+				if (k < 5) { iters.push(240 + k * 60); continue; }
+				const s = m.s0 / Math.pow(2, k), esc = [];
+				for (let q = 0; q < n; q++) {
+					const v = iter(cx + (q % G / (G - 1) - 0.5) * 0.8 * s, cy + ((q / G | 0) / (G - 1) - 0.5) * 0.8 * s, cap);
+					vals[q] = v;
+					if (v >= 0) esc.push(v);
+				}
+				if (!esc.length) {
+					// 全部内部だった場合は適当にずらして抜け出す
+					cx += (rnd() - 0.5) * s; cy += (rnd() - 0.5) * s;
+					iters.push(iters[k - 1]);
+					continue;
+				}
+				esc.sort((a, b) => a - b);
+				// 上位7%付近を狙うが、反復回数が爆発しないよう伸び率を制限する
+				target = Math.min(esc[Math.floor(esc.length * 0.93)], target * 1.3 + 90, 8000);
+				let best = -1, bs = 1e9;
+				for (let q = 0; q < n; q++) {
+					const v = vals[q];
+					if (v < 0) continue;
+					const dx = q % G / (G - 1) - 0.5, dy = (q / G | 0) / (G - 1) - 0.5;
+					// 目標値からのずれ＋中心からの距離（少し乱数を混ぜて毎回違う旅にする）
+					const score = Math.abs(v - target) / target * 2 + (dx * dx + dy * dy) * (0.6 + rnd());
+					if (score < bs) { bs = score; best = q; }
+				}
+				cx += (best % G / (G - 1) - 0.5) * 0.8 * s;
+				cy += ((best / G | 0) / (G - 1) - 0.5) * 0.8 * s;
+				cap = Math.max(cap, Math.round(target * 4 + 600));
+				iters.push(Math.round(target * 2.6 + 320));
+			}
+			return { type: "found", id: m.id, cx, cy, iters };
+		}
+		// キーフレーム1枚を描く
+		function render(m) {
+			const { w, h, cx, cy, s, maxIter, lut } = m, buf = new Uint32Array(w * h), ps = 2 * s / h;
+			let p = 0;
+			for (let y = 0; y < h; y++) {
+				const ci = cy - (y + 0.5 - h / 2) * ps;
+				for (let x = 0; x < w; x++) {
+					const v = iter(cx + (x + 0.5 - w / 2) * ps, ci, maxIter);
+					buf[p++] = v < 0 ? 0xff000000 : lut[(Math.sqrt(v) * 190 + 300) & 2047];
+				}
+			}
+			return { type: "frame", id: m.id, k: m.k, w, h, buf: buf.buffer };
+		}
+		return { run: m => m.type === "find" ? find(m) : render(m) };
+	}
+	// インラインワーカーを作る。作れない環境ではメインスレッドで代用する
+	function makeWorker() {
+		try {
+			const src = `const api=(${core})();onmessage=e=>{const r=api.run(e.data);postMessage(r,r.buf?[r.buf]:[])}`;
+			return new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+		} catch (e) {
+			const api = core(), w = { postMessage(m) { setTimeout(() => w.onmessage({ data: api.run(m) }), 0); } };
+			return w;
+		}
+	}
+
+	// ---- 画面 ----
+	const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+	const $ = id => document.getElementById(id);
+	let fw = 0, fh = 0, sizeKey = "";
+	function resize() {
+		const w = window.innerWidth || 960, h = window.innerHeight || 600;
+		const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+		const cw = Math.round(w * dpr), ch = Math.round(h * dpr);
+		if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+		// キーフレームは計算量を抑えるため約40万画素まで
+		const f = Math.min(1, Math.sqrt(400000 / (cw * ch)));
+		fw = Math.max(16, Math.round(cw * f)); fh = Math.max(16, Math.round(ch * f));
+		sizeKey = fw + "x" + fh;
+	}
+	resize();
+	window.addEventListener("resize", resize);
+	if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+
+	// ---- 配色（周期的なコサインパレット）----
+	const PALS = [
+		[0.00, 0.10, 0.20], [0.55, 0.42, 0.25], [0.80, 0.90, 0.30],
+		[0.30, 0.20, 0.20], [0.95, 0.08, 0.28], [0.62, 0.50, 0.38],
+	];
+	function makeLut(n) {
+		const d = PALS[n % PALS.length], lut = new Uint32Array(2048);
+		for (let i = 0; i < 2048; i++) {
+			const t = i / 2048, c = [0, 0, 0];
+			// 2倍周波の明暗を重ねて、縞に表情をつける
+			const sh = 0.72 + 0.28 * Math.cos(6.2832 * (2 * t + 0.1));
+			for (let j = 0; j < 3; j++) c[j] = Math.round(255 * Math.min(1, (0.5 + 0.5 * Math.cos(6.2832 * (t + d[j]))) * sh));
+			lut[i] = 0xff000000 | c[2] << 16 | c[1] << 8 | c[0];
+		}
+		return lut;
+	}
+
+	// ---- 潜行（1つの目的地へのズーム）の管理 ----
+	let diveId = 0, lastSeed = -1, cur = null, next = null, fade = 0, skip = false, paused = false;
+	function newDive() {
+		let i = 0;
+		if (lastSeed >= 0) do { i = Math.random() * SEEDS.length | 0; } while (i === lastSeed);
+		lastSeed = i;
+		return { id: ++diveId, name: SEEDS[i][0], sx: SEEDS[i][1], sy: SEEDS[i][2], cx: 0, cy: 0, iters: null,
+			found: false, asked: false, frames: [], pend: {}, z: 0, lut: makeLut(diveId - 1 + (Math.random() * 6 | 0)) };
+	}
+	// 次に計算すべき仕事を選ぶ（今見えているものを最優先）
+	function nextTask() {
+		for (const d of [cur, next]) {
+			if (d && !d.asked) {
+				d.asked = true;
+				return { type: "find", id: d.id, sx: d.sx, sy: d.sy, s0: S0, kMax: K_MAX, seed: Math.random() * 4294967296 >>> 0 };
+			}
+		}
+		for (const [d, a, b] of [[cur, 0, 3], [next, 0, 4], [cur, 3, LOOK], [next, 4, LOOK]]) {
+			if (!d || !d.found) continue;
+			const k0 = Math.floor(d.z);
+			for (let k = k0 + a; k < k0 + b && k <= K_MAX; k++) {
+				const f = d.frames[k];
+				if ((f && f.width === fw && f.height === fh) || d.pend[k] === sizeKey) continue;
+				d.pend[k] = sizeKey;
+				return { type: "render", id: d.id, k, w: fw, h: fh, cx: d.cx, cy: d.cy, s: S0 / Math.pow(2, k), maxIter: d.iters[k], lut: d.lut };
+			}
+		}
+		return null;
+	}
+	const idle = [];
+	function pump() {
+		while (idle.length) {
+			const t = nextTask();
+			if (!t) return;
+			idle.pop().postMessage(t);
+		}
+	}
+	function onResult(m) {
+		const d = cur && cur.id === m.id ? cur : next && next.id === m.id ? next : null;
+		if (!d) return; // 既に終わった潜行の結果は捨てる
+		if (m.type === "found") { d.cx = m.cx; d.cy = m.cy; d.iters = m.iters; d.found = true; return; }
+		if (d.pend[m.k] === m.w + "x" + m.h) delete d.pend[m.k];
+		if (m.k < Math.floor(d.z) || (d.frames[m.k] && m.w !== fw)) return;
+		const c = document.createElement("canvas");
+		c.width = m.w; c.height = m.h;
+		c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(m.buf), m.w, m.h), 0, 0);
+		d.frames[m.k] = c;
+	}
+	const NW = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
+	for (let i = 0; i < NW; i++) {
+		const w = makeWorker();
+		w.onmessage = e => { idle.push(w); onResult(e.data); pump(); };
+		idle.push(w);
+	}
+
+	// ズームを進める。次のキーフレームが未完成なら待つ
+	function advance(d, dt) {
+		const zt = Math.min(K_MAX - 1, d.z + SPEED * dt), k = Math.floor(zt);
+		if (!d.frames[k] || !d.frames[k + 1]) return;
+		d.z = zt;
+		for (let j = k - 1; j >= 0 && d.frames[j]; j--) d.frames[j] = null; // 通り過ぎた分は解放
+	}
+	// 隣り合う2枚のキーフレームを拡大して重ね、連続ズームに見せる
+	function drawDive(d, alpha) {
+		const k = Math.floor(d.z), f = d.z - k;
+		for (let j = k; j <= k + 1; j++) {
+			const fr = d.frames[j];
+			if (!fr) continue;
+			const h = cv.height * Math.pow(2, d.z - j), w = h * fr.width / fr.height;
+			ctx.globalAlpha = alpha * (j === k ? 1 : Math.min(1, f * 3));
+			ctx.drawImage(fr, (cv.width - w) / 2, (cv.height - h) / 2, w, h);
+		}
+	}
+
+	// 開発用: #z=30 のように指定すると途中の深さから始められる
+	const startZ = Math.min(K_MAX - 2, +(location.hash.match(/z=([\d.]+)/) || [])[1] || 0);
+	cur = newDive();
+	cur.z = startZ;
+	let last = performance.now();
+	function tick(now) {
+		const dt = Math.min(0.1, (now - last) / 1000);
+		last = now;
+		if (!paused) {
+			advance(cur, dt);
+			// 終点が近づいたら（または N キーで）次の目的地を準備する
+			if (!next && (cur.z > K_MAX - 12 || skip)) next = newDive();
+			if (next && !fade && next.frames[0] && next.frames[1] && (skip || cur.z >= K_MAX - 1 - SPEED * FADE_T)) { fade = 1e-4; skip = false; }
+			if (fade) {
+				advance(next, dt);
+				fade += dt / FADE_T;
+				if (fade >= 1) { cur = next; next = null; fade = 0; }
+			}
+		}
+		ctx.globalAlpha = 1;
+		ctx.fillStyle = "#000";
+		ctx.fillRect(0, 0, cv.width, cv.height);
+		ctx.imageSmoothingQuality = "high";
+		drawDive(cur, 1);
+		if (fade) drawDive(next, fade * fade * (3 - 2 * fade));
+		pump();
+		// HUD 更新
+		const d = fade > 0.5 ? next : cur, ok = !!d.frames[Math.floor(d.z)];
+		$("msg").style.display = ok ? "none" : "flex";
+		$("name").textContent = d.name + (paused ? "　〔一時停止中〕" : "");
+		$("mag").textContent = "倍率 ×" + (d.z < 10 ? Math.pow(2, d.z).toFixed(1) : Math.pow(2, d.z).toExponential(2));
+		$("pos").textContent = d.found ? "c = " + d.cx.toFixed(15) + (d.cy < 0 ? " − " : " + ") + Math.abs(d.cy).toFixed(15) + " i" : "";
+		$("bar").style.width = (d.z / (K_MAX - 1) * 100).toFixed(2) + "%";
+		requestAnimationFrame(tick);
+	}
+	requestAnimationFrame(tick);
+
+	// ---- 操作 ----
+	window.addEventListener("pointerdown", () => { window.focus(); paused = !paused; });
+	window.addEventListener("keydown", e => {
+		if (e.code === "Space") { paused = !paused; e.preventDefault(); }
+		else if (e.code.startsWith("Arrow")) e.preventDefault();
+		else if (e.key === "n" || e.key === "N") { skip = true; paused = false; }
+	});
+})();
+</script>
+</body>
+</html>

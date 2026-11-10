@@ -1,0 +1,11 @@
+{
+	"version": "0.0.1",
+	"configurations": [
+		{
+			"name": "demo-site",
+			"runtimeExecutable": "C:/Users/yokot/.pyenv/pyenv-win/versions/3.11.2/python.exe",
+			"runtimeArgs": ["-m", "http.server", "8765", "--bind", "127.0.0.1"],
+			"port": 8765
+		}
+	]
+}

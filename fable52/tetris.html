@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>PRISMFALL - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; overflow: hidden; background: #090b18; touch-action: none; user-select: none; -webkit-user-select: none; }
+	canvas { display: block; }
+	#err { color: #9fb0ff; font: 14px sans-serif; padding: 24px; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.2.3/pixi.min.js"></script>
+</head>
+<body>
+<script>
+// PRISMFALL — 宝石のかけらを積んで砕く、PixiJS 製の落ち物ブロックパズル
+(() => {
+	'use strict';
+	if (!window.PIXI) {
+		const p = document.createElement('p');
+		p.id = 'err';
+		p.textContent = 'PixiJS を読み込めませんでした。ネットワーク接続を確認してください。';
+		document.body.appendChild(p);
+		return;
+	}
+	// 論理座標系（640x700）で組み、画面に合わせて全体を拡縮する
+	const W = 10, H = 22, HID = 2, CS = 30, BX = 170, BY = 50, LW = 640, LH = 700;
+	const DAS = 150, ARR = 35, LOCK = 500, CLR = 300;
+	const FONT = '"Segoe UI","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif';
+	const COLORS = [0xff5d8f, 0x4db8ff, 0xffb84d, 0xa07bff, 0xb6ee4a, 0xff8a4d, 0x3fe0b5];
+	// [箱の一辺, セル座標] — 回転は箱の中で90度ずつ回して作る
+	const SHAPES = [
+		[4, [[0, 1], [1, 1], [2, 1], [3, 1]]],
+		[2, [[0, 0], [1, 0], [0, 1], [1, 1]]],
+		[3, [[1, 0], [0, 1], [1, 1], [2, 1]]],
+		[3, [[1, 0], [2, 0], [0, 1], [1, 1]]],
+		[3, [[0, 0], [1, 0], [1, 1], [2, 1]]],
+		[3, [[0, 0], [0, 1], [1, 1], [2, 1]]],
+		[3, [[2, 0], [0, 1], [1, 1], [2, 1]]],
+	];
+	const ROT = SHAPES.map(([n, c]) => {
+		const a = [c];
+		for (let i = 1; i < 4; i++) a.push(a[i - 1].map(([x, y]) => [n - 1 - y, x]));
+		return a;
+	});
+	// 回転できないときに試すずらし量
+	const KICKS = [[0, 0], [-1, 0], [1, 0], [0, -1], [-2, 0], [2, 0], [-1, -1], [1, -1]];
+	const CLEAR_NAME = ['', '', 'DOUBLE', 'TRIPLE', 'PRISM BREAK!'];
+
+	// ---- PIXI の舞台づくり ----
+	let vw = window.innerWidth || 960, vh = window.innerHeight || 600, baseX = 0, baseY = 0;
+	const app = new PIXI.Application({
+		width: vw, height: vh, backgroundColor: 0x090b18, antialias: true,
+		resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true,
+	});
+	document.body.appendChild(app.view);
+	const bgG = new PIXI.Graphics(), world = new PIXI.Container();
+	const frameG = new PIXI.Graphics(), rowsC = new PIXI.Container(), pieceG = new PIXI.Graphics();
+	const fxG = new PIXI.Graphics(), holdG = new PIXI.Graphics(), nextG = new PIXI.Graphics();
+	app.stage.addChild(bgG, world);
+	world.addChild(frameG, rowsC, pieceG, fxG, holdG, nextG);
+	rowsC.position.set(BX, BY);
+	pieceG.position.set(BX, BY);
+	fxG.position.set(BX, BY);
+	fxG.blendMode = PIXI.BLEND_MODES.ADD;
+	// 盤面からはみ出た段を隠すマスク
+	const maskG = new PIXI.Graphics().beginFill(0xffffff).drawRect(BX, BY, W * CS, (H - HID) * CS).endFill();
+	world.addChild(maskG);
+	rowsC.mask = maskG;
+	const rowG = [];
+	for (let y = 0; y < H; y++) {
+		rowG[y] = new PIXI.Graphics();
+		rowsC.addChild(rowG[y]);
+	}
+
+	function label(str, size, fill, x, y, ax = 0, extra = {}) {
+		const t = new PIXI.Text(str, Object.assign({ fontFamily: FONT, fontSize: size, fill, fontWeight: '700', letterSpacing: 1 }, extra));
+		t.resolution = 2;
+		t.anchor.set(ax, 0);
+		t.position.set(x, y);
+		world.addChild(t);
+		return t;
+	}
+	// 枠とパネル（静的なので一度だけ描く）
+	frameG.lineStyle(2, 0x6c7cff, .6).beginFill(0x0d1024, .92).drawRoundedRect(BX - 8, BY - 8, W * CS + 16, (H - HID) * CS + 16, 10).endFill();
+	frameG.lineStyle(1.5, 0x6c7cff, .35).beginFill(0x0d1024, .8).drawRoundedRect(20, 50, 130, 112, 10).drawRoundedRect(490, 50, 130, 292, 10).endFill();
+	frameG.lineStyle(1, 0xffffff, .05);
+	for (let x = 1; x < W; x++) frameG.moveTo(BX + x * CS, BY).lineTo(BX + x * CS, BY + (H - HID) * CS);
+	for (let y = 1; y < H - HID; y++) frameG.moveTo(BX, BY + y * CS).lineTo(BX + W * CS, BY + y * CS);
+	label('PRISMFALL', 24, ['#ffffff', '#8f9bff'], LW / 2, 6, .5, { letterSpacing: 9, fontWeight: '800' });
+	label('HOLD', 11, 0x8f9bff, 32, 57, 0, { letterSpacing: 3 });
+	label('NEXT', 11, 0x8f9bff, 502, 57, 0, { letterSpacing: 3 });
+	const hud = ['SCORE', 'LEVEL', 'LINES'].map((s, i) => {
+		label(s, 11, 0x8f9bff, 22, 186 + i * 64, 0, { letterSpacing: 3 });
+		return label('0', 26, 0xffffff, 22, 200 + i * 64);
+	});
+	const comboT = label('', 13, 0xffb84d, 22, 380);
+	const help = { fontWeight: '400', lineHeight: 21, letterSpacing: 0 };
+	label('← →　移動\n↑ / X　回転\nZ　逆回転\n↓　ソフトドロップ\nSpace　ハードドロップ\nC / Shift　ホールド\nP　ポーズ　R　やり直し', 12, 0x7c86b8, 22, 500, 0, help);
+	label('TOUCH\nタップ　回転\nドラッグ　移動\n下フリック　落下\nHOLD枠　ホールド', 12, 0x7c86b8, 492, 500, 0, help);
+	const banner = label('', 30, ['#ffffff', '#ffd98a'], BX + W * CS / 2, BY + 230, .5, { fontWeight: '800', letterSpacing: 3, dropShadow: true, dropShadowColor: 0x000000, dropShadowBlur: 8, dropShadowDistance: 0 });
+	banner.anchor.set(.5);
+	banner.visible = false;
+	// タイトル・ポーズ・ゲームオーバーの幕
+	const ov = new PIXI.Container();
+	world.addChild(ov);
+	ov.addChild(new PIXI.Graphics().beginFill(0x070916, .82).drawRect(BX, BY, W * CS, (H - HID) * CS).endFill());
+	const ovTitle = label('', 34, ['#ffffff', '#8f9bff'], LW / 2, 300, .5, { fontWeight: '800', letterSpacing: 5 });
+	const ovSub = label('', 14, 0xc5ccff, LW / 2, 350, .5, { align: 'center', lineHeight: 24, fontWeight: '400' });
+	ovTitle.anchor.set(.5);
+	ov.addChild(ovTitle, ovSub);
+	const credit = new PIXI.Text('Claude Fable 5.2', { fontFamily: FONT, fontSize: 11, fill: 0x7c86b8 });
+	credit.anchor.set(1, 1);
+	credit.alpha = .7;
+	app.stage.addChild(credit);
+
+	function resize() {
+		vw = window.innerWidth || 960;
+		vh = window.innerHeight || 600;
+		app.renderer.resize(vw, vh);
+		const s = Math.min(vw / LW, vh / LH);
+		world.scale.set(s);
+		baseX = (vw - LW * s) / 2;
+		baseY = (vh - LH * s) / 2;
+		credit.position.set(vw - 8, vh - 6);
+	}
+
+	// ---- 描画の部品 ----
+	const mix = (c, t, k) => {
+		const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+		return ((r + (((t >> 16) & 255) - r) * k) << 16) | ((g + (((t >> 8) & 255) - g) * k) << 8) | ((b + ((t & 255) - b) * k) | 0);
+	};
+	// ピラミッドカットの宝石1個
+	function gem(g, x, y, s, c, a = 1) {
+		const m = s / 2, i = 1.5, o = s - 1.5;
+		g.lineStyle(0);
+		g.beginFill(c, a).drawRoundedRect(x + 1, y + 1, s - 2, s - 2, s * .14).endFill();
+		g.beginFill(mix(c, 0xffffff, .5), a).drawPolygon([x + i, y + i, x + o, y + i, x + m, y + m]).endFill();
+		g.beginFill(mix(c, 0xffffff, .18), a).drawPolygon([x + i, y + i, x + i, y + o, x + m, y + m]).endFill();
+		g.beginFill(mix(c, 0x000000, .42), a).drawPolygon([x + i, y + o, x + o, y + o, x + m, y + m]).endFill();
+		g.beginFill(mix(c, 0x000000, .18), a).drawPolygon([x + o, y + i, x + o, y + o, x + m, y + m]).endFill();
+		g.beginFill(mix(c, 0xffffff, .28), a).drawRect(x + s * .3, y + s * .3, s * .4, s * .4).endFill();
+	}
+	// ネクスト・ホールド用の小さなピース
+	function mini(g, t, cx, cy, s, a = 1) {
+		const c = ROT[t][0], xs = c.map(v => v[0]), ys = c.map(v => v[1]);
+		const ox = cx - (Math.min(...xs) + Math.max(...xs) + 1) * s / 2, oy = cy - (Math.min(...ys) + Math.max(...ys) + 1) * s / 2;
+		for (const [x, y] of c) gem(g, ox + x * s, oy + y * s, s, COLORS[t], a);
+	}
+	function drawRow(y) {
+		const g = rowG[y].clear();
+		for (let x = 0; x < W; x++) if (board[y][x]) gem(g, x * CS, 0, CS, COLORS[board[y][x] - 1]);
+		rowG[y].alpha = 1;
+	}
+	function drawBoard() {
+		for (let y = 0; y < H; y++) drawRow(y);
+	}
+	function drawSide() {
+		holdG.clear();
+		if (holdT >= 0) mini(holdG, holdT, 85, 116, 20, canHold ? 1 : .35);
+		nextG.clear();
+		for (let i = 0; i < 3; i++) mini(nextG, queue[i], 555, 122 + i * 88, i ? 16 : 20, i ? .8 : 1);
+	}
+	function drawHud() {
+		hud[0].text = String(score);
+		hud[1].text = String(level);
+		hud[2].text = String(lines);
+		comboT.text = combo > 1 ? 'COMBO ×' + combo : '';
+	}
+	function showBanner(s) {
+		banner.text = s;
+		banner.visible = true;
+		bannerT = 0;
+	}
+	function overlay(title, sub) {
+		ov.visible = !!title;
+		ovTitle.text = title || '';
+		ovSub.text = sub || '';
+	}
+
+	// ---- 音（ユーザー操作後にだけ開始） ----
+	let ac;
+	function wake() {
+		try {
+			ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+			if (ac.state === 'suspended') ac.resume();
+		} catch (e) { /* 音なしで続行 */ }
+		window.focus();
+	}
+	function snd(f, d, v = .06, type = 'sine', to = f, delay = 0) {
+		if (!ac) return;
+		const t = ac.currentTime + delay, o = ac.createOscillator(), a = ac.createGain();
+		o.type = type;
+		o.frequency.setValueAtTime(f, t);
+		o.frequency.exponentialRampToValueAtTime(to, t + d);
+		a.gain.setValueAtTime(v, t);
+		a.gain.exponentialRampToValueAtTime(.001, t + d);
+		o.connect(a).connect(ac.destination);
+		o.start(t);
+		o.stop(t + d);
+	}
+
+	// ---- ゲーム状態 ----
+	let board = Array.from({ length: H }, () => new Array(W).fill(0));
+	let cur = null, queue = [], bag = [], holdT = -1, canHold = true;
+	let score = 0, lines = 0, level = 1, combo = 0, state = 'title';
+	let gravT = 0, lockT = 0, lockN = 0, clr = null, dir = 0, das = 0, soft = false;
+	let rowOff = new Array(H).fill(0), parts = [], trails = [], flashes = [], shake = 0, vx = 0, vy = 0, bannerT = 0;
+	const held = {};
+
+	// 7種を袋に入れてシャッフルし、偏りをなくす
+	function pull() {
+		if (!bag.length) {
+			bag = [0, 1, 2, 3, 4, 5, 6];
+			for (let i = 6; i > 0; i--) {
+				const j = Math.random() * (i + 1) | 0;
+				[bag[i], bag[j]] = [bag[j], bag[i]];
+			}
+		}
+		return bag.pop();
+	}
+	const fits = (r, x, y) => ROT[cur.t][r].every(([dx, dy]) => {
+		const X = x + dx, Y = y + dy;
+		return X >= 0 && X < W && Y < H && (Y < 0 || !board[Y][X]);
+	});
+	function reset() {
+		board = Array.from({ length: H }, () => new Array(W).fill(0));
+		bag = [];
+		queue = [];
+		holdT = -1;
+		score = lines = combo = 0;
+		level = 1;
+		clr = null;
+		rowOff.fill(0);
+		parts = [];
+		trails = [];
+		flashes = [];
+		rowsC.alpha = 1;
+		state = 'play';
+		overlay();
+		drawBoard();
+		spawn();
+		drawHud();
+	}
+	function spawn(t) {
+		while (queue.length < 4) queue.push(pull());
+		if (t == null) t = queue.shift();
+		cur = { t, r: 0, x: (W - SHAPES[t][0]) >> 1, y: 1 };
+		gravT = lockT = lockN = 0;
+		vx = cur.x;
+		vy = cur.y;
+		canHold = true;
+		drawSide();
+		if (!fits(0, cur.x, cur.y)) gameOver();
+	}
+	function gameOver() {
+		state = 'over';
+		cur = null;
+		rowsC.alpha = .3;
+		shake = 14;
+		overlay('SHATTERED', 'SCORE  ' + score + '\nLINES  ' + lines + '\n\nENTER / クリックでリトライ');
+		snd(330, .9, .1, 'sawtooth', 40);
+	}
+	// 接地中に動かしたら固定までの猶予を延ばす（回数制限つき）
+	function touched() {
+		if (lockN < 14) { lockT = 0; lockN++; }
+	}
+	function move(d) {
+		if (!cur || !fits(cur.r, cur.x + d, cur.y)) return false;
+		cur.x += d;
+		touched();
+		snd(880, .03, .025, 'triangle');
+		return true;
+	}
+	function rotate(d) {
+		if (!cur) return;
+		const r = (cur.r + d + 4) % 4;
+		for (const [kx, ky] of KICKS) {
+			if (fits(r, cur.x + kx, cur.y + ky)) {
+				cur.r = r;
+				cur.x += kx;
+				cur.y += ky;
+				touched();
+				snd(1320, .05, .03, 'triangle', 1760);
+				return;
+			}
+		}
+	}
+	function hold() {
+		if (!cur || !canHold) return;
+		const t = cur.t, h = holdT;
+		holdT = t;
+		spawn(h < 0 ? undefined : h);
+		canHold = false;
+		drawSide();
+		snd(660, .08, .04, 'sine', 990);
+	}
+	function hardDrop() {
+		if (!cur) return;
+		let d = 0;
+		while (fits(cur.r, cur.x, cur.y + d + 1)) d++;
+		for (const [dx, dy] of ROT[cur.t][cur.r]) trails.push({ x: cur.x + dx, y0: cur.y + dy, y1: cur.y + dy + d, c: COLORS[cur.t], t: 0 });
+		cur.y += d;
+		score += d * 2;
+		shake = Math.max(shake, 4);
+		lock();
+	}
+	function burst(x, y, c, n, sp) {
+		for (let i = 0; i < n; i++) {
+			const a = Math.random() * 6.283, v = sp * (.3 + Math.random());
+			parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - sp * .4, l: 1, c, s: 2 + Math.random() * 4 });
+		}
+	}
+	function lock() {
+		const cells = ROT[cur.t][cur.r].map(([dx, dy]) => [cur.x + dx, cur.y + dy]);
+		for (const [X, Y] of cells) if (Y >= 0) board[Y][X] = cur.t + 1;
+		flashes.push({ cells, t: 0 });
+		snd(190, .1, .12, 'sine', 90);
+		const out = cells.every(([, Y]) => Y < HID);
+		cur = null;
+		drawBoard();
+		if (out) return gameOver();
+		const rows = [];
+		for (let y = 0; y < H; y++) if (board[y].every(v => v)) rows.push(y);
+		if (!rows.length) {
+			combo = 0;
+			drawHud();
+			return spawn();
+		}
+		// ライン消去の演出を開始（盤面の確定は演出後）
+		clr = { rows, t: 0 };
+		const n = rows.length;
+		shake = 4 + n * 3;
+		for (const y of rows) for (let x = 0; x < W; x++) burst((x + .5) * CS, (y - HID + .5) * CS, COLORS[board[y][x] - 1], n > 3 ? 5 : 3, 260);
+		[523, 659, 784, 1047].slice(0, n).forEach((f, i) => snd(f, .3, .07, 'sine', f, i * .06));
+		if (n > 3) snd(1568, .5, .05, 'triangle', 1568, .24);
+	}
+	// そろった段を消して上を落とす
+	function collapse() {
+		const n = clr.rows.length, nb = [], no = new Array(H).fill(0);
+		let k = 0;
+		for (let y = H - 1; y >= 0; y--) {
+			if (clr.rows.includes(y)) { k++; continue; }
+			nb.unshift(board[y]);
+			no[y + k] = -k * CS; // 見た目だけ元の位置から滑り落ちる
+		}
+		while (nb.length < H) nb.unshift(new Array(W).fill(0));
+		board = nb;
+		rowOff = no;
+		combo++;
+		score += ([0, 100, 300, 500, 800][n] + (combo - 1) * 50) * level;
+		lines += n;
+		const lv = 1 + (lines / 10 | 0);
+		if (lv > level) {
+			level = lv;
+			showBanner('LEVEL ' + level);
+			snd(784, .4, .06, 'triangle', 1568, .1);
+		} else if (CLEAR_NAME[n]) showBanner(CLEAR_NAME[n]);
+		else if (combo > 1) showBanner('COMBO ×' + combo);
+		clr = null;
+		drawBoard();
+		drawHud();
+		spawn();
+	}
+
+	function update(dt) {
+		if (state !== 'play') return;
+		if (clr) {
+			if ((clr.t += dt) >= CLR) collapse();
+			return;
+		}
+		// 横移動のオートリピート
+		if (dir) {
+			das += dt;
+			while (das >= DAS) {
+				if (!move(dir)) { das = DAS; break; }
+				das -= ARR;
+			}
+		}
+		// 自然落下とソフトドロップ
+		const iv = soft ? 35 : Math.max(45, 800 * Math.pow(.82, level - 1));
+		gravT += dt;
+		while (gravT >= iv) {
+			gravT -= iv;
+			if (fits(cur.r, cur.x, cur.y + 1)) {
+				cur.y++;
+				lockT = lockN = 0;
+				if (soft) { score++; hud[0].text = String(score); }
+			} else { gravT = 0; break; }
+		}
+		if (!fits(cur.r, cur.x, cur.y + 1)) {
+			lockT += dt;
+			if (lockT >= LOCK) lock();
+		}
+		if (cur) {
+			const k = 1 - Math.exp(-dt / 22);
+			vx += (cur.x - vx) * k;
+			vy += (cur.y - vy) * k;
+		}
+	}
+
+	// ---- 毎フレームの描画 ----
+	// 背景をただよう光のかけら
+	const shards = Array.from({ length: 18 }, (_, i) => ({ x: Math.random(), y: Math.random(), s: 20 + Math.random() * 70, r: Math.random() * 6, vr: (Math.random() - .5) * .4, vy: .008 + Math.random() * .02, c: COLORS[i % 7] }));
+	function render(dt, now) {
+		bgG.clear();
+		for (let i = 0; i < 6; i++) bgG.beginFill(0x3941b8, .03).drawCircle(vw / 2, vh / 2, Math.max(vw, vh) * (.62 - i * .09)).endFill();
+		for (const s of shards) {
+			s.y -= s.vy * dt / 1000;
+			s.r += s.vr * dt / 1000;
+			if (s.y < -.15) { s.y = 1.15; s.x = Math.random(); }
+			const p = [];
+			for (let i = 0; i < 3; i++) p.push(s.x * vw + Math.cos(s.r + i * 2.094) * s.s, s.y * vh + Math.sin(s.r + i * 2.094) * s.s * (i ? 1 : 1.5));
+			bgG.beginFill(s.c, .055).drawPolygon(p).endFill();
+		}
+		// 画面ゆれ
+		shake *= Math.exp(-dt / 90);
+		world.position.set(baseX + (Math.random() - .5) * shake, baseY + (Math.random() - .5) * shake);
+		// 段の落下アニメーションと消去中のフェード
+		const e = Math.exp(-dt / 60), cp = clr ? clr.t / CLR : 0;
+		for (let y = 0; y < H; y++) {
+			rowOff[y] = rowOff[y] > -.3 ? 0 : rowOff[y] * e;
+			rowG[y].y = (y - HID) * CS + rowOff[y];
+			if (clr && clr.rows.includes(y)) rowG[y].alpha = Math.max(0, 1 - cp * 1.6);
+		}
+		// 操作中のピースとゴースト
+		pieceG.clear();
+		if (cur) {
+			let d = 0;
+			while (fits(cur.r, cur.x, cur.y + d + 1)) d++;
+			const c = COLORS[cur.t];
+			for (const [dx, dy] of ROT[cur.t][cur.r]) {
+				const gy = cur.y + dy + d;
+				if (gy >= HID) pieceG.lineStyle(2, c, .7).beginFill(c, .1).drawRoundedRect((cur.x + dx) * CS + 3, (gy - HID) * CS + 3, CS - 6, CS - 6, 4).endFill();
+			}
+			// 固定が近づくと少し明滅させる
+			const a = lockT > 0 ? .75 + .25 * Math.cos(lockT / 40) : 1;
+			for (const [dx, dy] of ROT[cur.t][cur.r]) if (vy + dy > HID - 1) gem(pieceG, (vx + dx) * CS, (vy + dy - HID) * CS, CS, c, a);
+		}
+		// エフェクト（加算合成）
+		fxG.clear();
+		trails = trails.filter(t => (t.t += dt) < 180);
+		for (const t of trails) {
+			const y0 = Math.max(0, (t.y0 - HID) * CS), y1 = (t.y1 - HID) * CS, a = .3 * (1 - t.t / 180);
+			fxG.beginFill(t.c, a * .5).drawRect(t.x * CS + 4, y0, CS - 8, y1 - y0).endFill();
+			fxG.beginFill(t.c, a).drawRect(t.x * CS + 4, y0 + (y1 - y0) * .6, CS - 8, (y1 - y0) * .4).endFill();
+		}
+		flashes = flashes.filter(f => (f.t += dt) < 160);
+		for (const f of flashes) for (const [X, Y] of f.cells) if (Y >= HID) fxG.beginFill(0xffffff, .55 * (1 - f.t / 160)).drawRoundedRect(X * CS + 1, (Y - HID) * CS + 1, CS - 2, CS - 2, 4).endFill();
+		if (clr) {
+			// 消える段を走る白い光の帯
+			for (const y of clr.rows) {
+				const h = CS * (1 - cp), w = W * CS * Math.min(1, cp * 3 + .2);
+				fxG.beginFill(0xffffff, .85 * (1 - cp)).drawRect(W * CS / 2 - w / 2, (y - HID + .5) * CS - h / 2, w, h).endFill();
+				fxG.beginFill(0x9fb0ff, .25 * (1 - cp)).drawRect(-20, (y - HID + .5) * CS - 1.5, W * CS + 40, 3).endFill();
+			}
+		}
+		for (const p of parts) {
+			p.x += p.vx * dt / 1000;
+			p.y += p.vy * dt / 1000;
+			p.vy += dt * .9;
+			p.l -= dt / 700;
+			const s = p.s * Math.max(0, p.l);
+			fxG.beginFill(p.c, Math.max(0, p.l)).drawPolygon([p.x, p.y - s, p.x + s * .6, p.y, p.x, p.y + s, p.x - s * .6, p.y]).endFill();
+		}
+		parts = parts.filter(p => p.l > 0);
+		// 中央のバナー（ぽんと出て消える）
+		if (banner.visible) {
+			bannerT += dt;
+			const k = bannerT / 900;
+			banner.scale.set(k < .15 ? .6 + k / .15 * .5 : 1.1 - Math.min(.1, (k - .15) * .5));
+			banner.alpha = k > .6 ? Math.max(0, 1 - (k - .6) / .4) : 1;
+			banner.y = BY + 230 - k * 20;
+			if (k >= 1) banner.visible = false;
+		}
+		if (ov.visible) ovSub.alpha = .7 + .3 * Math.sin(now / 320);
+	}
+
+	// ---- 入力 ----
+	function start() {
+		if (state === 'pause') {
+			state = 'play';
+			overlay();
+		} else reset();
+		snd(660, .15, .05, 'sine', 1320);
+	}
+	function pause() {
+		state = 'pause';
+		overlay('PAUSE', 'P / クリックで再開');
+	}
+	window.addEventListener('keydown', e => {
+		const k = e.code;
+		if (/^(Arrow|Space)/.test(k)) e.preventDefault();
+		wake();
+		if (e.repeat) return;
+		held[k] = true;
+		if (state !== 'play') {
+			if (k === 'Enter' || (k === 'Space' && state === 'title') || (k === 'KeyR' && state === 'over') || ((k === 'KeyP' || k === 'Escape') && state === 'pause')) start();
+			return;
+		}
+		if (k === 'ArrowLeft' || k === 'ArrowRight') {
+			dir = k === 'ArrowLeft' ? -1 : 1;
+			das = 0;
+			move(dir);
+		} else if (k === 'ArrowDown') soft = true;
+		else if (k === 'ArrowUp' || k === 'KeyX') rotate(1);
+		else if (k === 'KeyZ') rotate(-1);
+		else if (k === 'Space') hardDrop();
+		else if (k === 'KeyC' || k === 'ShiftLeft' || k === 'ShiftRight') hold();
+		else if (k === 'KeyP' || k === 'Escape') pause();
+		else if (k === 'KeyR') reset();
+	});
+	window.addEventListener('keyup', e => {
+		const k = e.code;
+		held[k] = false;
+		if (k === 'ArrowDown') soft = false;
+		if (k === 'ArrowLeft' || k === 'ArrowRight') {
+			dir = held.ArrowLeft ? -1 : held.ArrowRight ? 1 : 0;
+			das = 0;
+		}
+	});
+	window.addEventListener('blur', () => {
+		dir = 0;
+		soft = false;
+		for (const k in held) held[k] = false;
+	});
+	// ポインタ操作: タップで回転、ドラッグで移動、下へ弾くとハードドロップ、HOLD枠タップでホールド
+	let pt = null;
+	app.view.addEventListener('pointerdown', e => {
+		wake();
+		e.preventDefault();
+		if (state !== 'play') { start(); return; }
+		const s = world.scale.x, lx = (e.clientX - baseX) / s, ly = (e.clientY - baseY) / s;
+		if (lx > 20 && lx < 150 && ly > 50 && ly < 162) { hold(); return; }
+		pt = { x: e.clientX, sx: e.clientX, sy: e.clientY, t: performance.now(), moved: false };
+	});
+	app.view.addEventListener('pointermove', e => {
+		if (!pt || state !== 'play') return;
+		const st = CS * world.scale.x * .9;
+		while (Math.abs(e.clientX - pt.x) >= st) {
+			const d = Math.sign(e.clientX - pt.x);
+			pt.x += d * st;
+			pt.moved = true;
+			move(d);
+		}
+	});
+	window.addEventListener('pointerup', e => {
+		if (!pt) return;
+		const dy = e.clientY - pt.sy, dt = performance.now() - pt.t, u = CS * world.scale.x;
+		if (state === 'play') {
+			if (dy > u * 2 && dy > Math.abs(e.clientX - pt.sx) * 1.5 && dt < 350) hardDrop();
+			else if (!pt.moved && dt < 300) rotate(1);
+		}
+		pt = null;
+	});
+	window.addEventListener('resize', resize);
+
+	// ---- 起動 ----
+	// 自動検証用の状態のぞき窓
+	window.__dbg = () => ({ state, score, lines, level, hold: holdT, board, cur: cur && { x: cur.x, y: cur.y, r: cur.r, rots: ROT[cur.t] } });
+	resize();
+	while (queue.length < 4) queue.push(pull());
+	drawSide();
+	overlay('PRISMFALL', '宝石のかけらを積んで、砕け。\n\nENTER / クリックでスタート');
+	app.ticker.add(() => {
+		// iframe の遅延表示などでサイズが変わっていたら追従する
+		if ((window.innerWidth || 960) !== vw || (window.innerHeight || 600) !== vh) resize();
+		const dt = Math.min(50, app.ticker.deltaMS);
+		update(dt);
+		render(dt, performance.now());
+	});
+})();
+</script>
+</body>
+</html>

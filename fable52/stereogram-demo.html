@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>ランダムドット・ステレオグラム - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; background: #12141b; overflow: hidden; }
+	body { display: flex; flex-direction: column; font: 12px/1.5 "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; color: #d9deea; user-select: none; }
+	header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 12px; background: #1a1d27; border-bottom: 1px solid #2b3040; }
+	header h1 { margin: 0; font-size: 11px; letter-spacing: .26em; font-weight: 600; opacity: .7; }
+	.grp { display: flex; align-items: center; gap: 4px; }
+	.grp > span { opacity: .6; font-size: 11px; margin-right: 2px; }
+	button, select, input[type=text] { background: #262b3a; color: inherit; border: 1px solid #3a4157; border-radius: 5px; font: inherit; padding: 3px 8px; cursor: pointer; }
+	button:hover { background: #323950; }
+	button.on { background: #3b78c4; border-color: #6aa5ee; color: #fff; }
+	input[type=text] { width: 76px; cursor: text; }
+	input[type=range] { width: 84px; accent-color: #6aa5ee; }
+	#stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 6px 12px; }
+	/* 見方ガイド: この2点が3つに見えるように目の力を抜く */
+	#dots { position: relative; height: 14px; flex: none; }
+	#dots i { position: absolute; top: 1px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #ffd76a; box-shadow: 0 0 0 3px #12141b, 0 0 0 4px rgba(255, 215, 106, .4); }
+	canvas { display: block; flex: none; border-radius: 4px; box-shadow: 0 6px 30px rgba(0, 0, 0, .5); cursor: pointer; }
+	footer { padding: 7px 130px 9px 14px; font-size: 11.5px; background: #1a1d27; border-top: 1px solid #2b3040; min-height: 34px; }
+	footer b { color: #ffd76a; font-weight: 600; }
+	.credit { position: fixed; right: 12px; bottom: 9px; font-size: 11px; opacity: .6; letter-spacing: .06em; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+	<h1>AUTOSTEREOGRAM</h1>
+	<div class="grp" id="shapes"><span>かたち</span></div>
+	<input type="text" id="txt" value="3D" maxlength="8" title="隠したい文字" style="display:none">
+	<div class="grp"><span>模様</span><select id="pat"><option value="0">白黒ドット</option><option value="1">カラードット</option><option value="2">マーブル</option></select><button id="reseed" title="N">作り直す</button></div>
+	<div class="grp"><span>奥行き</span><input type="range" id="depth" min="12" max="48" value="33"></div>
+	<div class="grp"><button id="mode" title="見方を切り替え">平行法</button><button id="anim" title="A">うごかす</button><button id="ans" title="Space / 画像クリック">答え合わせ</button></div>
+</header>
+<div id="stage">
+	<div id="dots"><i></i><i></i></div>
+	<canvas id="cv"></canvas>
+</div>
+<footer id="guide"></footer>
+<div class="credit">Claude Fable 5.2</div>
+<script>
+(() => {
+	"use strict";
+	const $ = id => document.getElementById(id);
+	const cv = $("cv"), ctx = cv.getContext("2d");
+	let W = 0, H = 0, sep = 100;            // sep = 最も奥の面での繰り返し幅（px）
+	let img, out, pat, depth, same;         // 出力画素・模様・深度マップ・リンク配列
+	let shape = 0, seed = 1, answer = false, cross = false, anim = false, t = 0, textDepth = null;
+
+	// ---- 隠す立体（u,v は画像中心を原点とした座標、戻り値は 0=奥〜1=手前）----
+	const star = (u, v, a) => {
+		// 五芒星: 1/5 回転で折りたたみ、辺からの距離で面を作る
+		const r = Math.hypot(u, v) / 0.82, seg = Math.PI * 0.4;
+		let ang = ((Math.atan2(v, u) + a) % seg + seg) % seg - seg / 2;
+		ang = Math.abs(ang);
+		const rho = 0.42, s = Math.sin(seg / 2), c = Math.cos(seg / 2);
+		const e = 1 - (rho * s * r * Math.cos(ang) + (1 - rho * c) * r * Math.sin(ang)) / (rho * s);
+		return e > 0 ? 0.35 + 0.65 * Math.min(1, e * 1.5) : 0;
+	};
+	const SHAPES = [
+		["球", (u, v, t) => {
+			const x = u - 0.25 * Math.sin(t * 0.9), y = v - 0.12 * Math.cos(t * 1.3), r2 = (x * x + y * y) / 0.49;
+			return r2 < 1 ? 0.2 + 0.8 * Math.sqrt(1 - r2) : 0;
+		}],
+		["ドーナツ", (u, v, t) => {
+			const d = Math.hypot(u, v) - 0.52, h2 = 0.0625 - d * d;
+			// 面を傾けて、ゆらゆら回っているように見せる
+			return h2 > 0 ? Math.max(0, 0.3 + 0.55 * Math.sqrt(h2) / 0.25 + 0.22 * (u * Math.cos(t) + v * Math.sin(t))) : 0;
+		}],
+		["ハート", (u, v, t) => {
+			const k = 0.6 * (1 + 0.06 * Math.sin(t * 4)), x = u / k, y = -(v - 0.08) / k + 0.15;
+			const f = Math.pow(x * x + y * y - 1, 3) - x * x * y * y * y;
+			return f < 0 ? 0.3 + 0.7 * Math.min(1, Math.pow(-f, 0.3)) : 0;
+		}],
+		["星", (u, v, t) => star(u, v, t * 0.4 + Math.PI / 2 - Math.PI * 0.2)],
+		["階段ピラミッド", (u, v, t) => {
+			const a = t * 0.3, c = Math.cos(a), s = Math.sin(a), m = Math.max(Math.abs(u * c - v * s), Math.abs(u * s + v * c));
+			return m < 0.7 ? Math.ceil((0.7 - m) / 0.7 * 5) / 5 : 0;
+		}],
+		["波紋", (u, v, t) => {
+			const r = Math.hypot(u, v);
+			return 0.5 + 0.5 * Math.cos(r * 13 - t * 2.5) * Math.exp(-r * 1.1);
+		}],
+		["文字", null],
+	];
+
+	// 文字の深度マップ（Canvas に描いた文字をぼかして、角の丸い浮き彫りにする）
+	function makeTextDepth() {
+		const c = document.createElement("canvas");
+		c.width = W; c.height = H;
+		const g = c.getContext("2d"), s = $("txt").value || "3D";
+		g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
+		g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
+		let fs = H * 0.7;
+		g.font = `900 ${fs}px "Arial Black","Yu Gothic UI","Hiragino Sans",sans-serif`;
+		fs *= Math.min(1, (W - sep * 2.2) / g.measureText(s).width);
+		g.font = `900 ${fs}px "Arial Black","Yu Gothic UI","Hiragino Sans",sans-serif`;
+		if ("filter" in g) g.filter = `blur(${Math.max(2, fs * 0.02)}px)`;
+		g.fillText(s, W / 2, H / 2 + fs * 0.04);
+		const d = g.getImageData(0, 0, W, H).data;
+		textDepth = new Float32Array(W * H);
+		for (let i = 0; i < W * H; i++) textDepth[i] = Math.min(1, d[i * 4] / 255 * 1.5) * 0.8;
+	}
+
+	// ---- 模様（リンクされていない画素の色）----
+	const hash = (x, y) => {
+		let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 1442695041) | 0;
+		h = Math.imul(h ^ h >>> 13, 1274126177);
+		return (h ^ h >>> 16) >>> 0;
+	};
+	// 滑らかな値ノイズ
+	const noise = (x, y) => {
+		const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+		const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+		const a = hash(xi, yi) / 4294967296, b = hash(xi + 1, yi) / 4294967296, c = hash(xi, yi + 1) / 4294967296, d = hash(xi + 1, yi + 1) / 4294967296;
+		return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+	};
+	function makePattern() {
+		const kind = +$("pat").value, rgb = (r, g, b) => 0xff000000 | b << 16 | g << 8 | r;
+		const ph = [hash(1, 9) / 4294967296, hash(2, 9) / 4294967296, hash(3, 9) / 4294967296];
+		for (let y = 0; y < H; y++) {
+			for (let x = 0; x < W; x++) {
+				const h = hash(x >> 1, y >> 1); // 2px 角の粒にして融像しやすくする
+				let c;
+				if (kind === 0) c = h & 1 ? rgb(236, 232, 220) : rgb(28, 32, 48);
+				else if (kind === 1) c = h & 3 ? rgb(40 + (h >> 4 & 215), 40 + (h >> 12 & 215), 40 + (h >> 20 & 215)) : rgb(16, 18, 28);
+				else {
+					// マーブル: ノイズを色相に変換し、細かい粒を足して手がかりを増やす
+					const n = noise(x / 23, y / 23) + 0.5 * noise(x / 7 + 40, y / 7) + 0.25 * noise(x / 3, y / 3 + 70);
+					const g = 0.72 + 0.28 * ((h >> 8 & 255) / 255);
+					c = rgb(...ph.map(p => Math.round(255 * g * (0.5 + 0.5 * Math.cos(6.2832 * (n * 1.6 + p))))));
+				}
+				pat[y * W + x] = c;
+			}
+		}
+	}
+
+	// ---- 深度マップの計算 ----
+	function makeDepth() {
+		const fn = SHAPES[shape][1];
+		if (!fn) { if (!textDepth) makeTextDepth(); depth.set(textDepth); return; }
+		const k = 2 / H;
+		for (let y = 0; y < H; y++) {
+			const v = (y - H / 2) * k;
+			for (let x = 0; x < W; x++) depth[y * W + x] = fn((x - W / 2) * k, v, t);
+		}
+	}
+
+	// ---- ステレオグラム生成（Thimbleby らの対称リンク法）----
+	function generate() {
+		makeDepth();
+		if (answer) {
+			// 答え合わせ: 深度マップを明るさで表示
+			for (let i = 0; i < W * H; i++) {
+				const z = depth[i], g = Math.round(18 + z * 230);
+				out[i] = 0xff000000 | Math.min(255, g + 14) << 16 | g << 8 | Math.round(g * 0.92);
+			}
+		} else {
+			// 深さ→左右の対応点の間隔。両目の間隔 E=2·sep、mu が奥行きの強さ
+			const mu = $("depth").value / 100, lut = new Int32Array(256);
+			for (let i = 0; i < 256; i++) {
+				const z = cross ? 1 - i / 255 : i / 255; // 交差法では凹凸を反転しておく
+				lut[i] = Math.round((1 - mu * z) * 2 * sep / (2 - mu * z));
+			}
+			for (let y = 0; y < H; y++) {
+				const row = y * W;
+				for (let x = 0; x < W; x++) same[x] = x;
+				for (let x = 0; x < W; x++) {
+					const s = lut[depth[row + x] * 255 | 0];
+					let l = x - (s >> 1), r = l + s;
+					if (l < 0 || r >= W) continue;
+					// 「同じ色でなければならない」画素どうしを鎖状につなぐ
+					for (let k = same[l]; k !== l && k !== r; k = same[l]) {
+						if (k < r) l = k; else { l = r; r = k; }
+					}
+					same[l] = r;
+				}
+				for (let x = W - 1; x >= 0; x--) out[row + x] = same[x] === x ? pat[row + x] : out[row + same[x]];
+			}
+		}
+		ctx.putImageData(img, 0, 0);
+	}
+
+	// ---- レイアウト ----
+	function layout() {
+		const st = $("stage"), aw = (st.clientWidth || (window.innerWidth || 960)) - 24, ah = (st.clientHeight || ((window.innerHeight || 600) - 110)) - 34;
+		const w = Math.max(240, Math.min(1100, Math.floor(aw))), h = Math.max(120, Math.min(Math.floor(ah), Math.round(w * 0.6)));
+		if (w === W && h === H) return;
+		W = w; H = h;
+		cv.width = W; cv.height = H;
+		sep = Math.round(Math.max(60, Math.min(118, W / 8)));
+		img = ctx.createImageData(W, H);
+		out = new Uint32Array(img.data.buffer);
+		pat = new Uint32Array(W * H);
+		depth = new Float32Array(W * H);
+		same = new Int32Array(W);
+		textDepth = null;
+		// ガイドの2点は「最も奥の面」の繰り返し幅だけ離す
+		const d = $("dots");
+		d.style.width = W + "px";
+		d.children[0].style.left = (W - sep) / 2 + "px";
+		d.children[1].style.left = (W + sep) / 2 + "px";
+		makePattern();
+		generate();
+	}
+
+	// ---- UI ----
+	const shapeBtns = SHAPES.map(([name], i) => {
+		const b = document.createElement("button");
+		b.textContent = name;
+		b.title = String(i + 1);
+		b.onclick = () => setShape(i);
+		$("shapes").appendChild(b);
+		return b;
+	});
+	function setShape(i) {
+		shape = i;
+		shapeBtns.forEach((b, k) => b.classList.toggle("on", k === i));
+		$("txt").style.display = SHAPES[i][1] ? "none" : "";
+		if (W) generate();
+	}
+	function setGuide() {
+		$("guide").innerHTML = answer
+			? "<b>答え</b>：明るいところほど手前に飛び出して見えます。もう一度 <b>答え合わせ</b>（Space）を押すとステレオグラムに戻ります。"
+			: cross
+				? "<b>交差法</b>：① 上の <b>●●</b> を寄り目で見て、点が3つに見えるようにする　② 真ん中の点がくっきりしたら、そのまま視線をゆっくり下へ　③ 模様の中から立体が浮かび上がります"
+				: "<b>平行法</b>：① 画面のずっと奥を眺めるつもりで、上の <b>●●</b> をぼんやり見る　② 点が3つに見えたら、真ん中の点がくっきりするまで待つ　③ そのまま視線をゆっくり下へ。模様の中から立体が浮かび上がります";
+		$("ans").classList.toggle("on", answer);
+		$("mode").textContent = cross ? "交差法" : "平行法";
+		$("anim").classList.toggle("on", anim);
+	}
+	const toggleAnswer = () => { answer = !answer; setGuide(); generate(); };
+	const toggleAnim = () => { anim = !anim; setGuide(); };
+	const reseed = () => { seed = seed * 31 + 7 | 0; makePattern(); generate(); };
+	$("ans").onclick = toggleAnswer;
+	$("anim").onclick = toggleAnim;
+	$("reseed").onclick = reseed;
+	$("mode").onclick = () => { cross = !cross; setGuide(); generate(); };
+	$("pat").onchange = () => { makePattern(); generate(); $("pat").blur(); };
+	$("depth").oninput = generate;
+	$("txt").oninput = () => { textDepth = null; generate(); };
+	cv.addEventListener("click", toggleAnswer);
+	window.addEventListener("pointerdown", e => { if (e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT") window.focus(); });
+	window.addEventListener("keydown", e => {
+		if (e.target.tagName === "INPUT" && e.target.type === "text") return;
+		if (e.code === "Space") { toggleAnswer(); e.preventDefault(); }
+		else if (e.code.startsWith("Arrow")) {
+			// 左右キーでかたちを順に切り替え
+			if (e.code === "ArrowRight") setShape((shape + 1) % SHAPES.length);
+			if (e.code === "ArrowLeft") setShape((shape + SHAPES.length - 1) % SHAPES.length);
+			e.preventDefault();
+		}
+		else if (e.key >= "1" && e.key <= String(SHAPES.length)) setShape(+e.key - 1);
+		else if (e.key === "a" || e.key === "A") toggleAnim();
+		else if (e.key === "n" || e.key === "N") reseed();
+	});
+
+	// アニメーション（模様は固定したまま、隠れた立体だけが動く）
+	let last = performance.now();
+	function tick(now) {
+		const dt = Math.min(0.1, (now - last) / 1000);
+		last = now;
+		if (anim && W && SHAPES[shape][1]) { t += dt; generate(); }
+		requestAnimationFrame(tick);
+	}
+
+	setShape(0);
+	setGuide();
+	layout();
+	window.addEventListener("resize", layout);
+	if (window.ResizeObserver) new ResizeObserver(layout).observe($("stage"));
+	requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

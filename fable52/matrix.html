@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>Digital Rain Matrix - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+	canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+	/* 画面の四隅を落とすビネットと、ごく薄い走査線 */
+	.veil {
+		position: fixed; inset: 0; pointer-events: none;
+		background:
+			radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, .72) 100%),
+			repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, .16) 2px 3px);
+	}
+	.hint, .credit {
+		position: fixed; bottom: 12px; pointer-events: none; user-select: none;
+		font: 11px/1.6 Consolas, "MS Gothic", monospace; letter-spacing: .08em;
+		color: rgba(150, 255, 170, .5); text-shadow: 0 0 6px rgba(0, 255, 90, .4);
+	}
+	.hint { left: 14px; }
+	.credit { right: 14px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="veil"></div>
+<div class="hint">クリック: 波紋 ／ ↑↓: 速度 ／ C: 色 ／ Space: 一斉降下</div>
+<div class="credit">Claude Fable 5.2</div>
+<script>
+(() => {
+	"use strict";
+	const cv = document.getElementById("c");
+	const ctx = cv.getContext("2d");
+
+	// 半角カナ＋数字＋記号。描画時に左右反転して「鏡文字」にする
+	const CHARS = "ｦｧｨｩｪｫｬｭｮｯｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789Z:.=*+-<>|";
+	const FONT = '"MS Gothic", "Osaka-Mono", "Noto Sans Mono CJK JP", "Yu Gothic", monospace';
+	const LEVELS = 20; // 尾の明るさの段階数
+	const HUES = [128, 172, 46, 0]; // 緑 → シアン → 琥珀 → 赤
+	let hueIndex = 0;
+	let W = 0, H = 0, DPR = 1;
+	let speedMul = 1;
+	let layers = [];
+	const waves = [];
+
+	const rand = (a, b) => a + Math.random() * (b - a);
+
+	// 色相と減光率から、尾の色テーブルを作る
+	function makePalette(hue, dim) {
+		const tail = [];
+		for (let i = 0; i < LEVELS; i++) {
+			const b = i / (LEVELS - 1);
+			tail.push(`hsl(${hue}, 95%, ${(3 + 47 * Math.pow(b, 1.5)) * dim}%)`);
+		}
+		return {
+			tail,
+			near: `hsl(${hue}, 80%, ${72 * dim}%)`, // 先頭のすぐ後ろ
+			head: `hsl(${hue}, 55%, ${93 * dim}%)`, // 先頭の白く光る文字
+			glow: `hsl(${hue}, 100%, 60%)`,
+		};
+	}
+
+	// 奥行き用のレイヤー（文字サイズ・明るさ・速度が違う雨の層）
+	function makeLayer(fs, dim, spd, density) {
+		const cols = Math.ceil(W / fs) + 1;
+		const rows = Math.ceil(H / fs) + 1;
+		const grid = new Uint8Array(cols * rows);
+		for (let i = 0; i < grid.length; i++) grid[i] = Math.random() * CHARS.length;
+		const streams = [];
+		for (let c = 0; c < cols; c++) {
+			const n = Math.random() < density ? 2 : 1;
+			for (let k = 0; k < n; k++) streams.push(newStream(c, rows, spd, true));
+		}
+		return { fs, dim, spd, cols, rows, grid, streams, pal: makePalette(HUES[hueIndex], dim) };
+	}
+
+	function newStream(col, rows, spd, first) {
+		return {
+			col,
+			y: first ? rand(-rows * 1.2, rows) : rand(-rows * 0.6, -1),
+			speed: rand(7, 26) * spd, // 1秒あたりに進む行数
+			len: Math.floor(rand(6, rows * 0.85)),
+			last: -9999,
+		};
+	}
+
+	function build() {
+		const fs = Math.max(13, Math.min(20, Math.round(W / 62)));
+		layers = [
+			makeLayer(Math.round(fs * 0.58), 0.42, 0.55, 0.15), // 遠景
+			makeLayer(fs, 1, 1, 0.35), // 近景
+		];
+	}
+
+	function resize() {
+		const w = window.innerWidth || 960, h = window.innerHeight || 600;
+		const d = Math.min(window.devicePixelRatio || 1, 2);
+		if (w === W && h === H && d === DPR) return;
+		W = w; H = h; DPR = d;
+		cv.width = Math.round(W * DPR);
+		cv.height = Math.round(H * DPR);
+		build();
+	}
+
+	function updateLayer(L, dt) {
+		const { grid, cols, rows } = L;
+		// 尾の文字もときどき化ける
+		const flips = Math.ceil(cols * rows * 0.9 * dt);
+		for (let i = 0; i < flips; i++) grid[(Math.random() * grid.length) | 0] = Math.random() * CHARS.length;
+		for (let i = 0; i < L.streams.length; i++) {
+			const s = L.streams[i];
+			s.y += s.speed * dt * speedMul;
+			const hr = Math.floor(s.y);
+			// 先頭が新しいマスに入るたび、そのマスに新しい文字を「書き込む」
+			if (hr !== s.last) {
+				if (hr >= 0 && hr < rows) grid[hr * cols + s.col] = Math.random() * CHARS.length;
+				s.last = hr;
+			}
+			if (hr - s.len > rows) L.streams[i] = newStream(s.col, rows, L.spd, false);
+		}
+	}
+
+	function drawLayer(L, front) {
+		const { fs, grid, cols, rows, pal } = L;
+		ctx.font = `${fs}px ${FONT}`;
+		ctx.textAlign = "center";
+		ctx.textBaseline = "top";
+		ctx.shadowBlur = 0;
+		const heads = [];
+		for (const s of L.streams) {
+			const hr = Math.floor(s.y);
+			const x = s.col * fs + fs / 2;
+			for (let d = 1; d <= s.len; d++) {
+				const r = hr - d;
+				if (r < 0) break;
+				if (r >= rows) continue;
+				ctx.fillStyle = d <= 2 ? pal.near : pal.tail[((1 - d / s.len) * (LEVELS - 1)) | 0];
+				ctx.fillText(CHARS[grid[r * cols + s.col]], x, r * fs);
+			}
+			if (hr >= 0 && hr < rows) heads.push(x, hr * fs, grid[hr * cols + s.col]);
+		}
+		// 先頭の文字だけ、にじむように発光させる
+		if (front) {
+			ctx.shadowColor = pal.glow;
+			ctx.shadowBlur = 12;
+		}
+		ctx.fillStyle = pal.head;
+		for (let i = 0; i < heads.length; i += 3) ctx.fillText(CHARS[heads[i + 2]], heads[i], heads[i + 1]);
+		ctx.shadowBlur = 0;
+	}
+
+	// クリック地点から広がる波紋。輪の上にあるマスの文字を一瞬光らせる
+	function drawWaves(L, dt) {
+		const { fs, grid, cols, rows } = L;
+		for (let i = waves.length - 1; i >= 0; i--) {
+			const w = waves[i];
+			w.r += 560 * dt;
+			w.life -= dt * 0.75;
+			if (w.life <= 0) { waves.splice(i, 1); continue; }
+			ctx.fillStyle = L.pal.head;
+			for (let ring = 0; ring < 3; ring++) {
+				const r = w.r - ring * fs * 1.1;
+				if (r <= 0) continue;
+				ctx.globalAlpha = Math.min(1, w.life) * (1 - ring * 0.32);
+				const steps = Math.max(10, Math.floor((Math.PI * 2 * r) / fs));
+				for (let k = 0; k < steps; k++) {
+					const a = (k / steps) * Math.PI * 2;
+					const c = Math.floor((w.x + Math.cos(a) * r) / fs);
+					const rw = Math.floor((w.y + Math.sin(a) * r) / fs);
+					if (c < 0 || c >= cols || rw < 0 || rw >= rows) continue;
+					ctx.fillText(CHARS[grid[rw * cols + c]], c * fs + fs / 2, rw * fs);
+				}
+			}
+		}
+		ctx.globalAlpha = 1;
+	}
+
+	let prev = performance.now();
+	function frame(now) {
+		const dt = Math.min(0.05, (now - prev) / 1000);
+		prev = now;
+		// 全体を左右反転して描く（文字が鏡文字になる）
+		ctx.setTransform(-DPR, 0, 0, DPR, W * DPR, 0);
+		ctx.fillStyle = "#000";
+		ctx.fillRect(0, 0, W, H);
+		layers.forEach((L, i) => {
+			updateLayer(L, dt);
+			drawLayer(L, i === layers.length - 1);
+		});
+		drawWaves(layers[layers.length - 1], dt);
+		requestAnimationFrame(frame);
+	}
+
+	function setHue() {
+		for (const L of layers) L.pal = makePalette(HUES[hueIndex], L.dim);
+		const h = HUES[hueIndex];
+		document.querySelectorAll(".hint, .credit").forEach((el) => {
+			el.style.color = `hsla(${h}, 100%, 78%, .5)`;
+			el.style.textShadow = `0 0 6px hsla(${h}, 100%, 50%, .4)`;
+		});
+	}
+
+	window.addEventListener("pointerdown", (e) => {
+		window.focus();
+		// 反転描画しているので x 座標も反転して渡す
+		waves.push({ x: W - e.clientX, y: e.clientY, r: 0, life: 1.4 });
+		if (waves.length > 6) waves.shift();
+	});
+
+	window.addEventListener("keydown", (e) => {
+		if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+		if (e.key === "ArrowUp") speedMul = Math.min(3, speedMul * 1.25);
+		else if (e.key === "ArrowDown") speedMul = Math.max(0.2, speedMul / 1.25);
+		else if (e.key === "c" || e.key === "C") { hueIndex = (hueIndex + 1) % HUES.length; setHue(); }
+		else if (e.key === " ") {
+			// すべての列を画面上端から降らせ直す
+			for (const L of layers) for (const s of L.streams) s.y = rand(-L.rows * 0.5, 0);
+		}
+	});
+
+	window.addEventListener("resize", resize);
+	if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+	resize();
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

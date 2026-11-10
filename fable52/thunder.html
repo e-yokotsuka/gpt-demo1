@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>Electrifying Thunderstorm - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; overflow: hidden; background: #05070c; }
+	canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+	.hint, .credit {
+		position: fixed; bottom: 12px; user-select: none;
+		font: 11px/1.6 "Segoe UI", "Hiragino Sans", Meiryo, sans-serif; letter-spacing: .08em;
+		color: rgba(190, 205, 235, .5);
+	}
+	.hint { left: 14px; pointer-events: none; }
+	.credit { right: 14px; pointer-events: none; }
+	#snd {
+		position: fixed; left: 14px; top: 12px; padding: 5px 12px; cursor: pointer;
+		font: 11px/1.4 "Segoe UI", "Hiragino Sans", Meiryo, sans-serif; letter-spacing: .08em;
+		color: rgba(210, 222, 245, .8); background: rgba(20, 28, 44, .55);
+		border: 1px solid rgba(160, 180, 220, .3); border-radius: 999px;
+	}
+	#snd:hover { background: rgba(40, 54, 84, .7); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="snd" type="button">音: OFF（クリックで有効）</button>
+<div class="hint">クリック: その場所に落雷 ／ Space: 落雷 ／ M: 音の切替</div>
+<div class="credit">Claude Fable 5.2</div>
+<script>
+(() => {
+	"use strict";
+	const cv = document.getElementById("c");
+	const ctx = cv.getContext("2d");
+	const sndBtn = document.getElementById("snd");
+	const TAU = Math.PI * 2;
+	const rand = (a, b) => a + Math.random() * (b - a);
+
+	let W = 0, H = 0, DPR = 1, GY = 0; // GY = 地表の高さ
+	const cloudDark = document.createElement("canvas"); // 暗い雲
+	const cloudLit = document.createElement("canvas"); // 稲光に照らされた雲
+	const land = document.createElement("canvas"); // 街のシルエット
+	let drops = [], splashes = [], bolts = [];
+	let time = 0, nextStrike = 1.2, shake = 0, cloudOff = 0;
+
+	// ---------- 背景の生成 ----------
+	function paintClouds() {
+		const ch = Math.round(H * 0.62);
+		for (const c of [cloudDark, cloudLit]) { c.width = Math.round(W * DPR); c.height = Math.round(ch * DPR); }
+		const gd = cloudDark.getContext("2d"), gl = cloudLit.getContext("2d");
+		gd.setTransform(DPR, 0, 0, DPR, 0, 0); gl.setTransform(DPR, 0, 0, DPR, 0, 0);
+		const n = Math.round(W / 9) + 60;
+		for (let i = 0; i < n; i++) {
+			const x = rand(0, W), y = Math.pow(Math.random(), 1.7) * ch * 0.8, r = rand(50, 150) * (1 - y / ch * 0.5);
+			const shade = rand(0.5, 1);
+			// 横方向にループさせるため、左右にも同じ雲を描く
+			for (const ox of [-W, 0, W]) {
+				let g = gd.createRadialGradient(x + ox, y, 0, x + ox, y, r);
+				g.addColorStop(0, `rgba(${44 * shade},${51 * shade},${72 * shade},.5)`);
+				g.addColorStop(1, "rgba(14,18,28,0)");
+				gd.fillStyle = g; gd.fillRect(x + ox - r, y - r, r * 2, r * 2);
+				// 照らされた雲は、下側のふちが明るい
+				g = gl.createRadialGradient(x + ox, y + r * 0.25, 0, x + ox, y, r);
+				g.addColorStop(0, `rgba(${150 * shade},${165 * shade},${225 * shade},.2)`);
+				g.addColorStop(0.6, `rgba(${80 * shade},${95 * shade},${160 * shade},.08)`);
+				g.addColorStop(1, "rgba(40,50,100,0)");
+				gl.fillStyle = g; gl.fillRect(x + ox - r, y - r, r * 2, r * 2);
+			}
+		}
+	}
+
+	function paintLand() {
+		land.width = Math.round(W * DPR); land.height = Math.round(H * DPR);
+		const g = land.getContext("2d");
+		g.setTransform(DPR, 0, 0, DPR, 0, 0);
+		g.clearRect(0, 0, W, H);
+		// 遠くの丘
+		g.fillStyle = "#0a0e17";
+		g.beginPath(); g.moveTo(0, H);
+		for (let x = 0; x <= W; x += 8) g.lineTo(x, GY - H * (0.05 + 0.04 * Math.sin(x / W * 5 + 1) + 0.015 * Math.sin(x / W * 17)));
+		g.lineTo(W, H); g.fill();
+		// 手前の地面
+		g.fillStyle = "#04060a";
+		g.fillRect(0, GY, W, H - GY);
+		const u = H * 0.01;
+		// 家並み（暖かい窓明かりつき）
+		let x = rand(0, 40);
+		while (x < W) {
+			const kind = Math.random();
+			if (kind < 0.5) {
+				const w = rand(7, 12) * u, h = rand(4, 8) * u;
+				g.fillStyle = "#04060a";
+				g.fillRect(x, GY - h, w, h + 2);
+				g.beginPath(); g.moveTo(x - u, GY - h); g.lineTo(x + w / 2, GY - h - rand(2.5, 4.5) * u); g.lineTo(x + w + u, GY - h); g.fill();
+				for (let k = 0; k < 2; k++) if (Math.random() < 0.6) {
+					g.fillStyle = `rgba(255,${180 + rand(0, 40)},110,${rand(0.55, 0.9)})`;
+					g.fillRect(x + w * (0.2 + k * 0.42), GY - h * 0.62, u * 1.3, u * 1.5);
+				}
+				x += w + rand(1, 6) * u;
+			} else if (kind < 0.85) {
+				// 木
+				const h = rand(5, 11) * u, r = h * 0.38;
+				g.fillStyle = "#04060a";
+				g.fillRect(x + r - u * 0.25, GY - h * 0.6, u * 0.5, h * 0.6);
+				for (let k = 0; k < 6; k++) { g.beginPath(); g.arc(x + r + rand(-r, r) * 0.6, GY - h * 0.62 - rand(0, r), r * rand(0.5, 0.8), 0, TAU); g.fill(); }
+				x += r * 2 + rand(0, 4) * u;
+			} else x += rand(3, 10) * u;
+		}
+		// 電柱と電線
+		g.strokeStyle = "#04060a"; g.lineWidth = Math.max(1.5, u * 0.35);
+		const poles = [];
+		for (let px = rand(0.02, 0.1) * W; px < W + 200; px += rand(0.2, 0.28) * W) poles.push(px);
+		for (const px of poles) {
+			g.beginPath(); g.moveTo(px, GY); g.lineTo(px, GY - 17 * u);
+			g.moveTo(px - 2.2 * u, GY - 15.5 * u); g.lineTo(px + 2.2 * u, GY - 15.5 * u); g.stroke();
+		}
+		g.lineWidth = 1;
+		for (let i = 0; i < poles.length - 1; i++) for (const s of [-1, 1]) {
+			const a = poles[i] + s * 2.2 * u, b = poles[i + 1] + s * 2.2 * u;
+			g.beginPath(); g.moveTo(a, GY - 15.5 * u); g.quadraticCurveTo((a + b) / 2, GY - 11.5 * u, b, GY - 15.5 * u); g.stroke();
+		}
+	}
+
+	function build() {
+		GY = H * 0.86;
+		paintClouds(); paintLand();
+		const n = Math.min(1100, Math.round((W * H) / 1500));
+		drops = Array.from({ length: n }, () => {
+			const z = Math.random(); // 奥行き
+			return { x: rand(-0.2, 1.1) * W, y: rand(0, H), z, len: 9 + z * 22, sp: 620 + z * 780 };
+		});
+		splashes = []; bolts = [];
+	}
+
+	function resize() {
+		const w = window.innerWidth || 960, h = window.innerHeight || 600;
+		const d = Math.min(window.devicePixelRatio || 1, 2);
+		if (w === W && h === H && d === DPR) return;
+		W = w; H = h; DPR = d;
+		cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+		build();
+	}
+
+	// ---------- 稲妻 ----------
+	// ジグザグに進みながら、ときどき枝を出す。枝は細く短く、さらに孫枝も出す
+	function grow(out, x, y, dir, len, width, depth, tx, ty) {
+		const seg = Math.max(7, H * 0.016);
+		const pts = [x, y];
+		let travelled = 0;
+		while (travelled < len && y < GY + 4) {
+			// 主幹は目標地点へ引き寄せる
+			if (depth === 0) dir = Math.atan2(ty - y, tx - x);
+			const a = dir + rand(-1, 1) * (depth === 0 ? 0.95 : 0.75);
+			const s = seg * rand(0.5, 1.5);
+			x += Math.cos(a) * s; y += Math.sin(a) * s; travelled += s;
+			if (depth === 0 && Math.hypot(tx - x, ty - y) < seg * 1.5) { pts.push(tx, ty); break; }
+			pts.push(x, y);
+			if (depth < 3 && Math.random() < (depth === 0 ? 0.2 : 0.1)) {
+				const bd = Math.PI / 2 + rand(0.25, 1.0) * (Math.random() < 0.5 ? -1 : 1) + (dir - Math.PI / 2) * 0.5;
+				const bl = depth === 0 ? (GY - y) * rand(0.3, 0.8) : (len - travelled) * rand(0.3, 0.6);
+				grow(out, x, y, bd, bl, width * 0.5, depth + 1);
+			}
+		}
+		out.push({ pts, width });
+	}
+
+	function strike(tx, ty, near) {
+		const sheet = tx === undefined && Math.random() < 0.25; // 雲の中だけが光る幕電
+		if (tx === undefined) { tx = rand(0.08, 0.92) * W; ty = GY; }
+		const sx = tx + rand(-0.2, 0.2) * W, sy = rand(0.02, 0.16) * H;
+		const paths = [];
+		if (!sheet) grow(paths, sx, sy, Math.PI / 2, H * 3, Math.max(2.5, H * 0.0058), 0, tx, ty);
+		// 何度か明滅する（多重雷）
+		const pulses = [0];
+		const np = Math.floor(rand(1, 4));
+		for (let i = 1; i <= np; i++) pulses.push(pulses[i - 1] + rand(0.05, 0.16));
+		const power = sheet ? 0.55 : rand(0.8, 1);
+		bolts.push({ paths, sx, sy, tx, ty, t: 0, pulses, power, sheet });
+		if (!sheet) shake = near ? 9 : 4;
+		thunder(near ? rand(0.08, 0.25) : rand(0.4, 2.4), power, sheet);
+		nextStrike = time + rand(1.6, 6.5);
+	}
+
+	const boltLevel = (b) => {
+		let v = 0;
+		for (const p of b.pulses) if (b.t >= p) v = Math.max(v, Math.exp(-(b.t - p) / 0.075));
+		return v * b.power;
+	};
+
+	// ---------- 音（Web Audio。ユーザー操作後にだけ開始する） ----------
+	let ac = null, master = null, soundOn = false, noiseBuf = null, whiteBuf = null;
+	function initAudio() {
+		if (ac) return;
+		const AC = window.AudioContext || window.webkitAudioContext;
+		if (!AC) return;
+		ac = new AC();
+		master = ac.createGain(); master.gain.value = 0;
+		const comp = ac.createDynamicsCompressor();
+		master.connect(comp); comp.connect(ac.destination);
+		// ブラウンノイズ（低音寄りの雑音）。雨音と雷鳴の素材
+		const len = ac.sampleRate * 4;
+		noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+		const d = noiseBuf.getChannelData(0);
+		let last = 0;
+		for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
+		// ホワイトノイズ。雨音と破裂音の素材
+		whiteBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+		const wd = whiteBuf.getChannelData(0);
+		for (let i = 0; i < wd.length; i++) wd[i] = Math.random() * 2 - 1;
+		// 雨音: ノイズの高域だけを通して流し続ける
+		const rain = ac.createBufferSource(); rain.buffer = whiteBuf; rain.loop = true;
+		const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1500;
+		const rg = ac.createGain(); rg.gain.value = 0.05;
+		rain.connect(hp); hp.connect(rg); rg.connect(master); rain.start();
+		// 風のうなり
+		const wind = ac.createBufferSource(); wind.buffer = noiseBuf; wind.loop = true; wind.playbackRate.value = 0.6;
+		const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 260; bp.Q.value = 0.8;
+		const wg = ac.createGain(); wg.gain.value = 0.22;
+		wind.connect(bp); bp.connect(wg); wg.connect(master); wind.start();
+	}
+	function setSound(on) {
+		if (on) initAudio();
+		if (!ac) return;
+		soundOn = on;
+		if (on && ac.state === "suspended") ac.resume();
+		master.gain.setTargetAtTime(on ? 0.9 : 0, ac.currentTime, 0.08);
+		sndBtn.textContent = on ? "音: ON" : "音: OFF";
+	}
+	// 雷鳴: 近いほど早く鋭く、遠いほど遅れてこもった音になる
+	function thunder(delay, power, sheet) {
+		if (!ac || !soundOn) return;
+		const t0 = ac.currentTime + delay;
+		const far = Math.min(1, delay / 2.4);
+		const dur = rand(3.5, 6);
+		const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+		src.playbackRate.value = rand(0.7, 1.1);
+		const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+		lp.frequency.setValueAtTime(sheet ? 300 : 2600 - far * 2000, t0);
+		lp.frequency.exponentialRampToValueAtTime(90, t0 + dur * 0.7);
+		const g = ac.createGain();
+		const peak = power * (1.5 - far * 0.8);
+		g.gain.setValueAtTime(0.0001, t0);
+		g.gain.exponentialRampToValueAtTime(peak, t0 + 0.03 + far * 0.25);
+		// ゴロゴロと不規則にうねりながら減衰する
+		let t = t0 + 0.15 + far * 0.25, v = peak;
+		while (t < t0 + dur) {
+			v *= rand(0.45, 0.95);
+			g.gain.exponentialRampToValueAtTime(Math.max(0.001, v * rand(0.5, 1.3)), t);
+			t += rand(0.12, 0.45);
+		}
+		g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+		src.connect(lp); lp.connect(g); g.connect(master);
+		src.start(t0, rand(0, 3)); src.stop(t0 + dur + 0.1);
+		// 近い落雷には「バリッ」という破裂音を足す
+		if (!sheet && far < 0.5) {
+			const ck = ac.createBufferSource(); ck.buffer = whiteBuf; ck.loop = true;
+			const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1200;
+			const cg = ac.createGain();
+			cg.gain.setValueAtTime(0.0001, t0);
+			cg.gain.exponentialRampToValueAtTime((1 - far * 2) * 0.5 * power, t0 + 0.01);
+			cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+			ck.connect(hp); hp.connect(cg); cg.connect(master);
+			ck.start(t0, rand(0, 1.5)); ck.stop(t0 + 0.4);
+		}
+	}
+
+	// ---------- 描画 ----------
+	let prev = performance.now();
+	function frame(now) {
+		const dt = Math.min(0.05, (now - prev) / 1000);
+		prev = now; time += dt;
+		if (time > nextStrike) strike();
+
+		let flash = 0;
+		for (let i = bolts.length - 1; i >= 0; i--) {
+			const b = bolts[i];
+			b.t += dt; b.level = boltLevel(b);
+			if (b.t > b.pulses[b.pulses.length - 1] + 0.6) { bolts.splice(i, 1); continue; }
+			flash = Math.max(flash, b.level);
+		}
+		shake *= Math.exp(-dt * 9);
+		const ox = rand(-1, 1) * shake, oy = rand(-1, 1) * shake;
+		ctx.setTransform(DPR, 0, 0, DPR, ox * DPR, oy * DPR);
+		ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+
+		// 空
+		const sky = ctx.createLinearGradient(0, 0, 0, GY);
+		sky.addColorStop(0, "#04060b"); sky.addColorStop(0.6, "#0d1220"); sky.addColorStop(1, "#1a2134");
+		ctx.fillStyle = sky; ctx.fillRect(-20, -20, W + 40, H + 40);
+
+		// 流れる雲。閃光のあいだは明るい版を加算で重ねる
+		cloudOff = (cloudOff + dt * 14) % W;
+		const ch = cloudDark.height / DPR;
+		for (const dx of [-cloudOff, W - cloudOff]) ctx.drawImage(cloudDark, dx, 0, W, ch);
+		if (flash > 0.01) {
+			ctx.globalCompositeOperation = "lighter";
+			ctx.globalAlpha = Math.min(1, flash * 1.1);
+			for (const dx of [-cloudOff, W - cloudOff]) ctx.drawImage(cloudLit, dx, 0, W, ch);
+			ctx.globalAlpha = 1;
+			for (const b of bolts) {
+				if (b.level < 0.01) continue;
+				// 稲妻の出どころの雲が内側から光る
+				const r = H * (b.sheet ? 0.75 : 0.6);
+				const g = ctx.createRadialGradient(b.sx, b.sy, 0, b.sx, b.sy, r);
+				g.addColorStop(0, `rgba(190,205,255,${0.55 * b.level})`);
+				g.addColorStop(0.4, `rgba(110,130,220,${0.18 * b.level})`);
+				g.addColorStop(1, "rgba(60,70,160,0)");
+				ctx.fillStyle = g; ctx.fillRect(b.sx - r, b.sy - r, r * 2, r * 2);
+			}
+			// 画面全体の閃光
+			ctx.fillStyle = `rgba(150,170,235,${0.2 * flash})`;
+			ctx.fillRect(-20, -20, W + 40, H + 40);
+			ctx.globalCompositeOperation = "source-over";
+		}
+
+		// 稲妻本体（外側の光彩 → 白い芯の順に重ねる）
+		ctx.lineJoin = "round"; ctx.lineCap = "round";
+		ctx.globalCompositeOperation = "lighter";
+		for (const b of bolts) {
+			if (b.sheet || b.level < 0.02) continue;
+			for (let pass = 0; pass < 2; pass++) {
+				ctx.shadowColor = "#7f9cff";
+				ctx.shadowBlur = pass ? 6 : 28;
+				ctx.strokeStyle = pass ? "#ffffff" : "#8fa8ff";
+				for (const p of b.paths) {
+					ctx.globalAlpha = Math.min(1, b.level * (pass ? 1.3 : 0.55));
+					ctx.lineWidth = p.width * (pass ? 1 : 3.2) * (0.5 + b.level * 0.5);
+					ctx.beginPath(); ctx.moveTo(p.pts[0], p.pts[1]);
+					for (let i = 2; i < p.pts.length; i += 2) ctx.lineTo(p.pts[i], p.pts[i + 1]);
+					ctx.stroke();
+				}
+			}
+			ctx.shadowBlur = 0;
+			// 着弾点の光
+			const r = H * 0.09 * b.level;
+			const g = ctx.createRadialGradient(b.tx, b.ty, 0, b.tx, b.ty, r);
+			g.addColorStop(0, "rgba(255,255,255,.9)"); g.addColorStop(1, "rgba(140,160,255,0)");
+			ctx.globalAlpha = Math.min(1, b.level);
+			ctx.fillStyle = g; ctx.fillRect(b.tx - r, b.ty - r, r * 2, r * 2);
+		}
+		ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+		ctx.globalCompositeOperation = "source-over";
+
+		// 街のシルエット
+		ctx.drawImage(land, 0, 0, W, H);
+		// 濡れた地面に映る閃光
+		if (flash > 0.01) {
+			const g = ctx.createLinearGradient(0, GY, 0, H);
+			g.addColorStop(0, `rgba(120,140,210,${0.28 * flash})`); g.addColorStop(1, "rgba(60,70,120,0)");
+			ctx.fillStyle = g; ctx.fillRect(0, GY, W, H - GY);
+		}
+
+		// 雨。風で斜めに流れ、遠い層と近い層をまとめて描く
+		const slant = 0.24 + 0.1 * Math.sin(time * 0.4);
+		for (let layer = 0; layer < 2; layer++) {
+			ctx.beginPath();
+			for (const d of drops) {
+				if ((d.z < 0.55 ? 0 : 1) !== layer) continue;
+				d.y += d.sp * dt; d.x += d.sp * slant * dt;
+				const floor = GY + (H - GY) * d.z;
+				if (d.y > floor) {
+					if (d.z > 0.25 && splashes.length < 160) splashes.push({ x: d.x, y: floor, t: 0, z: d.z });
+					d.y = rand(-60, -10); d.x = rand(-0.3, 1.05) * W;
+				}
+				ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.len * slant, d.y - d.len);
+			}
+			ctx.lineWidth = layer ? 1.25 : 0.8;
+			ctx.strokeStyle = `rgba(165,185,225,${(layer ? 0.3 : 0.17) + flash * 0.35})`;
+			ctx.stroke();
+		}
+		// 地面ではねる雨粒
+		ctx.lineWidth = 1;
+		for (let i = splashes.length - 1; i >= 0; i--) {
+			const s = splashes[i];
+			s.t += dt * 4.5;
+			if (s.t >= 1) { splashes.splice(i, 1); continue; }
+			ctx.strokeStyle = `rgba(170,190,230,${(1 - s.t) * (0.3 + flash * 0.5)})`;
+			ctx.beginPath(); ctx.ellipse(s.x, s.y, (2 + 9 * s.t) * s.z, (0.6 + 2.2 * s.t) * s.z, 0, 0, TAU); ctx.stroke();
+		}
+		requestAnimationFrame(frame);
+	}
+
+	// ---------- 入力 ----------
+	sndBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+	sndBtn.addEventListener("click", () => { setSound(!soundOn); sndBtn.blur(); });
+	cv.addEventListener("pointerdown", (e) => {
+		window.focus();
+		if (!ac) setSound(true); // 最初のクリックで音を有効にする
+		strike(e.clientX, Math.min(GY, Math.max(H * 0.3, e.clientY)), true);
+	});
+	window.addEventListener("keydown", (e) => {
+		if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+		if (e.repeat) return;
+		if (e.key === " ") strike();
+		else if (e.key === "m" || e.key === "M") setSound(!soundOn);
+	});
+	window.addEventListener("resize", resize);
+	if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+	resize();
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

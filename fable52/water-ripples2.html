@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>水面シミュレーション - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; overflow: hidden; background: #062a3a; }
+	canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+	.hud {
+		position: fixed; font: 12px/1.6 "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+		color: rgba(255, 255, 255, .78); user-select: none; letter-spacing: .04em;
+		text-shadow: 0 1px 3px rgba(0, 30, 50, .9);
+	}
+	#hint { left: 14px; bottom: 12px; pointer-events: none; }
+	#credit { right: 14px; bottom: 12px; pointer-events: none; color: rgba(255, 255, 255, .5); }
+	#bar { left: 12px; top: 12px; display: flex; gap: 6px; }
+	button {
+		font: inherit; color: #eafaff; background: rgba(4, 40, 60, .5); border: 1px solid rgba(255, 255, 255, .28);
+		border-radius: 999px; padding: 3px 12px; cursor: pointer; backdrop-filter: blur(4px);
+	}
+	button:hover { background: rgba(20, 90, 120, .65); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud" id="bar">
+	<button id="bFloor">底：タイル</button>
+	<button id="bRain">雨：ON</button>
+	<button id="bCalm">静める</button>
+</div>
+<div class="hud" id="hint">ドラッグ / タッチ：水面をなぞる　クリック：一滴　Space：大きな一滴　B：底　R：雨　C：静める</div>
+<div class="hud" id="credit">Claude Fable 5.2</div>
+<script>
+(() => {
+	"use strict";
+	const cv = document.getElementById("c");
+	const ctx = cv.getContext("2d");
+	const DAMP = 0.994;		// 波の減衰
+	const REFR = 13;		// 屈折の強さ（傾き → 底面の参照ずれ）
+
+	let W = 0, H = 0;		// シミュレーション格子の大きさ（画面より粗い）
+	let cur, prev;			// 高さ場（現在・1ステップ前）
+	let img, pix, tex;		// 出力画像と底面テクスチャ
+	let floorType = 0, rain = true;
+
+	// ---- 格子の確保（画面サイズ 0 でも最小サイズで動く） ----
+	function resize() {
+		const vw = window.innerWidth || 960, vh = window.innerHeight || 600;
+		const sc = Math.max(2, Math.ceil(Math.sqrt(vw * vh / 120000)));
+		const nw = Math.max(32, Math.ceil(vw / sc)), nh = Math.max(32, Math.ceil(vh / sc));
+		if (nw === W && nh === H) return;
+		W = nw; H = nh;
+		cv.width = W; cv.height = H;
+		cur = new Float32Array(W * H);
+		prev = new Float32Array(W * H);
+		img = ctx.createImageData(W, H);
+		pix = new Uint32Array(img.data.buffer);
+		makeFloor();
+	}
+
+	// ---- 底面テクスチャを手続き的に生成 ----
+	function makeFloor() {
+		const c = document.createElement("canvas");
+		c.width = W; c.height = H;
+		const g = c.getContext("2d");
+		if (floorType === 0) {
+			// プールのモザイクタイル
+			const ts = Math.max(7, Math.round(W / 30));
+			g.fillStyle = "#c9eef2"; g.fillRect(0, 0, W, H);
+			for (let y = 0; y < H; y += ts) {
+				for (let x = 0; x < W; x += ts) {
+					const n = Math.random();
+					const hue = 186 + n * 16, lit = 40 + Math.random() * 10 + (n > 0.93 ? 16 : 0);
+					g.fillStyle = `hsl(${hue},68%,${lit}%)`;
+					g.fillRect(x + 1, y + 1, ts - 1, ts - 1);
+				}
+			}
+		} else {
+			// 川底の小石
+			g.fillStyle = "#2d2b26"; g.fillRect(0, 0, W, H);
+			const n = Math.round(W * H / 55);
+			for (let i = 0; i < n; i++) {
+				const x = Math.random() * W, y = Math.random() * H;
+				const r = 2 + Math.random() * Math.max(3, W / 60);
+				const hue = 18 + Math.random() * 30, sat = 8 + Math.random() * 26, lit = 26 + Math.random() * 42;
+				g.fillStyle = "rgba(0,0,0,.45)";
+				g.beginPath(); g.ellipse(x + 1, y + 1.2, r, r * 0.72, i, 0, 7); g.fill();
+				g.fillStyle = `hsl(${hue},${sat}%,${lit}%)`;
+				g.beginPath(); g.ellipse(x, y, r, r * 0.72, i, 0, 7); g.fill();
+				g.fillStyle = "rgba(255,255,255,.12)";
+				g.beginPath(); g.ellipse(x - r * 0.25, y - r * 0.2, r * 0.45, r * 0.25, i, 0, 7); g.fill();
+			}
+			g.fillStyle = "rgba(10,110,120,.38)"; g.fillRect(0, 0, W, H);
+		}
+		// 水の深さによる色むらと、差し込む光
+		let gr = g.createRadialGradient(W * 0.3, H * 0.25, 0, W * 0.3, H * 0.25, Math.max(W, H) * 0.9);
+		gr.addColorStop(0, "rgba(255,255,240,.20)");
+		gr.addColorStop(0.5, "rgba(0,60,90,.05)");
+		gr.addColorStop(1, "rgba(0,20,50,.5)");
+		g.fillStyle = gr; g.fillRect(0, 0, W, H);
+		tex = new Uint32Array(g.getImageData(0, 0, W, H).data.buffer.slice(0));
+		pix.set(tex);
+	}
+
+	// ---- 水面をたたく（なめらかな山形で高さを加える） ----
+	function splash(cx, cy, r, amp) {
+		const x0 = Math.max(1, Math.floor(cx - r)), x1 = Math.min(W - 2, Math.ceil(cx + r));
+		const y0 = Math.max(1, Math.floor(cy - r)), y1 = Math.min(H - 2, Math.ceil(cy + r));
+		for (let y = y0; y <= y1; y++) {
+			for (let x = x0; x <= x1; x++) {
+				const d = Math.hypot(x - cx, y - cy) / r;
+				if (d < 1) cur[y * W + x] += amp * (Math.cos(d * Math.PI) + 1) * 0.5;
+			}
+		}
+	}
+
+	// ---- 波動方程式を1ステップ進める ----
+	function step() {
+		const w = W;
+		for (let y = 1; y < H - 1; y++) {
+			let i = y * w + 1;
+			for (let x = 1; x < w - 1; x++, i++) {
+				// 周囲4点の平均から前回値を引くと、波が伝わっていく
+				prev[i] = ((cur[i - 1] + cur[i + 1] + cur[i - w] + cur[i + w]) * 0.5 - prev[i]) * DAMP;
+			}
+		}
+		const t = cur; cur = prev; prev = t;
+	}
+
+	// ---- 屈折・陰影つきで描画 ----
+	function render() {
+		const w = W, wm = W - 1, hm = H - 1;
+		for (let y = 1; y < hm; y++) {
+			let i = y * w + 1;
+			for (let x = 1; x < wm; x++, i++) {
+				const h = cur[i];
+				const dx = cur[i + 1] - cur[i - 1];
+				const dy = cur[i + w] - cur[i - w];
+				if (dx === 0 && dy === 0 && h === 0) { pix[i] = tex[i]; continue; }
+				// 水面の傾きに応じて、底面の見える位置がずれる（屈折）
+				let fx = x + dx * REFR, fy = y + dy * REFR;
+				if (fx < 0) fx = 0; else if (fx > wm - 0.01) fx = wm - 0.01;
+				if (fy < 0) fy = 0; else if (fy > hm - 0.01) fy = hm - 0.01;
+				// ギザギザにならないよう、底面は4点の線形補間で読む
+				const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, j = iy * w + ix;
+				const c0 = tex[j], c1 = tex[j + 1], c2 = tex[j + w], c3 = tex[j + w + 1];
+				const w0 = (1 - tx) * (1 - ty), w1 = tx * (1 - ty), w2 = (1 - tx) * ty, w3 = tx * ty;
+				// 左上からの光：傾きによる陰影 ＋ 波の曲率による集光（コースティクス風）
+				const lap = cur[i - 1] + cur[i + 1] + cur[i - w] + cur[i + w] - 4 * h;
+				const sl = dx + dy;
+				let l = 1 + sl * 0.55 - lap * 0.9;
+				if (l < 0.35) l = 0.35;
+				// 鋭い傾きには空の映り込み（ハイライト）
+				let sp = sl - 0.16;
+				sp = sp > 0 ? sp * 520 : 0;
+				let r = ((c0 & 255) * w0 + (c1 & 255) * w1 + (c2 & 255) * w2 + (c3 & 255) * w3) * l + sp;
+				let g = ((c0 >> 8 & 255) * w0 + (c1 >> 8 & 255) * w1 + (c2 >> 8 & 255) * w2 + (c3 >> 8 & 255) * w3) * l + sp;
+				let b = ((c0 >> 16 & 255) * w0 + (c1 >> 16 & 255) * w1 + (c2 >> 16 & 255) * w2 + (c3 >> 16 & 255) * w3) * l + sp;
+				if (r > 255) r = 255;
+				if (g > 255) g = 255;
+				if (b > 255) b = 255;
+				pix[i] = 0xff000000 | (b << 16) | (g << 8) | r;
+			}
+		}
+		ctx.putImageData(img, 0, 0);
+	}
+
+	// ---- メインループ ----
+	let nextRain = 0;
+	function frame(now) {
+		requestAnimationFrame(frame);
+		resize();
+		if (rain && now > nextRain) {
+			nextRain = now + 60 + Math.random() * 420;
+			splash(Math.random() * W, Math.random() * H, 2 + Math.random() * 2.5, -(0.5 + Math.random() * 1.3));
+		}
+		step(); step();
+		render();
+	}
+
+	// ---- 操作 ----
+	const toCell = (e) => [e.clientX / (window.innerWidth || 960) * W, e.clientY / (window.innerHeight || 600) * H];
+	const pts = new Map();	// マルチタッチ対応：ポインタごとの直前位置
+	cv.addEventListener("pointerdown", (e) => {
+		window.focus();
+		try { cv.setPointerCapture(e.pointerId); } catch (_) { /* 無視 */ }
+		const p = toCell(e);
+		pts.set(e.pointerId, p);
+		splash(p[0], p[1], 4, -1.6);
+	});
+	cv.addEventListener("pointermove", (e) => {
+		const q = pts.get(e.pointerId);
+		if (!q) return;
+		const p = toCell(e);
+		// 速く動かしても線が途切れないよう補間する
+		const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+		const n = Math.max(1, Math.ceil(d / 1.5));
+		for (let k = 1; k <= n; k++) {
+			splash(q[0] + (p[0] - q[0]) * k / n, q[1] + (p[1] - q[1]) * k / n, 3, -0.22);
+		}
+		pts.set(e.pointerId, p);
+	});
+	const up = (e) => pts.delete(e.pointerId);
+	cv.addEventListener("pointerup", up);
+	cv.addEventListener("pointercancel", up);
+
+	const bFloor = document.getElementById("bFloor"), bRain = document.getElementById("bRain");
+	function toggleFloor() {
+		floorType = 1 - floorType;
+		bFloor.textContent = "底：" + (floorType ? "小石" : "タイル");
+		makeFloor();
+	}
+	function toggleRain() { rain = !rain; bRain.textContent = "雨：" + (rain ? "ON" : "OFF"); }
+	function calm() { cur.fill(0); prev.fill(0); pix.set(tex); }
+	bFloor.addEventListener("click", toggleFloor);
+	bRain.addEventListener("click", toggleRain);
+	document.getElementById("bCalm").addEventListener("click", calm);
+	window.addEventListener("keydown", (e) => {
+		if (e.code === "Space") {
+			e.preventDefault();
+			splash(W * (0.2 + Math.random() * 0.6), H * (0.2 + Math.random() * 0.6), Math.max(7, W / 40), -3.2);
+		} else if (e.code === "KeyB") toggleFloor();
+		else if (e.code === "KeyR") toggleRain();
+		else if (e.code === "KeyC") calm();
+		else if (e.code.startsWith("Arrow")) e.preventDefault();
+	});
+
+	window.addEventListener("resize", resize);
+	if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+	resize();
+	// 最初の見どころ：いくつかの波を先に立てておく
+	for (let i = 0; i < 5; i++) splash(Math.random() * W, Math.random() * H, 4 + Math.random() * 3, -2);
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

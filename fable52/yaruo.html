@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="ai.author" content="Claude Fable 5.2">
+	<meta name="ai.model" content="claude-fable-5-2">
+	<title>やる夫 アスキーアート - Claude Fable 5.2版</title>
+	<style>
+		:root { --fs: 18px; }
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body {
+			background: #efefef;
+			color: #000;
+			font-family: "MS PGothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+			font-size: 14px;
+			line-height: 1.5;
+			padding: 10px 12px 40px;
+		}
+		.thread { max-width: 760px; margin: 0 auto; }
+		h1 { font-size: 18px; color: #f00; font-weight: normal; margin: 4px 0 10px; }
+		.meta { font-size: 13px; }
+		.meta b { color: #117743; }
+		.meta .id { color: #666; }
+		hr { border: 0; border-top: 1px solid #bbb; margin: 10px 0; }
+
+		/* ===== AA 本体 =====
+		   全角文字だけで組み、1文字ごとに幅 1em の升目へ入れる。
+		   フォントが代替されても桁が絶対にずれない「原稿用紙」方式 */
+		.aa {
+			font-family: "MS Gothic", "ＭＳ ゴシック", "Osaka-Mono", "Noto Sans Mono CJK JP", "IPAGothic", monospace;
+			font-size: min(var(--fs), calc((100vw - 48px) / 26));
+			line-height: 1.12;
+			margin: 8px 0 4px 12px;
+			width: 26em;
+			cursor: pointer;
+			-webkit-tap-highlight-color: transparent;
+		}
+		.say { font-size: 15px; margin: 8px 0 0 12px; min-height: 1.5em; }
+		.row { display: flex; height: 1.12em; }
+		.row span { flex: 0 0 1em; width: 1em; text-align: center; white-space: pre; }
+		/* 升目表示：等幅で並んでいることを目で確かめられる */
+		.aa.grid .row span { box-shadow: inset 0 0 0 .5px rgba(0, 120, 255, .28); }
+		.aa .fx { color: #c00; }
+
+		/* ===== 操作パネル ===== */
+		.panel { margin-left: 12px; }
+		.faces { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+		button {
+			font: inherit;
+			font-size: 13px;
+			padding: 3px 10px;
+			background: #fff;
+			border: 1px solid #888;
+			border-radius: 3px;
+			cursor: pointer;
+		}
+		button:hover { background: #ffe; }
+		button.on { background: #117743; border-color: #117743; color: #fff; }
+		.opts { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 13px; }
+		.opts label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+		.hint { color: #666; font-size: 12px; margin-top: 8px; }
+		.res { margin: 2px 0 0 12px; color: #000; }
+		.res a { color: #00f; }
+		.credit { position: fixed; right: 8px; bottom: 5px; font-size: 10px; color: #888; font-family: sans-serif; }
+	</style>
+</head>
+<body>
+	<div class="thread">
+		<h1>【AA】やる夫の表情を切り替えるスレ【等幅】</h1>
+
+		<div class="meta">1 ：<b>以下、名無しにかわりまして Fable がお送りします</b>：<span id="date"></span> <span class="id">ID:Fab1e5.2o</span></div>
+		<p class="say" id="say"></p>
+		<div class="aa" id="aa" title="クリックで次の表情"></div>
+
+		<hr>
+		<div class="meta">2 ：<b>以下、名無しにかわりまして Fable がお送りします</b>：<span class="id">ID:Fab1e5.2o</span></div>
+		<p class="res"><a>&gt;&gt;1</a> の表情を選ぶお</p>
+		<div class="panel">
+			<div class="faces" id="faces"></div>
+			<div class="opts">
+				<label><input type="checkbox" id="grid"> 升目を表示</label>
+				<label><input type="checkbox" id="blink" checked> まばたき</label>
+				<label>文字サイズ <input type="range" id="size" min="10" max="26" value="18"></label>
+				<button id="copy">AAをコピー</button>
+			</div>
+			<p class="hint">数字キー 1〜7 ／ ← → ／ AAをクリック で表情切替</p>
+		</div>
+	</div>
+	<div class="credit">Claude Fable 5.2</div>
+
+	<script>
+		const W = 26; // AA の横幅（全角文字数）。右端 5 桁は効果文字用の余白
+
+		// [桁, 文字列] の並びから 1 行を組み立てる。桁を数え間違えてもずれないよう絶対位置で置く
+		function line(items) {
+			const cells = Array(W).fill("　");
+			for (const [col, str] of items) {
+				[...str].forEach((ch, i) => { if (col + i < W) cells[col + i] = ch; });
+			}
+			return cells;
+		}
+
+		const E = ["（●）", "（●）"]; // 標準の目
+		const MOUTH = [7, "（＿＿人＿＿）"];
+		// 表情の定義：眉・目・口3段・右側に出る効果文字（複数コマでアニメ）
+		const FACES = [
+			{
+				name: "ふつう", say: "やる夫は やる夫 だお！", blink: true,
+				brow: [[5, "⌒⌒⌒"], [13, "⌒⌒⌒"]], eyes: E,
+				m1: [[2, "：：："], MOUTH, [16, "：：："]], m2: [[8, "｜┬┬┬｜"]], m3: [[8, "｀ー─ー´"]],
+				fx: [[]],
+			},
+			{
+				name: "キリッ", say: "明日から 本気出すお （キリッ", blink: true,
+				brow: [[5, "━━━"], [13, "━━━"]], eyes: E,
+				m1: [MOUTH], m2: [], m3: [[9, "｀─´"]],
+				fx: [[[2, 21, "キリッ"]], [[1, 23, "☆"], [2, 21, "キリッ"]]],
+			},
+			{
+				name: "わらい", say: "ちょｗｗｗ おまｗｗｗ 腹筋崩壊だおｗｗｗ",
+				brow: [], eyes: ["（＞）", "（＜）"],
+				m1: [[2, "：：："], MOUTH, [16, "：：："]], m2: [[7, "＼ｗｗｗｗｗ／"]], m3: [[8, "＼＿＿＿／"]],
+				fx: [[[1, 21, "ｗｗｗ"], [3, 22, "ｗｗ"]], [[1, 22, "ｗｗｗ"], [3, 21, "ｗｗ"]]],
+			},
+			{
+				name: "なき", say: "どうして こうなったお……",
+				brow: [[5, "／￣"], [14, "￣＼"]], eyes: ["（Ｔ）", "（Ｔ）"],
+				m1: [[6, "。"], MOUTH, [14, "。"]], m2: [[6, "゜"], [8, "｜～～～｜"], [14, "゜"]], m3: [[8, "｀ー─ー´"]],
+				fx: [[[2, 21, "グスッ"]], [[2, 21, "グスッ…"]]],
+			},
+			{
+				name: "おこ", say: "もう 許さないお！！",
+				brow: [[5, "＼＼＼"], [13, "／／／"]], eyes: E,
+				m1: [MOUTH], m2: [[8, "｜皿皿皿｜"]], m3: [[8, "｀ー─ー´"]],
+				fx: [[[1, 21, "＃"]], [[1, 22, "＃"], [2, 21, "ムカッ"]]],
+			},
+			{
+				name: "びっくり", say: "な、なんだってー だお！？",
+				brow: [], eyes: ["（◎）", "（◎）"],
+				m1: [[9, "／￣＼"]], m2: [[9, "｜　｜"]], m3: [[9, "＼＿／"]],
+				fx: [[[1, 21, "！？"]], [[1, 22, "！？"]]],
+			},
+			{
+				name: "ねむい", say: "むにゃ… あと5分だけ だお…",
+				brow: [], eyes: ["（─）", "（─）"],
+				m1: [MOUTH], m2: [], m3: [[9, "｀─´"]],
+				fx: [[[3, 21, "ｚ"]], [[3, 21, "ｚ"], [2, 22, "ｚ"]], [[3, 21, "ｚ"], [2, 22, "ｚ"], [1, 23, "Ｚ"]]],
+			},
+		];
+
+		// 表情とコマ番号から AA 全体（行ごとの文字配列）を作る
+		function build(f, frame, closed) {
+			const eyes = closed ? ["（─）", "（─）"] : f.eyes;
+			const rows = [
+				[[5, "＿＿＿＿＿＿＿＿＿＿＿"]],
+				[[4, "／"], [16, "＼"]],
+				[[2, "／"], [18, "＼"]],
+				[[1, "／"], ...f.brow, [19, "＼"]],
+				[[0, "｜"], [5, eyes[0]], [13, eyes[1]], [20, "｜"]],
+				[[0, "｜"], ...f.m1, [20, "｜"]],
+				[[0, "｜"], ...f.m2, [20, "｜"]],
+				[[1, "＼"], ...f.m3, [19, "／"]],
+				[[2, "＼＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿／"]],
+				// ここから体
+				[[4, "／"], [16, "＼"]],
+				[[2, "／"], [6, "｜"], [14, "｜"], [18, "＼"]],
+				[[1, "（＿＿＿）｜"], [14, "｜（＿＿＿）"]],
+				[[6, "｜"], [14, "｜"]],
+				[[6, "｜"], [10, "｜"], [14, "｜"]],
+				[[5, "（＿＿＿＿｜＿＿＿＿）"]],
+			];
+			for (const [r, c, s] of f.fx[frame % f.fx.length]) rows[r].push([c, s]);
+			return rows.map(line);
+		}
+
+		const aa = document.getElementById("aa");
+		const say = document.getElementById("say");
+		const faces = document.getElementById("faces");
+		let cur = 0, frame = 0, closed = false, lastText = "";
+
+		function render() {
+			const rows = build(FACES[cur], frame, closed);
+			// 右端の効果文字（21桁目以降）だけ赤くする
+			aa.innerHTML = rows.map((cells) =>
+				'<div class="row">' + cells.map((ch, i) => `<span${i > 20 && ch !== "　" ? ' class="fx"' : ""}>${ch}</span>`).join("") + "</div>",
+			).join("");
+			lastText = rows.map((cells) => cells.join("").replace(/　+$/, "")).join("\n");
+		}
+
+		function select(i) {
+			cur = (i + FACES.length) % FACES.length;
+			frame = 0;
+			closed = false;
+			[...faces.children].forEach((b, n) => b.classList.toggle("on", n === cur));
+			say.textContent = FACES[cur].say;
+			render();
+		}
+
+		// 表情ボタンを生成
+		FACES.forEach((f, i) => {
+			const b = document.createElement("button");
+			b.textContent = `${i + 1}. ${f.name}`;
+			b.addEventListener("click", () => select(i));
+			faces.appendChild(b);
+		});
+
+		// 効果文字のコマ送りと、ときどきのまばたき
+		setInterval(() => {
+			frame++;
+			if (FACES[cur].fx.length > 1) render();
+		}, 450);
+		const blink = document.getElementById("blink");
+		(function blinkLoop() {
+			setTimeout(() => {
+				if (blink.checked && FACES[cur].blink) {
+					closed = true;
+					render();
+					setTimeout(() => { closed = false; render(); }, 140);
+				}
+				blinkLoop();
+			}, 1800 + Math.random() * 2600);
+		})();
+
+		// 入力
+		aa.addEventListener("click", () => select(cur + 1));
+		addEventListener("keydown", (e) => {
+			if (e.target.type === "range") return; // スライダー操作中の矢印キーは奪わない
+			if (e.key >= "1" && e.key <= String(FACES.length)) select(Number(e.key) - 1);
+			else if (e.key === "ArrowRight") select(cur + 1);
+			else if (e.key === "ArrowLeft") select(cur - 1);
+		});
+		// iframe 内でもキー入力を受けられるようにする
+		addEventListener("pointerdown", () => window.focus());
+
+		document.getElementById("grid").addEventListener("change", (e) => aa.classList.toggle("grid", e.target.checked));
+		document.getElementById("size").addEventListener("input", (e) => {
+			document.documentElement.style.setProperty("--fs", e.target.value + "px");
+		});
+		const copy = document.getElementById("copy");
+		copy.addEventListener("click", async () => {
+			try {
+				await navigator.clipboard.writeText(lastText);
+				copy.textContent = "コピーしたお！";
+			} catch {
+				copy.textContent = "コピーできなかったお…";
+			}
+			setTimeout(() => { copy.textContent = "AAをコピー"; }, 1500);
+		});
+
+		// 掲示板風の日付
+		const d = new Date();
+		const p = (n) => String(n).padStart(2, "0");
+		document.getElementById("date").textContent =
+			`${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}(${"日月火水木金土"[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+
+		select(0);
+	</script>
+</body>
+</html>

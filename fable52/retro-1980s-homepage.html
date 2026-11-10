@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="ai.author" content="Claude Fable 5.2">
+	<meta name="ai.model" content="claude-fable-5-2">
+	<title>1980年代風レトロホームページ - Claude Fable 5.2版</title>
+	<style>
+		:root {
+			--pink: #ff2e97;
+			--cyan: #21e6f0;
+			--yellow: #ffe45e;
+			--violet: #7a2cff;
+			--night: #0d0221;
+			--green: #5dff8a;
+			--mono: "MS Gothic", "Osaka-Mono", "Noto Sans Mono CJK JP", "Courier New", monospace;
+		}
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body {
+			background: var(--night);
+			color: #fff;
+			font-family: var(--mono);
+			overflow-x: hidden;
+		}
+
+		/* ===== CRT：走査線・周辺減光・ちらつき ===== */
+		.crt {
+			position: fixed;
+			inset: 0;
+			pointer-events: none;
+			z-index: 100;
+			background:
+				repeating-linear-gradient(0deg, rgba(0, 0, 0, .28) 0 1px, transparent 1px 3px),
+				radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .55) 100%);
+			animation: flicker 5s steps(1) infinite;
+		}
+		/* ゆっくり降りてくる明るい帯（ブラウン管の同期ずれ風） */
+		.crt::after {
+			content: "";
+			position: absolute;
+			left: 0;
+			right: 0;
+			height: 90px;
+			background: linear-gradient(transparent, rgba(255, 255, 255, .05), transparent);
+			animation: roll 7s linear infinite;
+		}
+		@keyframes flicker { 0%, 100% { opacity: 1; } 48% { opacity: .93; } 50% { opacity: 1; } 91% { opacity: .96; } 93% { opacity: 1; } }
+		@keyframes roll { from { top: -90px; } to { top: 100%; } }
+
+		/* ===== ヒーロー：夕陽とグリッドの地平線 ===== */
+		.hero {
+			position: relative;
+			height: clamp(380px, 78vh, 640px);
+			overflow: hidden;
+			background: linear-gradient(#0d0221 0%, #2a0a52 34%, #7a1670 50%, #ff2e97 60%, #0d0221 60%);
+		}
+		/* 星空（多重 radial-gradient のタイル） */
+		.stars {
+			position: absolute;
+			inset: 0 0 40% 0;
+			background-image:
+				radial-gradient(1px 1px at 20px 30px, #fff, transparent),
+				radial-gradient(1px 1px at 90px 80px, #fff, transparent),
+				radial-gradient(1.5px 1.5px at 150px 20px, var(--cyan), transparent),
+				radial-gradient(1px 1px at 60px 130px, #fff, transparent),
+				radial-gradient(1.5px 1.5px at 180px 110px, var(--yellow), transparent);
+			background-size: 220px 160px;
+			animation: twinkle 3s steps(2) infinite;
+		}
+		@keyframes twinkle { 50% { opacity: .55; } }
+		/* 縞の入った太陽 */
+		.sun {
+			position: absolute;
+			left: 50%;
+			bottom: 40%;
+			width: min(46vw, 300px);
+			aspect-ratio: 1;
+			transform: translate(-50%, 34%);
+			border-radius: 50%;
+			background: linear-gradient(var(--yellow) 0%, #ff8a3c 45%, var(--pink) 80%);
+			box-shadow: 0 0 60px rgba(255, 46, 151, .7), 0 0 140px rgba(255, 138, 60, .35);
+			/* 下半分を横縞で切り抜く。縞は下ほど太い */
+			-webkit-mask-image: linear-gradient(#000 0 50%, transparent 50% 53%, #000 53% 60%, transparent 60% 64%, #000 64% 70%, transparent 70% 75%, #000 75% 80%, transparent 80% 86%, #000 86% 90%, transparent 90%);
+			mask-image: linear-gradient(#000 0 50%, transparent 50% 53%, #000 53% 60%, transparent 60% 64%, #000 64% 70%, transparent 70% 75%, #000 75% 80%, transparent 80% 86%, #000 86% 90%, transparent 90%);
+		}
+		/* 山並みのシルエット */
+		.mount {
+			position: absolute;
+			left: 0;
+			right: 0;
+			bottom: 40%;
+			height: 15%;
+			background: #190640;
+			clip-path: polygon(0 100%, 0 60%, 8% 25%, 15% 62%, 23% 10%, 31% 70%, 38% 86%, 62% 86%, 69% 55%, 77% 5%, 85% 60%, 92% 30%, 100% 66%, 100% 100%);
+		}
+		/* 奥へ流れるパースペクティブ・グリッド */
+		.floor {
+			position: absolute;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			height: 40%;
+			/* 視点を地平線の高さに置き、床を真横(90deg)に倒して消失点へ収束させる */
+			perspective: 110px;
+			perspective-origin: 50% 0;
+			background: var(--night);
+			overflow: hidden;
+			border-top: 2px solid var(--pink);
+			box-shadow: 0 -4px 30px var(--pink);
+		}
+		.grid {
+			position: absolute;
+			left: -350%;
+			right: -350%;
+			bottom: 0;
+			height: 1500px;
+			transform-origin: 50% 100%;
+			transform: rotateX(90deg);
+			background-image:
+				linear-gradient(var(--cyan) 2px, transparent 2px),
+				linear-gradient(90deg, var(--cyan) 2px, transparent 2px);
+			background-size: 60px 60px;
+			animation: run 1.1s linear infinite;
+			filter: drop-shadow(0 0 4px var(--cyan));
+		}
+		.floor::after {
+			content: "";
+			position: absolute;
+			inset: 0;
+			background: linear-gradient(var(--night) 8%, transparent 45%);
+		}
+		@keyframes run { to { background-position: 0 60px; } }
+
+		/* クロームのロゴ */
+		.logo {
+			position: absolute;
+			left: 0;
+			right: 0;
+			top: 9%;
+			text-align: center;
+		}
+		.logo small {
+			display: block;
+			color: var(--cyan);
+			letter-spacing: .5em;
+			font-size: clamp(10px, 1.6vw, 14px);
+			text-shadow: 0 0 8px var(--cyan);
+		}
+		.logo h1 {
+			font-family: "Arial Black", Impact, sans-serif;
+			font-style: italic;
+			font-size: clamp(40px, 10vw, 108px);
+			line-height: 1.05;
+			letter-spacing: -.02em;
+			background: linear-gradient(#fff 0%, #9be7ff 30%, #2b3fd6 49%, #12003a 50%, #ff2e97 62%, #ffe45e 100%);
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			-webkit-text-stroke: 1px rgba(255, 255, 255, .55);
+			filter: drop-shadow(0 0 14px rgba(255, 46, 151, .8));
+		}
+		.logo .script {
+			display: inline-block;
+			font-family: "Brush Script MT", "Segoe Script", cursive;
+			font-size: clamp(24px, 5vw, 54px);
+			color: var(--pink);
+			transform: rotate(-7deg) translateY(-.45em);
+			text-shadow: 0 0 6px #fff, 0 0 18px var(--pink), 0 0 40px var(--pink);
+			animation: neon 4s steps(1) infinite;
+		}
+		@keyframes neon { 0%, 100% { opacity: 1; } 71% { opacity: .35; } 72% { opacity: 1; } 74% { opacity: .5; } 75% { opacity: 1; } }
+
+		/* ===== 流れる電光掲示 ===== */
+		.ticker {
+			background: #000;
+			border-block: 2px solid var(--yellow);
+			color: var(--yellow);
+			overflow: hidden;
+			white-space: nowrap;
+			padding: 6px 0;
+			text-shadow: 0 0 6px var(--yellow);
+		}
+		.ticker span { display: inline-block; padding-left: 100%; animation: tick 22s linear infinite; }
+		@keyframes tick { to { transform: translateX(-100%); } }
+
+		/* ===== 本文 ===== */
+		.wrap {
+			max-width: 980px;
+			margin: 0 auto;
+			padding: 28px 14px 60px;
+			display: grid;
+			grid-template-columns: 1fr 250px;
+			gap: 22px;
+		}
+		/* パソコン通信のターミナル */
+		.term {
+			background: #020a04;
+			border: 3px solid #b9b3a3;
+			border-radius: 14px;
+			box-shadow: inset 0 0 40px rgba(93, 255, 138, .12), 0 0 0 6px #6d685c, 0 10px 0 6px #4a463e;
+			color: var(--green);
+			text-shadow: 0 0 6px rgba(93, 255, 138, .8);
+			padding: 16px 16px 12px;
+			min-height: 420px;
+			font-size: clamp(12px, 1.9vw, 15px);
+			line-height: 1.55;
+		}
+		.term pre { font-family: inherit; white-space: pre-wrap; word-break: break-all; min-height: 16.5em; }
+		.cursor { display: inline-block; width: .6em; height: 1em; background: var(--green); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+		@keyframes blink { 50% { opacity: 0; } }
+		.menu { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed rgba(93, 255, 138, .5); }
+		.menu button {
+			font: inherit;
+			color: var(--green);
+			text-shadow: inherit;
+			background: none;
+			border: 1px solid var(--green);
+			padding: 3px 9px;
+			cursor: pointer;
+		}
+		.menu button:hover, .menu button.on { background: var(--green); color: #020a04; text-shadow: none; }
+		.hint { margin-top: 8px; font-size: 11px; opacity: .65; }
+
+		/* サイドバーの箱 */
+		aside { display: grid; gap: 18px; align-content: start; }
+		.box {
+			border: 2px solid var(--pink);
+			box-shadow: 0 0 12px rgba(255, 46, 151, .6), inset 0 0 12px rgba(255, 46, 151, .25);
+			padding: 12px;
+			font-size: 13px;
+			line-height: 1.7;
+		}
+		.box.c { border-color: var(--cyan); box-shadow: 0 0 12px rgba(33, 230, 240, .6), inset 0 0 12px rgba(33, 230, 240, .25); }
+		.box h2 { font-size: 13px; color: var(--yellow); margin-bottom: 6px; letter-spacing: .1em; }
+		/* アクセスカウンタ（7セグ風の黒箱） */
+		.counter { display: flex; gap: 3px; margin: 6px 0; }
+		.counter b {
+			background: #000;
+			color: #ff3b3b;
+			border: 1px solid #555;
+			padding: 2px 6px;
+			font-size: 22px;
+			text-shadow: 0 0 8px #f00;
+		}
+		.new { color: var(--yellow); animation: blink 0.8s steps(1) infinite; }
+		/* カセットテープ（CSS だけの飾り） */
+		.tape {
+			position: relative;
+			height: 86px;
+			border-radius: 6px;
+			background: linear-gradient(#2b2b33, #17171c);
+			border: 2px solid #55556a;
+		}
+		.tape::before {
+			content: "SIDE A  SUMMER '86";
+			position: absolute;
+			inset: 7px 9px auto 9px;
+			height: 44px;
+			padding: 2px 6px;
+			font-size: 10px;
+			color: #222;
+			background: linear-gradient(#fff 0 34%, var(--pink) 34% 56%, var(--yellow) 56% 78%, var(--cyan) 78%);
+			border-radius: 3px;
+		}
+		.tape i {
+			position: absolute;
+			top: 22px;
+			width: 22px;
+			height: 22px;
+			border-radius: 50%;
+			background: conic-gradient(#111 0 12%, #eee 12% 25%, #111 25% 37%, #eee 37% 50%, #111 50% 62%, #eee 62% 75%, #111 75% 87%, #eee 87%);
+			border: 3px solid #111;
+			animation: reel 2.4s linear infinite;
+		}
+		.tape i:first-child { left: 26%; }
+		.tape i:last-child { right: 26%; }
+		@keyframes reel { to { transform: rotate(360deg); } }
+		/* イコライザ */
+		.eq { display: flex; gap: 4px; align-items: flex-end; height: 46px; margin-top: 10px; }
+		.eq i {
+			flex: 1;
+			background: repeating-linear-gradient(0deg, var(--green) 0 4px, transparent 4px 6px);
+			animation: eq 0.9s steps(6) infinite alternate;
+		}
+		.eq i:nth-child(2n) { animation-duration: .6s; }
+		.eq i:nth-child(3n) { animation-duration: 1.2s; animation-delay: -.4s; }
+		.eq i:nth-child(5n) { animation-duration: .75s; animation-delay: -.2s; }
+		@keyframes eq { from { height: 12%; } to { height: 100%; } }
+
+		footer { text-align: center; padding: 0 12px 34px; font-size: 12px; color: #b7a6ff; line-height: 2; }
+		footer .bar { height: 10px; margin-bottom: 16px; background: linear-gradient(90deg, var(--pink) 0 25%, var(--yellow) 25% 50%, var(--cyan) 50% 75%, var(--violet) 75%); }
+		.credit { position: fixed; right: 10px; bottom: 6px; z-index: 101; font-size: 10px; color: rgba(255, 255, 255, .55); }
+
+		@media (max-width: 700px) {
+			.wrap { grid-template-columns: 1fr; }
+		}
+	</style>
+</head>
+<body>
+	<div class="crt"></div>
+
+	<header class="hero">
+		<div class="stars"></div>
+		<div class="sun"></div>
+		<div class="mount"></div>
+		<div class="floor"><div class="grid"></div></div>
+		<div class="logo">
+			<small>★ WELCOME TO MY HOME PAGE ★</small>
+			<h1>NEON DRIVE</h1>
+			<span class="script">Midnight Network</span>
+		</div>
+	</header>
+
+	<div class="ticker"><span>★☆★ ようこそ！ 深夜のパソコン通信局「NEON DRIVE-NET」へ ★☆★　ただいま 2400bps で絶賛運用中　／　新着：フリーソフト「STAR RUNNER」登録　／　市外局番からの接続は電話代にご注意ください　／　SYSOP は 23時以降にログインします ★☆★</span></div>
+
+	<div class="wrap">
+		<main class="term" id="term">
+			<pre id="out"></pre><span class="cursor"></span>
+			<div class="menu" id="menu">
+				<button data-k="1">[1] 掲示板</button>
+				<button data-k="2">[2] 電子メール</button>
+				<button data-k="3">[3] フリーソフト</button>
+				<button data-k="4">[4] チャット</button>
+				<button data-k="5">[5] SYSOPの部屋</button>
+				<button data-k="0">[0] 再接続</button>
+			</div>
+			<p class="hint">※ メニューをクリック、または数字キー 0〜5 で操作</p>
+		</main>
+
+		<aside>
+			<div class="box">
+				<h2>■ あなたは</h2>
+				<div class="counter" id="counter"></div>
+				人目のお客様です。<br>
+				<span class="new">NEW!</span> キリ番を踏んだ方は掲示板へどうぞ
+			</div>
+			<div class="box c">
+				<h2>■ NOW PLAYING</h2>
+				<div class="tape"><i></i><i></i></div>
+				<div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+			</div>
+			<div class="box">
+				<h2>■ 当局の環境</h2>
+				CPU : 8bit 4MHz<br>
+				RAM : 64KB<br>
+				FDD : 5インチ 2D ×2<br>
+				MODEM : 2400bps
+			</div>
+		</aside>
+	</div>
+
+	<footer>
+		<div class="bar"></div>
+		このページは 640×400 ドット・デジタル8色での閲覧を推奨します<br>
+		(C) 198X NEON DRIVE-NET ／ リンクフリー
+	</footer>
+	<div class="credit">Claude Fable 5.2</div>
+
+	<script>
+		// ターミナルに表示する各画面の内容
+		const SCREENS = {
+			0: [
+				"ATDT 03-XXXX-1986",
+				"CONNECT 2400",
+				"",
+				"+----------------------------------------+",
+				"|  N E O N   D R I V E - N E T   v1.2    |",
+				"|        24H 運用 ／ 回線数: 1           |",
+				"+----------------------------------------+",
+				"",
+				"USER ID  : GUEST",
+				"PASSWORD : ********",
+				"",
+				"ようこそ GUEST さん。",
+				"前回のログインは 198X/08/31 23:58 です。",
+				"メニュー番号を入力してください。",
+				"> ",
+			],
+			1: [
+				"> 1",
+				"*** 掲示板 (BOARD) ***",
+				"",
+				"#0128 夜風     : 首都高の夜景、最高でした。",
+				"#0129 PIPO     : 新しい音源ボード買った人いる？",
+				"#0130 みるく   : はじめまして！高2です。ﾖﾛｼｸ",
+				"#0131 SYSOP    : 今月の電話代が… (^^;",
+				"#0132 TAKA     : ＞#0129 FM音源は いいぞ。",
+				"",
+				"-- 以上 5 件。書き込みは会員登録後に --",
+				"> ",
+			],
+			2: [
+				"> 2",
+				"*** 電子メール (MAIL) ***",
+				"",
+				"未読メールが 1 通あります。",
+				"",
+				"FROM : SYSOP",
+				"SUBJ : ゲストさんへ",
+				"----------------------------------------",
+				"アクセスありがとう。夜11時を過ぎると",
+				"回線が混むので、ビジーでも怒らないでね。",
+				"それでは よい通信ライフを！",
+				"----------------------------------------",
+				"> ",
+			],
+			3: [
+				"> 3",
+				"*** フリーソフト (PDS) ***",
+				"",
+				" NO  NAME           SIZE   DL",
+				" 01  STAR-RUN.BAS   12KB  214",
+				" 02  NEONEDIT.COM   31KB  188",
+				" 03  SUNSET.MML      4KB   97",
+				" 04  KANJI-TR.LZH   58KB   45",
+				"",
+				"XMODEM で転送します。所要時間 約4分。",
+				"[##########..........] 50%  …ビジー",
+				"> ",
+			],
+			4: [
+				"> 4",
+				"*** チャット (CHAT) ***  現在 3 名",
+				"",
+				"夜風  ＞ こんばんは〜",
+				"PIPO  ＞ おっ、GUESTさん いらっしゃい",
+				"みるく＞ テレホタイムまだ〜？",
+				"夜風  ＞ それは もう少し未来の話 (笑)",
+				"PIPO  ＞ では落ちます。ﾉｼ",
+				"",
+				"> ",
+			],
+			5: [
+				"> 5",
+				"*** SYSOP の部屋 ***",
+				"",
+				"      .--------------.",
+				"      | .----------. |",
+				"      | |  HELLO_  | |",
+				"      | '----------' |",
+				"      '--------------'",
+				"       /::::::::::::\\",
+				"",
+				"趣味: ドライブ、シンセ、深夜の通信。",
+				"好きな色: ピンクとシアン。",
+				"> ",
+			],
+		};
+
+		const out = document.getElementById("out");
+		const buttons = document.querySelectorAll("#menu button");
+		let timer = null;
+
+		// 2400bps らしく、1文字ずつ流して表示する
+		function show(k) {
+			const text = SCREENS[k].join("\n");
+			let i = 0;
+			clearInterval(timer);
+			out.textContent = "";
+			buttons.forEach((b) => b.classList.toggle("on", b.dataset.k === String(k)));
+			timer = setInterval(() => {
+				i += 3;
+				out.textContent = text.slice(0, i);
+				if (i >= text.length) clearInterval(timer);
+			}, 16);
+		}
+
+		buttons.forEach((b) => b.addEventListener("click", () => show(b.dataset.k)));
+		addEventListener("keydown", (e) => {
+			if (SCREENS[e.key]) show(e.key);
+		});
+		// iframe 内でもキー入力を受けられるようにする
+		addEventListener("pointerdown", () => window.focus());
+
+		// アクセスカウンタ（見た目だけのレトロ演出）
+		const n = String(19860 + Math.floor(Math.random() * 40)).padStart(6, "0");
+		document.getElementById("counter").innerHTML = [...n].map((d) => `<b>${d}</b>`).join("");
+
+		show(0);
+	</script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>マンデルブロ地図（OpenLayers） - Claude Fable 5.2版</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v7.3.0/ol.css">
+<script src="https://cdn.jsdelivr.net/npm/ol@v7.3.0/dist/ol.js"></script>
+<style>
+	html, body { margin: 0; height: 100%; background: #070910; overflow: hidden; }
+	body { font: 12px/1.5 "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; color: #dbe4f5; }
+	#map { position: fixed; inset: 0; background: #070910; outline: none; }
+	/* OpenLayers 標準コントロールを暗色の地図帳風に */
+	.ol-control { background: none; }
+	.ol-control button { background: rgba(12, 17, 30, .82); color: #dbe4f5; border: 1px solid rgba(255, 255, 255, .16); }
+	.ol-control button:hover, .ol-control button:focus { background: rgba(40, 70, 120, .9); color: #fff; outline: none; }
+	.ol-zoom { top: auto; left: auto; right: 12px; bottom: 44px; }
+	.ol-overviewmap { left: 12px; bottom: 40px; }
+	.ol-overviewmap .ol-overviewmap-map { border: 1px solid rgba(255, 255, 255, .25); width: 150px; height: 120px; margin: 0; }
+	.ol-overviewmap:not(.ol-collapsed) { background: rgba(12, 17, 30, .82); padding: 3px; border-radius: 6px; }
+	.ol-overviewmap:not(.ol-collapsed) button { left: 3px; bottom: 3px; }
+	.ol-overviewmap-box { border: 1.5px solid #ffd76a; }
+	.panel { position: fixed; left: 12px; top: 12px; padding: 10px 12px; border-radius: 10px; max-width: calc(100% - 48px);
+		background: rgba(10, 14, 24, .74); border: 1px solid rgba(255, 255, 255, .12); backdrop-filter: blur(8px); user-select: none; }
+	.panel h1 { margin: 0 0 6px; font-size: 11px; letter-spacing: .28em; font-weight: 600; opacity: .75; }
+	.row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 5px; }
+	.row > span { opacity: .65; font-size: 11px; }
+	.panel button, .panel select { background: rgba(255, 255, 255, .08); color: inherit; border: 1px solid rgba(255, 255, 255, .18); border-radius: 5px; font: inherit; padding: 2px 7px; cursor: pointer; }
+	.panel button:hover { background: rgba(80, 140, 220, .45); }
+	.panel select option { background: #151a28; }
+	#info { margin-top: 7px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, .1); font: 11px/1.55 Consolas, Menlo, monospace; white-space: pre; opacity: .85; min-width: 250px; }
+	.help, .credit { position: fixed; bottom: 10px; font-size: 11px; opacity: .65; text-shadow: 0 1px 3px #000, 0 0 8px #000; pointer-events: none; }
+	.help { left: 10px; max-width: calc(100% - 170px); padding: 2px 8px; border-radius: 6px; background: rgba(8, 11, 20, .5); }
+	.credit { right: 14px; letter-spacing: .06em; }
+	#err { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+	<h1>MANDELBROT ATLAS</h1>
+	<div class="row"><span>配色</span><select id="pal"></select><span>名所</span><span id="spots" style="opacity:1;display:contents"></span></div>
+	<div id="info"></div>
+</div>
+<div class="help">ドラッグ: 移動　ホイール / ダブルクリック / ＋−: ズーム　矢印: 移動　Shift+ドラッグ: 範囲を拡大　地名をクリック: そこへ飛ぶ</div>
+<div class="credit">Claude Fable 5.2</div>
+<div id="err">OpenLayers を読み込めませんでした（ネットワーク接続を確認してください）</div>
+<script>
+(() => {
+	"use strict";
+	if (!window.ol) { document.getElementById("err").style.display = "flex"; return; }
+	const $ = id => document.getElementById(id);
+
+	// ---- ワーカー側: タイル1枚ぶんのマンデルブロ集合を計算する ----
+	function core() {
+		function iter(cx, cy, maxIter) {
+			const xm = cx - 0.25, q = xm * xm + cy * cy;
+			if (q * (q + xm) <= 0.25 * cy * cy) return -1; // 主カージオイド
+			if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) return -1; // 周期2の円盤
+			let x = 0, y = 0, x2 = 0, y2 = 0, i = 0, px = 0, py = 0, lap = 8, cnt = 0;
+			while (i < maxIter) {
+				y = 2 * x * y + cy; x = x2 - y2 + cx;
+				x2 = x * x; y2 = y * y; i++;
+				if (x2 + y2 > 65536) return Math.max(0, i + 1 - Math.log2(0.5 * Math.log(x2 + y2)));
+				if (x === px && y === py) return -1; // 周期検出で内部を早期判定
+				if (++cnt === lap) { cnt = 0; lap *= 2; px = x; py = y; }
+			}
+			return -1;
+		}
+		function run(m) {
+			const n = m.n, buf = new Uint32Array(n * n), lut = m.lut, mask = lut.length - 1, res = m.res;
+			let p = 0;
+			for (let y = 0; y < n; y++) {
+				const ci = m.top - (y + 0.5) * res;
+				for (let x = 0; x < n; x++) {
+					const v = iter(m.left + (x + 0.5) * res, ci, m.maxIter);
+					buf[p++] = v < 0 ? 0xff000000 : lut[(Math.sqrt(v) * 0.085 * lut.length + 0.55 * lut.length) & mask];
+				}
+			}
+			return { id: m.id, buf: buf.buffer };
+		}
+		return { run };
+	}
+	function makeWorker() {
+		try {
+			const src = `const api=(${core})();onmessage=e=>{const r=api.run(e.data);postMessage(r,[r.buf])}`;
+			return new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+		} catch (e) {
+			// ワーカーが使えない環境ではメインスレッドで代用
+			const api = core(), w = { postMessage(m) { setTimeout(() => w.onmessage({ data: api.run(m) }), 0); } };
+			return w;
+		}
+	}
+
+	// ---- 配色 ----
+	const PALS = [
+		["深海", [0.00, 0.10, 0.20]], ["炎", [0.52, 0.60, 0.72]], ["オーロラ", [0.80, 0.90, 0.30]],
+		["虹", [0.00, 0.33, 0.67]], ["墨", [0.5, 0.5, 0.5]],
+	];
+	const luts = PALS.map(([, d]) => {
+		const lut = new Uint32Array(4096);
+		for (let i = 0; i < 4096; i++) {
+			const t = i / 4096, sh = 0.75 + 0.25 * Math.cos(6.2832 * (2 * t + 0.1)), c = [0, 0, 0];
+			for (let j = 0; j < 3; j++) c[j] = Math.round(255 * Math.min(1, (0.5 + 0.5 * Math.cos(6.2832 * (t + d[j]))) * sh));
+			lut[i] = 0xff000000 | c[2] << 16 | c[1] << 8 | c[0];
+		}
+		return lut;
+	});
+	let pal = 0;
+
+	// ---- タイル計算キュー（新しく要求されたタイルを優先する後入れ先出し）----
+	const TILE = 256, MAX_Z = 40, jobs = [], waiting = new Map(), idle = [];
+	let jobId = 0, busy = 0;
+	function pump() {
+		while (idle.length && jobs.length) {
+			const j = jobs.pop();
+			busy++;
+			idle.pop().postMessage(j);
+		}
+		showInfo();
+	}
+	const NW = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1));
+	for (let i = 0; i < NW; i++) {
+		const w = makeWorker();
+		w.onmessage = e => {
+			idle.push(w); busy--;
+			const cb = waiting.get(e.data.id);
+			waiting.delete(e.data.id);
+			if (cb) cb(e.data.buf);
+			pump();
+		};
+		idle.push(w);
+	}
+
+	// ---- OpenLayers の設定 ----
+	// 複素平面そのものを「地図の座標系」として定義する（x = 実部, y = 虚部）
+	const EXTENT = [-4, -4, 4, 4];
+	const projection = new ol.proj.Projection({ code: "MANDELBROT", units: "pixels", extent: EXTENT });
+	const tileGrid = ol.tilegrid.createXYZ({ extent: EXTENT, maxZoom: MAX_Z, tileSize: TILE });
+	// タイル画像は URL から取得する代わりに、その場で計算して data URL として渡す
+	function tileLoadFunction(tile) {
+		const tc = tile.getTileCoord(), ext = tileGrid.getTileCoordExtent(tc), id = ++jobId;
+		waiting.set(id, buf => {
+			const c = document.createElement("canvas");
+			c.width = c.height = TILE;
+			c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(buf), TILE, TILE), 0, 0);
+			tile.getImage().src = c.toDataURL();
+		});
+		jobs.push({ id, left: ext[0], top: ext[3], res: tileGrid.getResolution(tc[0]), n: TILE, maxIter: 170 + tc[0] * 75, lut: luts[pal] });
+		pump();
+	}
+	const makeSource = () => new ol.source.XYZ({
+		projection, tileGrid, wrapX: false, transition: 200,
+		tileUrlFunction: tc => "mandel/" + tc.join("/"),
+		tileLoadFunction,
+	});
+	const source = makeSource(), overviewSource = makeSource();
+
+	// 名所（地図上の地名ラベル）
+	const SPOTS = [
+		["シーホースの谷", -0.7453, 0.1127, 9],
+		["象の谷", 0.2826, 0.0105, 8],
+		["三つ又の渦", -0.1011, 0.9563, 9],
+		["ミニブロ島", -1.7549, 0, 6],
+		["二重らせん", -0.743643887, 0.131825904, 19],
+		["稲妻の枝", -0.1592, 1.0338, 7],
+	];
+	const spotStyle = f => new ol.style.Style({
+		image: new ol.style.Circle({ radius: 4, fill: new ol.style.Fill({ color: "#ffd76a" }), stroke: new ol.style.Stroke({ color: "#1a1408", width: 1.5 }) }),
+		text: new ol.style.Text({
+			text: f.get("name"), font: '12px "Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif', offsetY: -13,
+			fill: new ol.style.Fill({ color: "#fff" }), stroke: new ol.style.Stroke({ color: "rgba(0,0,0,.85)", width: 3 }),
+		}),
+	});
+	const spotLayer = new ol.layer.Vector({
+		source: new ol.source.Vector({ features: SPOTS.map(s => new ol.Feature({ geometry: new ol.geom.Point([s[1], s[2]]), name: s[0], zoom: s[3] })) }),
+		style: spotStyle, declutter: true,
+	});
+
+	const view = new ol.View({ projection, center: [-0.6, 0], zoom: 3, minZoom: 1, maxZoom: MAX_Z, extent: EXTENT, constrainOnlyCenter: true });
+	const map = new ol.Map({
+		target: "map",
+		keyboardEventTarget: document, // 地図にフォーカスが無くても矢印・＋−キーで操作できるようにする
+		layers: [new ol.layer.Tile({ source }), spotLayer],
+		view,
+		controls: [
+			new ol.control.Zoom(),
+			new ol.control.OverviewMap({
+				collapsed: false, tipLabel: "全体図",
+				layers: [new ol.layer.Tile({ source: overviewSource })],
+				view: new ol.View({ projection, center: [-0.6, 0], zoom: 0, maxZoom: MAX_Z }),
+			}),
+		],
+	});
+
+	// ---- 情報表示 ----
+	let mouse = null;
+	function showInfo() {
+		const z = view.getZoom() || 0, c = mouse || view.getCenter(), dg = Math.min(15, Math.max(4, Math.ceil(z * 0.301) + 3));
+		const mag = Math.pow(2, z - 3), n = jobs.length + busy;
+		$("info").textContent = (mouse ? "カーソル " : "中心     ") + c[0].toFixed(dg) + (c[1] < 0 ? " − " : " + ") + Math.abs(c[1]).toFixed(dg) + " i" +
+			"\nズーム " + z.toFixed(1) + " / " + MAX_Z + "   倍率 ×" + (mag < 1e5 ? mag.toFixed(mag < 100 ? 2 : 0) : mag.toExponential(2)) +
+			"\n" + (n ? "計算中… 残り " + n + " タイル" : "タイル描画完了");
+	}
+	map.on("pointermove", e => { mouse = e.coordinate; showInfo(); });
+	map.getViewport().addEventListener("pointerleave", () => { mouse = null; showInfo(); });
+	view.on("change", showInfo);
+
+	// 名所へ飛ぶ（いったん引いてから寄る、地図アプリ風の移動）
+	function flyTo(x, y, zoom) {
+		const z0 = view.getZoom(), mid = Math.max(2, Math.min(z0, zoom) - 2);
+		view.cancelAnimations();
+		view.animate({ center: [x, y], duration: 2400 });
+		view.animate({ zoom: mid, duration: 1200 }, { zoom, duration: 1200 });
+	}
+	map.on("singleclick", e => {
+		const f = map.forEachFeatureAtPixel(e.pixel, f => f, { hitTolerance: 6 });
+		if (f) { const p = f.getGeometry().getCoordinates(); flyTo(p[0], p[1], f.get("zoom")); }
+	});
+	map.on("pointermove", e => { map.getTargetElement().style.cursor = map.hasFeatureAtPixel(e.pixel) ? "pointer" : ""; });
+
+	// ---- パネル ----
+	PALS.forEach(([name], i) => { const o = document.createElement("option"); o.value = i; o.textContent = name; $("pal").appendChild(o); });
+	$("pal").onchange = () => {
+		pal = +$("pal").value;
+		// 計算待ちを捨て、タイルキャッシュを空にして新しい配色で描き直す
+		jobs.length = 0;
+		source.refresh(); overviewSource.refresh();
+		$("pal").blur();
+	};
+	[["全体", -0.6, 0, 3], ...SPOTS].forEach(s => {
+		const b = document.createElement("button");
+		b.textContent = s[0];
+		b.onclick = () => flyTo(s[1], s[2], s[3]);
+		$("spots").appendChild(b);
+	});
+
+	// ---- iframe 対策: フォーカス取得とサイズ追従 ----
+	const el = $("map");
+	el.addEventListener("pointerdown", () => window.focus());
+	window.addEventListener("keydown", e => { if (e.code === "Space" || e.code.startsWith("Arrow")) e.preventDefault(); });
+	const fit = () => map.updateSize();
+	window.addEventListener("resize", fit);
+	if (window.ResizeObserver) new ResizeObserver(fit).observe(el);
+	showInfo();
+})();
+</script>
+</body>
+</html>

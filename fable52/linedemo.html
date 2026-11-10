@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="ai.author" content="Claude Fable 5.2">
+<meta name="ai.model" content="claude-fable-5-2">
+<title>Dynamic Colorful Lines - Claude Fable 5.2版</title>
+<style>
+	html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+	canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+	.hint, .credit, .mode {
+		position: fixed; pointer-events: none; user-select: none;
+		font: 11px/1.6 "Segoe UI", "Hiragino Sans", Meiryo, sans-serif; letter-spacing: .08em;
+		color: rgba(255, 255, 255, .42);
+	}
+	.hint { left: 14px; bottom: 12px; }
+	.credit { right: 14px; bottom: 12px; }
+	.mode {
+		left: 14px; top: 12px; font-size: 13px; letter-spacing: .3em;
+		color: rgba(255, 255, 255, .75); transition: opacity 1.2s; opacity: 0;
+	}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="mode" id="mode"></div>
+<div class="hint">クリック / Space: パターン切替 ／ 1〜5: 直接選択 ／ ↑↓: 速度</div>
+<div class="credit">Claude Fable 5.2</div>
+<script>
+(() => {
+	"use strict";
+	const cv = document.getElementById("c");
+	const ctx = cv.getContext("2d");
+	const modeEl = document.getElementById("mode");
+	const TAU = Math.PI * 2;
+	const rand = (a, b) => a + Math.random() * (b - a);
+
+	let W = 0, H = 0, DPR = 1;
+	let speed = 1;
+	let fade = 0; // パターン切替直後のフェードイン
+	let modeIndex = 0;
+	let tracers = [];
+	let simT = 0;
+	let autoTimer = 0;
+
+	// 各パターンの定義
+	//  pts: 1本の図形を作る頂点数 / n: 図形の数 / trail: 残像の本数
+	//  move: 頂点の動き方（bounce=壁で跳ね返る, orbit=リサージュ軌道）
+	const MODES = [
+		{ name: "POLYGON", pts: 4, n: 3, trail: 26, move: "bounce", draw: "poly", every: 2 },
+		{ name: "RIBBON", pts: 2, n: 3, trail: 90, move: "orbit", draw: "line", every: 1 },
+		{ name: "BEZIER", pts: 4, n: 3, trail: 44, move: "bounce", draw: "bezier", every: 2 },
+		{ name: "KALEIDO", pts: 2, n: 2, trail: 36, move: "orbit", draw: "kaleido", every: 1 },
+		{ name: "WEB", pts: 5, n: 2, trail: 18, move: "orbit", draw: "web", every: 2 },
+	];
+
+	function makePoint(move) {
+		if (move === "bounce") {
+			const a = rand(0, TAU), v = rand(180, 340);
+			return { x: rand(0, W), y: rand(0, H), vx: Math.cos(a) * v, vy: Math.sin(a) * v };
+		}
+		// 2つの正弦波を重ねた軌道。-1〜1 の正規化座標で持つ
+		return {
+			fx: rand(0.35, 1.15), fy: rand(0.35, 1.15), px: rand(0, TAU), py: rand(0, TAU),
+			gx: rand(1.3, 2.6), gy: rand(1.3, 2.6), qx: rand(0, TAU), qy: rand(0, TAU),
+			amp: rand(0.12, 0.3), x: 0, y: 0,
+		};
+	}
+
+	function setMode(i) {
+		modeIndex = (i + MODES.length) % MODES.length;
+		const m = MODES[modeIndex];
+		tracers = [];
+		for (let k = 0; k < m.n; k++) {
+			const pts = [];
+			for (let j = 0; j < m.pts; j++) pts.push(makePoint(m.move));
+			tracers.push({ pts, hist: [], hue: rand(0, 360) + k * (360 / m.n), hueSpeed: rand(0.5, 1.1), tick: 0 });
+		}
+		fade = 0;
+		autoTimer = 0;
+		modeEl.textContent = `${modeIndex + 1} / ${MODES.length}  ${m.name}`;
+		modeEl.style.opacity = 1;
+		clearTimeout(setMode.t);
+		setMode.t = setTimeout(() => { modeEl.style.opacity = 0; }, 2200);
+	}
+
+	// 1ステップ進める（固定時間刻みなので残像の間隔が一定になる）
+	function step(dt) {
+		const m = MODES[modeIndex];
+		simT += dt;
+		for (const tr of tracers) {
+			for (const p of tr.pts) {
+				if (m.move === "bounce") {
+					p.x += p.vx * dt; p.y += p.vy * dt;
+					if (p.x < 0) { p.x = 0; p.vx = Math.abs(p.vx); }
+					if (p.x > W) { p.x = W; p.vx = -Math.abs(p.vx); }
+					if (p.y < 0) { p.y = 0; p.vy = Math.abs(p.vy); }
+					if (p.y > H) { p.y = H; p.vy = -Math.abs(p.vy); }
+				} else {
+					const a = 1 - p.amp;
+					p.x = a * Math.sin(p.fx * simT + p.px) + p.amp * Math.sin(p.gx * simT + p.qx);
+					p.y = a * Math.sin(p.fy * simT + p.py) + p.amp * Math.sin(p.gy * simT + p.qy);
+				}
+			}
+			tr.hue += tr.hueSpeed;
+			if (++tr.tick % m.every === 0) {
+				// 頂点の座標と、その瞬間の色相を履歴に積む
+				const snap = new Float32Array(m.pts * 2 + 1);
+				tr.pts.forEach((p, j) => { snap[j * 2] = p.x; snap[j * 2 + 1] = p.y; });
+				snap[m.pts * 2] = tr.hue;
+				tr.hist.push(snap);
+				if (tr.hist.length > m.trail) tr.hist.shift();
+			}
+		}
+	}
+
+	// 履歴1件ぶんのパスを現在の座標系に引く
+	function pathOf(s, m, cx, cy, sx, sy) {
+		const X = (j) => (m.move === "orbit" ? cx + s[j * 2] * sx : s[j * 2]);
+		const Y = (j) => (m.move === "orbit" ? cy + s[j * 2 + 1] * sy : s[j * 2 + 1]);
+		ctx.beginPath();
+		if (m.draw === "bezier") {
+			ctx.moveTo(X(0), Y(0));
+			ctx.bezierCurveTo(X(1), Y(1), X(2), Y(2), X(3), Y(3));
+		} else if (m.draw === "web") {
+			// 全頂点を互いに結ぶ
+			for (let a = 0; a < m.pts; a++) for (let b = a + 1; b < m.pts; b++) {
+				ctx.moveTo(X(a), Y(a)); ctx.lineTo(X(b), Y(b));
+			}
+		} else {
+			ctx.moveTo(X(0), Y(0));
+			for (let j = 1; j < m.pts; j++) ctx.lineTo(X(j), Y(j));
+			if (m.draw === "poly") ctx.closePath();
+		}
+	}
+
+	function draw() {
+		const m = MODES[modeIndex];
+		ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+		ctx.globalCompositeOperation = "source-over";
+		ctx.globalAlpha = 1;
+		ctx.fillStyle = "#000";
+		ctx.fillRect(0, 0, W, H);
+		ctx.globalCompositeOperation = "lighter"; // 重なった線は加算で光らせる
+		ctx.lineJoin = "round";
+		ctx.lineCap = "round";
+		const cx = W / 2, cy = H / 2;
+		const kal = m.draw === "kaleido";
+		const R = Math.min(W, H) * 0.5;
+		const sx = kal ? R * 0.98 : W * 0.48, sy = kal ? R * 0.98 : H * 0.47;
+		const SYM = 6;
+
+		for (const tr of tracers) {
+			const n = tr.hist.length;
+			for (let i = 0; i < n; i++) {
+				const s = tr.hist[i];
+				const k = (i + 1) / n; // 0=古い, 1=最新
+				const newest = i === n - 1;
+				ctx.strokeStyle = `hsl(${s[m.pts * 2] % 360}, 100%, ${newest ? 72 : 56}%)`;
+				ctx.globalAlpha = fade * (newest ? 1 : 0.08 + 0.72 * k * k);
+				ctx.lineWidth = newest ? 2.2 : 1.15;
+				if (kal) {
+					// 中心まわりに回転＋鏡映して万華鏡にする
+					for (let q = 0; q < SYM * 2; q++) {
+						const a = (Math.floor(q / 2) / SYM) * TAU + simT * 0.05;
+						const c = Math.cos(a) * DPR, sn = Math.sin(a) * DPR, f = q % 2 ? -1 : 1;
+						ctx.setTransform(c, sn, -sn * f, c * f, cx * DPR, cy * DPR);
+						pathOf(s, m, 0, 0, sx, sy);
+						ctx.stroke();
+					}
+					ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+				} else {
+					pathOf(s, m, cx, cy, sx, sy);
+					ctx.stroke();
+				}
+			}
+		}
+	}
+
+	const STEP = 1 / 60;
+	let acc = 0, prev = performance.now();
+	function frame(now) {
+		const dt = Math.min(0.1, (now - prev) / 1000);
+		prev = now;
+		acc += dt * speed;
+		let guard = 0;
+		while (acc >= STEP && guard++ < 12) { step(STEP); acc -= STEP; }
+		fade = Math.min(1, fade + dt * 1.5);
+		// 放置していると 25 秒ごとに次のパターンへ
+		autoTimer += dt;
+		if (autoTimer > 25) setMode(modeIndex + 1);
+		draw();
+		requestAnimationFrame(frame);
+	}
+
+	function resize() {
+		const w = window.innerWidth || 960, h = window.innerHeight || 600;
+		const d = Math.min(window.devicePixelRatio || 1, 2);
+		if (w === W && h === H && d === DPR) return;
+		W = w; H = h; DPR = d;
+		cv.width = Math.round(W * DPR);
+		cv.height = Math.round(H * DPR);
+	}
+
+	window.addEventListener("pointerdown", () => { window.focus(); setMode(modeIndex + 1); });
+	window.addEventListener("keydown", (e) => {
+		if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+		if (e.key === " " || e.key === "ArrowRight") setMode(modeIndex + 1);
+		else if (e.key === "ArrowLeft") setMode(modeIndex - 1);
+		else if (e.key === "ArrowUp") speed = Math.min(3, speed * 1.25);
+		else if (e.key === "ArrowDown") speed = Math.max(0.2, speed / 1.25);
+		else if (e.key >= "1" && e.key <= String(MODES.length)) setMode(Number(e.key) - 1);
+	});
+	window.addEventListener("resize", resize);
+	if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+
+	resize();
+	setMode(0);
+	// 開いた瞬間から残像が出ているよう、少し先まで進めておく
+	for (let i = 0; i < 120; i++) step(STEP);
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
