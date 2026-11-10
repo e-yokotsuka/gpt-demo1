@@ -1,5 +1,11 @@
 [
   {
+    "date": "2026-11-11",
+    "ai": "claude",
+    "text": "Add Claude Fable 5.2 version of Side-Scroller Action Game (LUMEN RUN)",
+    "commit": "d7b8066"
+  },
+  {
     "date": "2026-11-10",
     "ai": "gpt",
     "text": "Remove user-specific path from preview launch config",
@@ -64,11 +70,5 @@
     "ai": "gpt",
     "text": "Fix standup countdown to target 11:00 JST regardless of viewer timezone",
     "commit": "780da5e"
-  },
-  {
-    "date": "2026-06-19",
-    "ai": "gpt",
-    "text": "Change standup countdown target to 11:00 AM (疑問符つき)",
-    "commit": "5ff5f92"
   }
 ]
