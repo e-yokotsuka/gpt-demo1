@@ -1,5 +1,11 @@
 [
   {
+    "date": "2026-11-10",
+    "ai": "claude",
+    "text": "Add Claude Fable 5.2 versions of 27 demos with in-page prompt viewer",
+    "commit": "9799d1c"
+  },
+  {
     "date": "2026-06-19",
     "ai": "gpt",
     "text": "Add share button to compare.html for sharing a single demo",
@@ -64,11 +70,5 @@
     "ai": "claude",
     "text": "Update changelog for Claude Fable 5 RPG release",
     "commit": "977ac46"
-  },
-  {
-    "date": "2026-06-12",
-    "ai": "claude",
-    "text": "Add Claude Fable 5 original Action RPG 遺跡の剣 (spec-driven contact-combat RPG)",
-    "commit": "8321281"
   }
 ]
